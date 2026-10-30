@@ -6,15 +6,19 @@ export const ITEM_TYPES=Object.freeze({
   radio:{label:'잡음 무전기',key:'RADIO',description:'곧바로 9초간 반복 잡음'},
   glow:{label:'야광봉',key:'GLOW',description:'50초간 길 표시'},
   energy:{label:'에너지 드링크',key:'DRINK',description:'스태미나 회복 + 5초 질주 부스트'},
-  lube:{label:'윤활 스프레이',key:'LUBE',description:'배전반 작동 소음 제거'}
+  lube:{label:'윤활 스프레이',key:'LUBE',description:'배전반 사이렌과 기계 소음을 한 번 무음화'}
 });
+// Scarce, intentional loot instead of five free pickups at spawn.
+// The quiet route is off-axis; the powerful radio/drink appear deeper in loop 2.
 const ITEMS=[
- ['alarm',[-1,.24,10]],['glow',[-15,.24,7]],['energy',[15,.24,14]],
- ['lube',[-15,.24,-15]],['radio',[15,.24,-1]]
+ ['glow',[-19,.24,9]],
+ ['alarm',[6,.24,-12]],
+ ['lube',[-23,.24,-21]]
 ];
 const LOOP_ITEMS=[
- ['alarm',[1,.24,12]],['glow',[-14,.24,8]],['energy',[14,.24,11]],
- ['lube',[15,.24,-17]],['radio',[-15,.24,-9]]
+ ['radio',[17,.24,-13]],
+ ['energy',[28,.24,-9]],
+ ['lube',[22,.24,-31]]
 ];
 export function startingPickups(floor=1){
  return (floor===2?LOOP_ITEMS:ITEMS).map(([type,position],i)=>({
