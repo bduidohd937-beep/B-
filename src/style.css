@@ -133,3 +133,9 @@
   .controls-sheet{bottom:54px;left:9px;font-size:11px}
 }
 @media(prefers-reduced-motion:reduce){.danger-vignette,.survival-panel__track>div,.interaction-callout__progress>div{transition:none}}
+
+/* Screen effects switch: preserve readable death outcome, remove flashing motion. */
+.death-fx--reduced .death-fx__blood{animation:none!important;opacity:.28!important;transform:none!important}
+.death-fx--dying.death-fx--reduced .death-fx__blackout{animation:none!important;opacity:.75!important}
+.death-fx--dead.death-fx--reduced .death-fx__blackout{opacity:1!important}
+.floor-loop-flash--reduced{animation:none!important;opacity:.72}
