@@ -501,6 +501,7 @@ export default function App(){
   const [airborne,setAirborne]=useState(false);
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
   const [reducedEffects,setReducedEffects]=useState(false);
+  const [performanceMode,setPerformanceMode]=useState(false);
   const [perfVisible,setPerfVisible]=useState(false);
   const [perfSample,setPerfSample]=useState(null);
   const onPerformance=useCallback(value=>setPerfSample(value),[]);
@@ -1078,7 +1079,7 @@ export default function App(){
     canvas?.requestPointerLock?.();
   };
   return <>
-    <Canvas dpr={[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
+    <Canvas dpr={performanceMode?1:[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
@@ -1265,6 +1266,10 @@ export default function App(){
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
+        <button type="button" aria-pressed={performanceMode}
+          onClick={()=>setPerformanceMode(v=>!v)}>
+          {performanceMode?'저사양 모드 ON · DPR 1.0':'저사양 모드 OFF · 고화질'}
+        </button>
         <label className="camera-shake-control" htmlFor="camera-shake">
           <span>달리기 카메라 흔들림 · {Math.round(cameraShake*100)}%</span>
           <input id="camera-shake" type="range" min="0" max="100" step="5"
@@ -1281,7 +1286,7 @@ export default function App(){
         </label>
         <p>처음은 낮은 음량으로 테스트 권장 · 헤드폰 사용자 주의 · ESC 일시정지</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.11.2 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.12.4 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
