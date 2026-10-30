@@ -34,6 +34,7 @@ try{
       '--use-angle=swiftshader','--enable-unsafe-swiftshader']
   });
   const page=await browser.newPage({viewport:{width:1280,height:800}});
+  page.setDefaultTimeout(12000);
   const errors=[];
   page.on('pageerror',error=>{errors.push(error.stack||error.message);});
   page.on('console',message=>{
@@ -43,16 +44,15 @@ try{
       errors.push('console: '+message.text());
   });
   await page.goto(address,{waitUntil:'domcontentloaded',timeout:30000});
-  await page.waitForTimeout(2600);
+  await page.waitForTimeout(900);
   const html=await page.locator('#root').innerHTML();
   const h1=await page.locator('.overlay h1').allTextContents();
-  const screen=await page.screenshot({path:'/tmp/b-infinity-smoke.png'});
-  console.log('Browser boot:',JSON.stringify({h1,rootLength:html.length,errors,screenBytes:screen.byteLength}));
+  console.log('Browser boot:',JSON.stringify({h1,rootLength:html.length,errors}));
   assert.ok(h1.length&&h1[0].trim().length>0,'React HUD/start overlay missing: black screen');
   assert.deepEqual(errors,[],'Uncaught browser JS error: '+errors.join('\n'));
   // F3 exercises the exact feature that previously brought down <World>.
   await page.keyboard.press('F3');
-  await page.waitForTimeout(1300);
+  await page.waitForTimeout(700);
   assert.equal(await page.locator('.performance-debug').count(),1,'F3 performance readout not mounted');
   assert.ok(await page.locator('#root').innerHTML()!=='','F3 caused a blank React root');
   assert.deepEqual(errors,[],'Runtime crash after F3: '+errors.join('\n'));
