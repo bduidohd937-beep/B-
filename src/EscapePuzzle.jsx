@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { panelPosition, GATE_Z, GATE_HALF_OPENING } from './puzzle.js';
+import { panelPosition, GATE_Z, GATE_HALF_OPENING, POWER_PANEL } from './puzzle.js';
 import { GARAGE_HEIGHT } from './garageLayout.js';
 import { SECURITY_KEY_READER,gateLiftRatio } from './exitAuthorization.js';
 
@@ -66,6 +66,23 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
       <pointLight position={[0,1.62,.65]} intensity={powered?1.4:1.1} color={powered?'#55bb8e':second?'#d82a72':'#cb4640'} distance={8}/>
     </group>
 
+    </group>}
+    {/* The second loop still has a physical cabinet at the old breaker
+         coordinates, but its circuits are burnt out and it cannot be used.
+         This mirrors shared terrain collision and avoids invisible blockers. */}
+    {second&&<group position={[POWER_PANEL[0],0,POWER_PANEL[1]]}>
+      <mesh position={[0,.98,0]}>
+        <boxGeometry args={[2.14,1.96,1.42]}/>
+        <meshStandardMaterial color="#343b3b" roughness={.95} metalness={.23}/>
+      </mesh>
+      <mesh position={[0,1.26,.73]}>
+        <boxGeometry args={[1.39,.60,.02]}/>
+        <meshStandardMaterial color="#1a2023" roughness={.94}/>
+      </mesh>
+      <mesh position={[.44,1.36,.745]}>
+        <boxGeometry args={[.22,.09,.012]}/>
+        <meshBasicMaterial color="#494441"/>
+      </mesh>
     </group>}
     {/* A physical keyed interlock mounted BEFORE the second-loop shutter.
          Player reaches it from the front side (z > GATE_Z); neither the
