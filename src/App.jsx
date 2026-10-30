@@ -440,6 +440,7 @@ export default function App(){
     if(floorRef.current===1){
       floorRef.current=2; // Guard against repeated transitions during the same frame.
       soundRef.current?.updateCreature?.({active:false});
+      soundRef.current?.loopTransition?.();
       noiseLog.current=[];
       setFloor(2);
       setFloorSignal(v=>v+1);
