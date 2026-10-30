@@ -32,3 +32,10 @@ test('navigation gracefully handles null and targets inside parked cars',()=>{
  assert.ok(path.length>0);
  assert.equal(terrainBlocked(path.at(-1).x,path.at(-1).z,false),false);
 });
+test('keyed maintenance door gives player and Listener the same shorter route',()=>{
+ const from={x:10,z:-2},to={x:17,z:-2};
+ const locked=buildRoute(from,to,false,false);
+ const unlocked=buildRoute(from,to,false,true);
+ assert.ok(locked.length>unlocked.length);
+ assert.ok(unlocked.length>0);
+});

@@ -42,7 +42,7 @@ test('first-floor death re-locks shutter, but loop-two timing system stays intac
  assert.equal(shouldRelockBreakerOnRespawn(1),true);
  assert.equal(gatePowerAfterRespawn(1,true),false);
  assert.equal(gatePowerAfterRespawn(1,false),false);
- assert.equal(gateBlocksPlayer(0,-38,gatePowerAfterRespawn(1,true)),true);
+ assert.equal(gateBlocksPlayer(0,-32,gatePowerAfterRespawn(1,true)),true);
  assert.equal(gatePowerAfterRespawn(2,true),true);
  assert.equal(gatePassable(freshGateAuthentication()),false);
  assert.match(app,/setPowered\(old=>gatePowerAfterRespawn\(floorRef\.current,old\)\)/);
@@ -52,7 +52,7 @@ test('first-floor death re-locks shutter, but loop-two timing system stays intac
 
 test('death sound removes all tonal glissando and the Observer mosquito drone',()=>{
  const start=sound.indexOf('  function death() {');
- const end=sound.indexOf('\n  return {\n    step',start);
+ const end=sound.search(/\r?\n  return \{\r?\n    step/);
  assert.ok(start>=0&&end>start);
  const death=sound.slice(start,end);
  assert.doesNotMatch(death,/createOscillator|scream\.frequency|thud\.frequency/);

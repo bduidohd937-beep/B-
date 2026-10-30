@@ -358,7 +358,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       const beforeX=camera.position.x,beforeZ=camera.position.z;
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
       const move=sweepMove(beforeX,beforeZ,movement.x,movement.z,
-        PLAYER_COLLISION_RADIUS,poweredRef.current);
+        PLAYER_COLLISION_RADIUS,poweredRef.current,
+        floorRef.current===2||Boolean(stageOneRef.current?.key));
       camera.position.x=move.x;camera.position.z=move.z;
       movedDistance=move.moved;
     }
@@ -516,7 +517,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
     {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={floor===2?gatePassableForActor(gateAuth,3.2):powered} onCaught={onCaught} onState={onObserverState} onSpatial={onSpatialObserver}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
-    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={gatePassableForActor(gateAuth,4.25)} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={gatePassableForActor(gateAuth,4.25)} shortcutOpen={floor===2||stageOne.key} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <ThrowGuide aimRef={throwAimRef}/>
     <PerformanceSampler enabled={perfVisible} onSample={onPerformance}/>

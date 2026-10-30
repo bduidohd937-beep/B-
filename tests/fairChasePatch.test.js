@@ -15,9 +15,9 @@ test('all three 3D actors share radius sweep, and Listener navigation uses its a
  const nav=read('navigationGrid.js');
  assert.match(app,/sweepMove\(beforeX,beforeZ,movement\.x,movement\.z/);
  assert.match(app,/PLAYER_COLLISION_RADIUS,poweredRef\.current/);
- assert.match(listener,/sweepMove\(pos\.x,pos\.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered\)/);
+ assert.match(listener,/sweepMove\(pos\.x,pos\.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered,shortcutOpen\)/);
  assert.match(observer,/sweepMove\(pos\.x,pos\.z,sx,sz,OBSERVER_COLLISION_RADIUS,powered\)/);
- assert.match(nav,/terrainBlockedRadius\(x,z,LISTENER_COLLISION_RADIUS,key\)/);
+ assert.match(nav,/terrainBlockedRadius\(x,z,LISTENER_COLLISION_RADIUS,/);
  assert.ok(PLAYER_COLLISION_RADIUS<LISTENER_COLLISION_RADIUS);
 });
 test('physical navigation grid cannot route monster through closed shutter',()=>{

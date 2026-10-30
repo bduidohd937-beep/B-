@@ -9,10 +9,10 @@ import {
 test('loop two has a distinct panel mirrored to the right wall',()=>{
   assert.deepEqual(panelPosition(1),POWER_PANEL);
   assert.deepEqual(panelPosition(2),ECHO_PANEL);
-  assert.equal(canUsePanel(-16,-25,1),true);
+  assert.equal(canUsePanel(17,-22,1),true);
   assert.equal(canUsePanel(16,-25,1),false);
   assert.equal(canUsePanel(16,-25,2),true);
-  assert.equal(canUsePanel(-16,-25,2),false);
+  assert.equal(canUsePanel(17,-22,2),false);
 });
 
 test('the B2 loop returns to the original starting location',()=>{
@@ -28,22 +28,22 @@ test('power for each level remains scoped to that level',()=>{
 });
 
 test('stage two gate is physically closed until second switch is used',()=>{
-  assert.equal(gateBlocksPlayer(0,-38,gateIsPowered(2,true,false)),true);
-  assert.equal(gateBlocksPlayer(0,-38,gateIsPowered(2,true,true)),false);
-  assert.equal(gateBlocksPlayer(14,-38,gateIsPowered(2,true,true)),true);
+  assert.equal(gateBlocksPlayer(0,-32,gateIsPowered(2,true,false)),true);
+  assert.equal(gateBlocksPlayer(0,-32,gateIsPowered(2,true,true)),false);
+  assert.equal(gateBlocksPlayer(14,-32,gateIsPowered(2,true,true)),true);
 });
 
 test('passing first gate triggers second level only when open',()=>{
-  assert.equal(canEnterNextArea(0,-43.5,1,false),false);
-  assert.equal(canEnterNextArea(0,-43.5,1,true),true);
-  assert.equal(canEnterNextArea(0,-42.8,1,true),false);
-  assert.equal(canEnterNextArea(5,-43.5,1,true),false);
+  assert.equal(canEnterNextArea(0,-37.5,1,false),false);
+  assert.equal(canEnterNextArea(0,-37.5,1,true),true);
+  assert.equal(canEnterNextArea(0,-36.8,1,true),false);
+  assert.equal(canEnterNextArea(5,-37.5,1,true),false);
 });
 
 test('level two needs its own gate open before the final reveal',()=>{
-  assert.equal(canEnterNextArea(0,-43.5,2,false),false);
-  assert.equal(canEnterNextArea(0,-43.5,2,true),true);
-  assert.equal(canEnterNextArea(0,-43.5,3,true),false);
+  assert.equal(canEnterNextArea(0,-37.5,2,false),false);
+  assert.equal(canEnterNextArea(0,-37.5,2,true),true);
+  assert.equal(canEnterNextArea(0,-37.5,3,true),false);
 });
 
 test('goal text changes visibly upon repeating B2',()=>{
@@ -56,7 +56,7 @@ test('goal text changes visibly upon repeating B2',()=>{
 });
 
 test('existing first B2 interface remains backwards compatible',()=>{
-  assert.equal(canUsePanel(-16,-25),true);
+  assert.equal(canUsePanel(17,-22),true);
   assert.equal(gateIsPowered(1,true,true),true);
   assert.match(objectiveText(false),/전력 차단/);
 });

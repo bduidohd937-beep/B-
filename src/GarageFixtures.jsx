@@ -5,17 +5,17 @@ import {GARAGE_HEIGHT} from './garageLayout.js';
 // The V0.12.3 fixture/paint implementation allocated 100+ meshes with
 // individual materials and geometries. The same coordinates are now batched
 // into reusable instanced draws without removing the atmospheric details.
-const TUBES=Object.freeze([-62,-46,-30,-14,2,18,34,50,66].flatMap(
- z=>[-37,-19,0,19,37].map(x=>[x,z])
+const TUBES=Object.freeze([-27,-18,-9,0,9,18].flatMap(
+ z=>[-17,-8,1,10,18].map(x=>[x,z])
 ));
 const BRIGHT=TUBES.filter((_,i)=>i%11!==0);
 const DEAD=TUBES.filter((_,i)=>i%11===0);
 const DIFFUSERS=TUBES.filter((_,i)=>i%7===0);
-const CENTER_LINES=Object.freeze(Array.from({length:36},(_,i)=>[
- i%2===0?-19:19,-66+i*3.8
+const CENTER_LINES=Object.freeze(Array.from({length:20},(_,i)=>[
+ i%2===0?-4:4,-29+i*2.6
 ]));
-const BAYS=Object.freeze([-56,-40,-24,-8,8,24,40,56,72].flatMap((z,i)=>
- [-15,15,-47,47].map((x,j)=>({x,z:z+(i%2)*2,kind:j%2===0?'white':'yellow'}))
+const BAYS=Object.freeze([-19,-7,5].flatMap((z,i)=>
+ [-8,0,8].map((x,j)=>({x,z:z+(i%2),kind:j%2===0?'white':'yellow'}))
 ));
 const WHITE_BAYS=BAYS.filter(v=>v.kind==='white');
 const YELLOW_BAYS=BAYS.filter(v=>v.kind==='yellow');

@@ -7,7 +7,7 @@ import {
 
 test('panel requires player to be physically near', () => {
   assert.equal(canUsePanel(POWER_PANEL[0], POWER_PANEL[1]), true);
-  assert.equal(canUsePanel(-16, -23.5), true);
+  assert.equal(canUsePanel(17, -20.5), true);
   assert.equal(canUsePanel(0, 17), false);
   assert.equal(canUsePanel(0, -38), false);
 });

@@ -20,8 +20,8 @@ export default function EscapePuzzle({ powered, panelPowered=powered, floor=1,ha
     shutter.current.position.y = openHeight.current;
   });
 
-  const sideWidth = 64 - GATE_HALF_OPENING;
-  const sideCenter = (64 + GATE_HALF_OPENING) / 2;
+  const sideWidth = 22 - GATE_HALF_OPENING;
+  const sideCenter = (22 + GATE_HALF_OPENING) / 2;
   return <group>
     {/* Near end of parking level: fixed concrete partitions and powered shutter. */}
     {[-1, 1].map(side => <mesh key={side} position={[side * sideCenter, GARAGE_HEIGHT/2, GATE_Z]}>
@@ -112,15 +112,15 @@ export default function EscapePuzzle({ powered, panelPowered=powered, floor=1,ha
         color={powered?'#5de4b2':authentication?.phase==='opening'?'#f1ab68':'#d65e62'} decay={2}/>
     </group>
     {/* The impossible corridor: a short visual teaser beyond the barrier. */}
-    {[-3.6,3.6].map(x=><mesh key={x} position={[x,GARAGE_HEIGHT/2,-43]}>
+    {[-3.6,3.6].map(x=><mesh key={x} position={[x,GARAGE_HEIGHT/2,GATE_Z-5]}>
       <boxGeometry args={[.20,GARAGE_HEIGHT+.1,11]}/>
       <meshStandardMaterial color="#343c40"/>
     </mesh>)}
-    <mesh position={[0,GARAGE_HEIGHT-.07,-43]}>
+    <mesh position={[0,GARAGE_HEIGHT-.07,GATE_Z-5]}>
       <boxGeometry args={[7.2,.18,11]}/>
       <meshStandardMaterial color="#364046"/>
     </mesh>
-    <mesh position={[0,GARAGE_HEIGHT-.28,-44]}>
+    <mesh position={[0,GARAGE_HEIGHT-.28,GATE_Z-6]}>
       <boxGeometry args={[.8,.07,1.7]}/>
       <meshBasicMaterial color="#869f93" toneMapped={false}/>
     </mesh>

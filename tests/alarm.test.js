@@ -9,7 +9,7 @@ test('first unpowered hold triggers the siren even when lubricated',()=>{
  assert.equal(canTriggerSiren({alreadyTriggered:true}),false);
 });
 test('alarm is tied to breaker position, not player position',()=>{
- assert.deepEqual(sirenPosition(1),[-16,1.7,-25]);
+ assert.deepEqual(sirenPosition(1),[17,1.7,-22]);
  assert.deepEqual(sirenPosition(2),[16,1.7,-25]);
 });
 test('loud alarm travels widely and triggers genuinely rapid Listener rush',()=>{

@@ -3,7 +3,7 @@ import {gatePassable} from './exitAuthorization.js';
 
 // Entirely fictional CCTV footage and parked vehicles, deterministic across
 // respawns so clues can be learned rather than brute-forced by random spawns.
-export const CCTV_STATION=Object.freeze([-18,1.6,11]);
+export const CCTV_STATION=Object.freeze([-14,1.6,12]);
 export const CAMERA_LOG=Object.freeze({
  camera:'B2 / CAM-C',
  time:'03:17:17',
@@ -14,20 +14,20 @@ export const CAMERA_LOG=Object.freeze({
 export const VEHICLES=Object.freeze([
  Object.freeze({
   id:'c17',plate:'317',color:'slate',correct:true,
-  position:Object.freeze([-34,-16]),
-  inspect:Object.freeze([-34,1.22,-12.7]),
+  position:Object.freeze([-8,-6]),
+  inspect:Object.freeze([-8,1.22,-2.7]),
   bay:'C-17'
  }),
  Object.freeze({
   id:'c13',plate:'371',color:'charcoal',correct:false,
-  position:Object.freeze([-34,3]),
-  inspect:Object.freeze([-34,1.22,6.3]),
+  position:Object.freeze([0,-6]),
+  inspect:Object.freeze([0,1.22,-2.7]),
   bay:'C-13'
  }),
  Object.freeze({
   id:'d09',plate:'713',color:'silver',correct:false,
-  position:Object.freeze([34,-12]),
-  inspect:Object.freeze([34,1.22,-8.7]),
+  position:Object.freeze([8,-6]),
+  inspect:Object.freeze([8,1.22,-2.7]),
   bay:'D-09'
  })
 ]);
