@@ -15,6 +15,8 @@ import Listener from './Listener.jsx';
 import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
 import ThrownCan from './ThrownCan.jsx';
+import ThrowGuide from './ThrowGuide.jsx';
+import {isThrowable,planThrow} from './throwRules.js';
 import SurvivalHUD from './SurvivalHUD.jsx';
 import GameClock from './GameClock.jsx';
 import { inventoryControls } from './uiRules.js';
@@ -61,9 +63,10 @@ function Flashlight({enabled,charge=100,reducedEffects=false}){
     decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef }) {
   const { camera } = useThree();
   const keys = useRef({});
+  const aimClock=useRef(0);
   const groundPickupsRef=useRef(pickupItems);
   groundPickupsRef.current=pickupItems;
   const selectedTypeRef=useRef(selectedType);
@@ -200,31 +203,20 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       }
       if(e.code==='KeyG'&&!e.repeat){
         const type=selectedTypeRef.current;
-        const look=new THREE.Vector3();
-        camera.getWorldDirection(look);
-        const flat=new THREE.Vector3(look.x,0,look.z);
-        if(flat.lengthSq()<.001)flat.set(0,0,-1);
-        flat.normalize();
-        let range=clamp(8-look.y*4,4,11);
-        let endX,endZ;
-        while(range>2.5){
-          endX=clamp(camera.position.x+flat.x*range,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
-          endZ=clamp(camera.position.z+flat.z*range,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
-          const obstacle=terrainBlocked(endX,endZ,poweredRef.current);
-          if(!obstacle)break;
-          range-=.5;
+        if(type&&isThrowable(type)){
+          // Aim with G; physically release the key to throw.
+          aimClock.current=performance.now();
+          keys.current.KeyG=true;
+          e.preventDefault();
+          return;
         }
-        const end=[endX,.18,endZ];
-        const origin=camera.position.clone().addScaledVector(look,.6);
-        if(type==='can'&&canRef.current){
-          canRef.current=false;
-          onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
-        }else if(type){
+        if(type){
           onUseGear(type,{
-            position:camera.position.toArray(),end,
-            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current),
-            nearPanel:canUsePanel(camera.position.x,camera.position.z,floorRef.current),
-            powered:poweredRef.current
+            position:camera.position.toArray(),
+            nearPanel:floorRef.current===1&&
+              canUsePanel(camera.position.x,camera.position.z,1),
+            powered:poweredRef.current,
+            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current)
           });
         }
       }
@@ -242,12 +234,43 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       keys.current[e.code]=true;
       if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
     };
-    const up=e=>{keys.current[e.code]=false;};
+    const up=e=>{
+      if(e.code==='KeyG'&&aimClock.current>0){
+        const heldMs=performance.now()-aimClock.current;
+        aimClock.current=0;
+        throwAimRef.current=null;
+        const type=selectedTypeRef.current;
+        if(activeRef.current&&isThrowable(type)&&(type!=='can'||canRef.current)){
+          const look=new THREE.Vector3();
+          camera.getWorldDirection(look);
+          const launch=planThrow(camera.position.toArray(),look.toArray(),{
+            powered:poweredRef.current,
+            short:type!=='can'&&heldMs<260
+          });
+          if(launch){
+            if(type==='can'){
+              canRef.current=false;
+              onThrowCan({start:launch.start,end:launch.end});
+            }else{
+              onUseGear(type,{
+                position:camera.position.toArray(),
+                start:launch.start,end:launch.end,
+                crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current),
+                nearPanel:false,powered:poweredRef.current
+              });
+            }
+          }
+        }
+      }
+      keys.current[e.code]=false;
+    };
     window.addEventListener('keydown',down);window.addEventListener('keyup',up);
     return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);};
   },[camera]);
   useFrame((_,delta)=>{
     if(!active){
+      throwAimRef.current=null;
+      aimClock.current=0;
       lastActive.current=false;
       stepMeter.current.moving=false;
       if(panelHeld.current){panelHeld.current=false;panelTime.current=0;onPanelProgress(0);}
@@ -255,6 +278,13 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     }
     if(!lastActive.current){keys.current={};jumpQueued.current=false;lastActive.current=true;}
     camera.getWorldDirection(direction);
+    if(keys.current.KeyG&&isThrowable(selectedTypeRef.current)){
+      const plan=planThrow(camera.position.toArray(),direction.toArray(),
+        {powered:poweredRef.current});
+      throwAimRef.current=plan?{active:true,plan}:null;
+    }else{
+      throwAimRef.current=null;
+    }
     forward.set(direction.x,0,direction.z).normalize();
     right.crossVectors(forward,camera.up).normalize();
     movement.set(0,0,0);
