@@ -1,3 +1,4 @@
+import { GATE_Z,GATE_HALF_OPENING } from './puzzle.js';
 // Observer is distinct from the Listener: it reacts to visible movement,
 // never to sound. Stopping and hiding behind solid obstacles both defeat sight.
 export const OBSERVER_VIEW_DISTANCE=24;
@@ -12,7 +13,16 @@ export function motionExposure({distance,dot,speed,blocked=false,crouched=false}
   const motion=speed>4?2.05:speed>2?1.18:.77;
   return (crouched?.48:1)*motion*close;
 }
-export function sightBlocked(from,to,pillars,cars){
+export function sightBlocked(from,to,pillars,cars,gatePowered=false){
+  // Closed security divider blocks sight as well as movement.
+  const dz=to.z-from.z;
+  if(Math.abs(dz)>1e-8){
+    const cross=(GATE_Z-from.z)/dz;
+    if(cross>.025&&cross<.975){
+      const crossX=from.x+(to.x-from.x)*cross;
+      if(!gatePowered||Math.abs(crossX)>=GATE_HALF_OPENING)return true;
+    }
+  }
   const boxes=[...pillars.map(([x,z])=>[x,z,.87,.87]),...cars.map(([x,z])=>[x,z,1.5,2.5])];
   const dx=to.x-from.x,dz=to.z-from.z;
   return boxes.some(([x,z,halfX,halfZ])=>{
