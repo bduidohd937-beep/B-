@@ -3,6 +3,11 @@ import { useFrame } from '@react-three/fiber';
 import { gadgetTiming } from './items.js';
 
 function Shape({type,activated=false}){
+  if(type==='battery')return <group>
+    <mesh position={[0,.15,0]}><boxGeometry args={[.42,.27,.22]}/><meshStandardMaterial color="#252c31" roughness={.82}/></mesh>
+    <mesh position={[0,.19,.115]}><boxGeometry args={[.34,.13,.012]}/><meshStandardMaterial color="#b59b53" roughness={.78}/></mesh>
+    <mesh position={[.13,.28,0]}><boxGeometry args={[.085,.055,.08]}/><meshStandardMaterial color="#a2aca7" metalness={.58}/></mesh>
+  </group>;
   if(type==='alarm')return <group>
     <mesh position={[0,.19,0]}><boxGeometry args={[.52,.38,.20]}/><meshStandardMaterial color="#a8a99d" metalness={.65} roughness={.42}/></mesh>
     <mesh position={[0,.19,.108]}><circleGeometry args={[.16,12]}/><meshStandardMaterial color="#e5e2cb" emissive="#796b48" emissiveIntensity={.25}/></mesh>
