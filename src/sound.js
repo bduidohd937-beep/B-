@@ -125,8 +125,82 @@ export function createSoundEngine() {
     tone(440, .26, .24);
   }
 
+  function death() {
+    // Synthetic short gasp/scream, blunt fall, wet scrape and muffled crunch.
+    // No recorded person, licensed assets or visual gore textures.
+    creatureAudio.update({active:false});
+    if(!enabled || ctx.state==='closed')return;
+    const start=ctx.currentTime;
+
+    const scream=ctx.createOscillator();
+    const throat=ctx.createBiquadFilter();
+    const vocal=ctx.createGain();
+    scream.type='sawtooth';
+    scream.frequency.setValueAtTime(345,start);
+    scream.frequency.exponentialRampToValueAtTime(630,start+.21);
+    scream.frequency.exponentialRampToValueAtTime(145,start+.8);
+    throat.type='bandpass';
+    throat.frequency.value=900;
+    throat.Q.value=.55;
+    vocal.gain.setValueAtTime(.0001,start);
+    vocal.gain.exponentialRampToValueAtTime(.19,start+.12);
+    vocal.gain.exponentialRampToValueAtTime(.26,start+.29);
+    vocal.gain.exponentialRampToValueAtTime(.0001,start+.91);
+    scream.connect(throat);
+    throat.connect(vocal);
+    vocal.connect(master);
+    scream.start(start);
+    scream.stop(start+.94);
+    scream.onended=()=>{scream.disconnect();throat.disconnect();vocal.disconnect();};
+
+    const shriek=ctx.createBufferSource();
+    shriek.buffer=noiseBuffer;
+    const airy=ctx.createBiquadFilter();
+    airy.type='bandpass';
+    airy.frequency.value=1580;
+    airy.Q.value=.4;
+    const breath=ctx.createGain();
+    breath.gain.setValueAtTime(.0001,start);
+    breath.gain.exponentialRampToValueAtTime(.29,start+.1);
+    breath.gain.exponentialRampToValueAtTime(.0001,start+.74);
+    shriek.connect(airy);airy.connect(breath);breath.connect(master);
+    shriek.start(start,Math.random()*.1);
+    shriek.stop(start+.76);
+    shriek.onended=()=>{shriek.disconnect();airy.disconnect();breath.disconnect();};
+
+    function impact(delay,low,volume,length){
+      const at=start+delay;
+      const noiseSource=ctx.createBufferSource();
+      noiseSource.buffer=noiseBuffer;
+      const filter=ctx.createBiquadFilter();
+      filter.type='lowpass';filter.frequency.value=low;
+      const gain=ctx.createGain();
+      gain.gain.setValueAtTime(.0001,at);
+      gain.gain.exponentialRampToValueAtTime(volume,at+.009);
+      gain.gain.exponentialRampToValueAtTime(.0001,at+length);
+      noiseSource.connect(filter);filter.connect(gain);gain.connect(master);
+      noiseSource.start(at,Math.random()*.45);
+      noiseSource.stop(at+length+.01);
+      noiseSource.onended=()=>{noiseSource.disconnect();filter.disconnect();gain.disconnect();};
+    }
+    impact(.28,340,.67,.28);
+    impact(.83,740,.37,.22);
+    impact(1.18,280,.24,.25);
+    const thud=ctx.createOscillator();
+    const lowGain=ctx.createGain();
+    thud.type='triangle';
+    thud.frequency.setValueAtTime(100,start+.28);
+    thud.frequency.exponentialRampToValueAtTime(43,start+.61);
+    lowGain.gain.setValueAtTime(.0001,start+.28);
+    lowGain.gain.exponentialRampToValueAtTime(.62,start+.3);
+    lowGain.gain.exponentialRampToValueAtTime(.0001,start+.68);
+    thud.connect(lowGain);lowGain.connect(master);
+    thud.start(start+.28);thud.stop(start+.69);
+    thud.onended=()=>{thud.disconnect();lowGain.disconnect();};
+  }
+
   return {
-    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore,
+    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, death,
     updateCreature: creatureAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();
