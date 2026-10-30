@@ -19,7 +19,8 @@ import { SIREN_LOUDNESS,SIREN_SECONDS,canTriggerSiren,sirenPosition } from './al
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
-import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect,gearMakesNoise } from './items.js';
+import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
+import { itemActionNoise,mechanicalNoise,nearestLookedAtPickup } from './interactions.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -127,18 +128,18 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       if(e.code==='Space'&&!e.repeat)jumpQueued.current=true;
       if(/^Digit[123]$/.test(e.code)&&!e.repeat)onSelectSlot(Number(e.code.slice(-1))-1);
       if(e.code==='KeyE'&&!e.repeat && !canUsePanel(camera.position.x,camera.position.z,floorRef.current)){
-        const ground=groundCanRef.current;
-        if(!canRef.current&&ground&&Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
-          if(onPickCan()){
-            canRef.current=true;
-            groundCanRef.current=null;
-          }
-        } else {
-          const candidate=groundPickupsRef.current
-            .filter(item=>pickupRadius([camera.position.x,0,camera.position.z],item.position))
-            .sort((a,b)=>Math.hypot(camera.position.x-a.position[0],camera.position.z-a.position[2])
-              -Math.hypot(camera.position.x-b.position[0],camera.position.z-b.position[2]))[0];
-          if(candidate)onPickupGear(candidate.id);
+        const look=new THREE.Vector3();
+        camera.getWorldDirection(look);
+        const focused=nearestLookedAtPickup(
+          camera.position.toArray(),look.toArray(),groundPickupsRef.current,
+          canRef.current?null:groundCanRef.current
+        );
+        const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
+        const context={position:camera.position.toArray(),crouching};
+        if(focused?.kind==='can'){
+          if(onPickCan(context)){canRef.current=true;groundCanRef.current=null;}
+        }else if(focused?.kind==='item'){
+          onPickupGear(focused.id,context);
         }
       }
       if(e.code==='KeyG'&&!e.repeat){
@@ -164,8 +165,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
           onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
         }else if(type){
           onUseGear(type,{
-            position:camera.position.toArray(),
-            end,
+            position:camera.position.toArray(),end,
+            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current),
             nearPanel:canUsePanel(camera.position.x,camera.position.z,floorRef.current),
             powered:poweredRef.current
           });
@@ -177,7 +178,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
           const look=new THREE.Vector3();camera.getWorldDirection(look);
           const xx=clamp(camera.position.x+look.x*.8,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
           const zz=clamp(camera.position.z+look.z*.8,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
-          onDropGear(type,[xx,.24,zz]);
+          onDropGear(type,[xx,.24,zz],{
+            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current)
+          });
         }
       }
       keys.current[e.code]=true;
@@ -252,12 +255,12 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=canUsePanel(camera.position.x,camera.position.z,floorRef.current);
-    const canClose=groundCanRef.current&&
-      Math.hypot(camera.position.x-groundCanRef.current[0],camera.position.z-groundCanRef.current[2])<2.5;
-    const closeItem=groundPickupsRef.current.find(it=>pickupRadius(
-      [camera.position.x,0,camera.position.z],it.position));
+    const focused=nearestLookedAtPickup(
+      camera.position.toArray(),direction.toArray(),groundPickupsRef.current,
+      canRef.current?null:groundCanRef.current
+    );
     const nextProximity=nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':
-      canClose?'can':closeItem?'item:'+closeItem.type:null;
+      focused?.kind==='can'?'can':focused?.kind==='item'?'item:'+focused.type:null;
     if(nextProximity!==proximityReported.current){
       proximityReported.current=nextProximity;
       onPuzzleProximity(nextProximity);
