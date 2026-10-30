@@ -40,3 +40,33 @@
 .puzzle-goal__track>div{height:100%;background:#d5b27e;transition:width 80ms linear}
 @media(max-width:760px){.puzzle-goal{left:12px;top:125px;width:210px;padding:9px 10px;font-size:11px}.puzzle-goal__label{font-size:9px}.noise-hud{width:165px;top:110px}}
 @media(max-width:410px){.puzzle-goal{top:345px;left:12px;width:calc(100% - 24px);max-width:none}.noise-hud{top:112px;right:12px;width:185px}}
+
+/* Capture cinematic: brief red flood, shaky collapse, dark checkpoint transition. */
+.death-fx{position:fixed;inset:0;z-index:9;pointer-events:none;overflow:hidden}
+.death-fx__blood,.death-fx__blackout{position:absolute;inset:0;pointer-events:none;opacity:0}
+.death-fx__blood{
+  background:
+    radial-gradient(ellipse at 46% 66%, transparent 9%, #7e0e1699 38%, #420006ed 88%),
+    radial-gradient(ellipse at 15% 22%, #b52c2870, transparent 46%),
+    radial-gradient(ellipse at 82% 12%, #7f131699, transparent 50%);
+  filter:contrast(1.2);
+}
+.death-fx--dying .death-fx__blood{animation:death-blood-rush 1.55s ease-out both}
+.death-fx__blackout{background:#020304}
+.death-fx--dying .death-fx__blackout{animation:death-blackout 1.55s ease-in both}
+.death-fx--dead .death-fx__blackout{opacity:1}
+@keyframes death-blood-rush{
+  0%{opacity:0;transform:scale(1.22) rotate(-4deg)}
+  23%{opacity:.92;transform:scale(1.09) rotate(1deg)}
+  60%{opacity:1;transform:scale(1.02) rotate(-2deg)}
+  100%{opacity:.9;transform:scale(1)}
+}
+@keyframes death-blackout{
+  0%,48%{opacity:0}
+  68%{opacity:.25}
+  100%{opacity:1}
+}
+@media(prefers-reduced-motion:reduce){
+  .death-fx--dying .death-fx__blood{animation:none;opacity:.8}
+  .death-fx--dying .death-fx__blackout{animation:death-blackout 1.55s ease-in both}
+}

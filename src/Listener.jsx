@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { gateBlocksPlayer } from './puzzle.js';
+import { crouchReaction } from './stealth.js';
 
 const BASE = new THREE.Vector3(-13, 0, -25);
 const PILLARS = Array.from({length:6},(_,i)=>-28+i*9).flatMap(z=>[-10,10].map(x=>[x,z]));
@@ -105,14 +106,17 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     for(const event of recent){
       if(!['step','jump','land','throw','horn','switch','power'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
-      const hearingRadius=event.type==='horn'?44:Math.max(1.4,event.loudness*.28);
-      // A pillar/car blocks the direct path but only attenuates the sound.
-      if(dist(pos,point)<=hearingRadius){
-        target.current.copy(point);
-        state.current='investigate';
+      const softStep=event.type==='step' && event.mode==='crouch';
+      const distanceToSound=dist(pos,point);
+      const reaction=softStep ? crouchReaction(distanceToSound, excitement.current, event.loudness)
+        : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
+      if(reaction!=='none'){
+        target.current.copy(point); // Only sound-event position, never player tracking.
+        state.current=reaction==='listen'?'listen':'investigate';
         searchTime.current=0;
-        routeTime.current=0; // Recalculate route to the latest heard position.
-        excitement.current=Math.min(100,Math.max(excitement.current,event.loudness || 0));
+        routeTime.current=0;
+        excitement.current=Math.min(100,Math.max(excitement.current,
+          reaction==='listen'?Math.min(25,12+(event.loudness||8)):event.loudness || 0));
         heardSomething=true;
       }
     }
@@ -157,6 +161,12 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
       searchTime.current+=dt;
       group.current.rotation.y+=dt*.6;
       if(searchTime.current>4.5){state.current='return';}
+    }
+    if(state.current==='listen'){
+      // Hearing a whisper nearby makes the creature turn, but not sprint.
+      // Standing still or moving away quietly can still save the player.
+      searchTime.current+=dt;
+      if(searchTime.current>1.6){state.current='return';}
     }
     const player=playerRef.current;
     if(player&&cooldown.current===0&&dist(pos,player)<1.28){
