@@ -3,6 +3,9 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import StageOneWorld from './StageOneWorld.jsx';
+import {freshStageOne,findStageOneInteraction,applyStageOneAction,
+  stageOneObjective,stageOneGateReady,stageOneGateOpen} from './stageOneRules.js';
 import {gatePowerAfterRespawn} from './respawnRules.js';
 import {
  canReadCctv,canUseKeyReader,canStartKeyReader,canHoldKeyReader,freshGateAuthentication,
@@ -66,7 +69,7 @@ function Flashlight({enabled,charge=100,reducedEffects=false}){
     decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,onStageOneAction,stageOne,firstPower,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
   const { camera } = useThree();
   const keys = useRef({});
   const aimClock=useRef(0);
@@ -114,6 +117,12 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   floorRef.current=floor;
   // Keydown is bound once. Keep puzzle callbacks and flags live across stages.
   const vehicleActionRef=useRef(onVehicleAction);
+  const stageOneActionRef=useRef(onStageOneAction);
+  stageOneActionRef.current=onStageOneAction;
+  const stageOneRef=useRef(stageOne);
+  stageOneRef.current=stageOne;
+  const firstPowerRef=useRef(firstPower);
+  firstPowerRef.current=firstPower;
   vehicleActionRef.current=onVehicleAction;
   const vehicleSolvedRef=useRef(vehicleSolved);
   vehicleSolvedRef.current=vehicleSolved;
@@ -183,15 +192,18 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         const eye=camera.position.toArray(),looking=look.toArray();
         const nearBreaker=floorRef.current===1&&
           canOperatePanel(eye,looking,1);
-        const nearKeyReader=floorRef.current===2&&
+        const nearKeyReader=(floorRef.current===1||floorRef.current===2)&&
           canStartKeyReader(eye,looking);
         const mystery=floorRef.current===2
           ?findMysteryInteraction(eye,looking,{floor:2,solved:vehicleSolvedRef.current})
           :null;
+        const firstMystery=floorRef.current===1?findStageOneInteraction(eye,looking):null;
         if(nearKeyReader){
           // Hold E; the authentication state machine operates in useFrame.
         }else if(mystery){
           vehicleActionRef.current?.(mystery,eye);
+        }else if(firstMystery){
+          stageOneActionRef.current?.(firstMystery.kind,eye);
         }else if(!nearBreaker){
           const focused=nearestLookedAtPickup(eye,looking,
             groundPickupsRef.current,canRef.current?null:groundCanRef.current);
@@ -356,7 +368,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       (panelHeld.current&&keys.current.KeyE
         ?canHoldPanel(camera.position.x,camera.position.z,1)
         :canOperatePanel(camera.position.toArray(),direction.toArray(),1));
-    const nearKeyReader=floorRef.current===2&&
+    const nearKeyReader=(floorRef.current===1||floorRef.current===2)&&
       (gateAuthRef.current.phase==='authenticating'&&keys.current.KeyE
         ?canHoldKeyReader(camera.position.x,camera.position.z)
         :canStartKeyReader(camera.position.toArray(),direction.toArray()));
@@ -371,6 +383,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       camera.position.toArray(),direction.toArray(),
       {floor:2,solved:vehicleSolvedRef.current}
     ):null;
+    const firstMystery=floorRef.current===1?findStageOneInteraction(
+      camera.position.toArray(),direction.toArray()):null;
     const focused=nearestLookedAtPickup(
       camera.position.toArray(),direction.toArray(),groundPickupsRef.current,
       canRef.current?null:groundCanRef.current
@@ -378,6 +392,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     const nextProximity=nearKeyReader?'key-reader':
       mystery?.kind==='cctv'?'cctv':
       mystery?.kind==='vehicle'?'vehicle:'+mystery.id:
+      firstMystery?'stage-one:'+firstMystery.kind:
       nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':
       focused?.kind==='can'?'can':focused?.kind==='item'?'item:'+focused.type:null;
     if(nextProximity!==proximityReported.current){
@@ -404,9 +419,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     // Keyed interlock runs during active gameplay only. Releasing E during
     // insertion cancels that attempt; once the siren starts the shutter
     // continues raising even after the player hides or flees.
-    if(floorRef.current===2){
+    if(floorRef.current===1||floorRef.current===2){
+      const hasPhysicalKey=floorRef.current===1?
+        stageOneGateReady(stageOneRef.current,firstPowerRef.current):vehicleSolvedRef.current;
       const {state,event}=advanceGateAuthentication(gateAuthRef.current,{
-        dt,active,hasKey:vehicleSolvedRef.current,near:nearKeyReader,
+        dt,active,hasKey:hasPhysicalKey,near:nearKeyReader,
         holding:Boolean(keys.current.KeyE)
       });
       gateAuthRef.current=state;
@@ -448,7 +465,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, onSpatialObserver, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, onSpatialObserver, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,onStageOneAction,stageOne,firstPower,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -467,11 +484,12 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <ambientLight intensity={floor===2?.245:.37} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}
       floor={floor} vehicleSolved={vehicleState.solved}/>
-    <VehicleMysteryWorld floor={floor} reviewed={vehicleState.reviewed}
+    <StageOneWorld floor={floor} state={stageOne}/>
+    <VehicleMysteryWorld floor={floor} reviewed={floor===1?stageOne.record:vehicleState.reviewed}
       alarmId={carAlarm?.id||null} reducedEffects={reducedEffects}/>
     <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
-    <EscapePuzzle key={floor} powered={powered} floor={floor} hasKey={vehicleState.solved} authentication={gateAuth}/>
+    <EscapePuzzle key={floor} powered={powered} panelPowered={floor===1?firstPower:powered} floor={floor} hasKey={floor===1?stageOne.key:vehicleState.solved} authentication={gateAuth}/>
     <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
     {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={floor===2?gatePassableForActor(gateAuth,3.2):powered} onCaught={onCaught} onState={onObserverState} onSpatial={onSpatialObserver}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
@@ -479,7 +497,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <ThrowGuide aimRef={throwAimRef}/>
     <PerformanceSampler enabled={perfVisible} onSample={onPerformance}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} onStageOneAction={onStageOneAction} stageOne={stageOne} firstPower={firstPower} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
