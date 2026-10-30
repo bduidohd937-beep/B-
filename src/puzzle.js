@@ -59,13 +59,8 @@ export function gateBlocksPlayer(x, z, powered) {
   return Math.abs(x) >= GATE_HALF_OPENING || !powered;
 }
 
-export function objectiveText(powered, floor = 1) {
-  if (floor === SECOND_FLOOR) {
-    return powered
-      ? '방송 복구 완료. 그러나 같은 B2가 반복된다. 열린 셔터 뒤를 확인하라.'
-      : 'B2층으로 돌아왔다. 오른쪽 벽의 비상방송 재설정 장치를 찾아라.';
-  }
-  return powered
-    ? '전력 복구. 중앙 비상문이 열렸다. 통로 끝으로 이동하라.'
-    : '비상문 전력 차단. 좌측 벽의 적색 비상 배전반을 찾아 전원을 복구하라.';
+export function objectiveText(powered,floor=1){
+  if(floor===SECOND_FLOOR)return powered
+    ?'출입 통제 해제.' : '보안 기록이 손상되었다.';
+  return powered?'전력 신호 복구.' : '비상 전력 차단.';
 }
