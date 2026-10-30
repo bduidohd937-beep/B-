@@ -7,6 +7,7 @@ import Listener from './Listener.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import NoiseHUD from './NoiseHUD.jsx';
 import EscapePuzzle from './EscapePuzzle.jsx';
+import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { POWER_PANEL, POWER_HOLD_SECONDS, canUsePanel, isNearGate, gateBlocksPlayer, objectiveText } from './puzzle.js';
 
 const pillars = [];
@@ -98,7 +99,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
   const crouchToggle = useRef(false);
   const vertical = useRef(0);
   const velocityY = useRef(0);
-  const stepClock = useRef(0);
+  const stepMeter = useRef({meters:0,elapsed:1,moving:false});
   const bobClock = useRef(0);
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
@@ -125,7 +126,8 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
   useEffect(()=>{
     if(respawnSignal===0)return;
     camera.position.set(0,1.7,checkpoint?8:17);
-    vertical.current=0;velocityY.current=0;stepClock.current=0;
+    vertical.current=0;velocityY.current=0;
+    stepMeter.current={meters:0,elapsed:1,moving:false};
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     onPanelProgress(0);
@@ -174,6 +176,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
   useFrame((_,delta)=>{
     if(!active){
       lastActive.current=false;
+      stepMeter.current.moving=false;
       if(panelHeld.current){panelHeld.current=false;panelTime.current=0;onPanelProgress(0);}
       return;
     }
@@ -201,13 +204,16 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
       lastMode.current=actualMovement;
       onMoveMode(actualMovement);
     }
+    let movedDistance=0;
     if(moving){
+      const beforeX=camera.position.x,beforeZ=camera.position.z;
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
       let nx=clamp(camera.position.x+movement.x,-18.5,18.5);
       let nz=clamp(camera.position.z+movement.z,-46,39);
       const blocked=(x,z)=>pillars.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15) || parkedCars.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7) || gateBlocksPlayer(x,z,poweredRef.current);
       if(!blocked(nx,camera.position.z))camera.position.x=nx;
       if(!blocked(camera.position.x,nz))camera.position.z=nz;
+      movedDistance=Math.hypot(camera.position.x-beforeX,camera.position.z-beforeZ);
     }
     if(vertical.current>0||velocityY.current>0){
       vertical.current=Math.max(0,vertical.current+velocityY.current*dt);
@@ -235,17 +241,20 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
     }else if(panelHeld.current){
       panelHeld.current=false;panelTime.current=0;onPanelProgress(0);
     }
+    const footstep=tickFootsteps(stepMeter.current,{
+      distance:movedDistance,
+      grounded:vertical.current===0&&velocityY.current===0,
+      mode,dt
+    });
+    stepMeter.current=footstep.state;
     if(moving&&vertical.current===0){
-      stepClock.current+=dt;
       bobClock.current+=dt*(sprinting?11:crouching?3.5:7);
-      const interval=sprinting?.3:crouching?.77:.49;
-      if(stepClock.current>=interval){
-        stepClock.current=0;
-        const surface=Math.abs(camera.position.x)<2.5&&camera.position.z>-8.5&&camera.position.z<-3.5?'metal':
-          Math.abs(camera.position.x-2)<2.5&&camera.position.z>-15.5&&camera.position.z<-12.5?'water':'concrete';
-        onNoise({type:'step',mode,surface,loudness:Math.min(100,(sprinting?90:crouching?8:35)*(surface==='metal'?1.5:surface==='water'?1.2:1)),position:camera.position.toArray()});
-      }
-    }else{stepClock.current=Math.min(stepClock.current,.15);}
+    }
+    if(footstep.steps){
+      const surface=Math.abs(camera.position.x)<2.5&&camera.position.z>-8.5&&camera.position.z<-3.5?'metal':
+        Math.abs(camera.position.x-2)<2.5&&camera.position.z>-15.5&&camera.position.z<-12.5?'water':'concrete';
+      onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
+    }
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
     playerRef.current={x:camera.position.x,z:camera.position.z};
     if(camera.position.z < -10)onNear();
