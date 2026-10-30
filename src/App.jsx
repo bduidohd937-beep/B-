@@ -87,9 +87,13 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal }) {
   const { camera } = useThree();
   const keys = useRef({});
+  const groundPickupsRef=useRef(pickupItems);
+  groundPickupsRef.current=pickupItems;
+  const selectedTypeRef=useRef(selectedType);
+  selectedTypeRef.current=selectedType;
   const turnedOnce=useRef(false);
   const crouchToggle = useRef(false);
   const vertical = useRef(0);
@@ -156,23 +160,38 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     onPanelProgress(0);
   },[floorSignal,camera,onPanelProgress,onVitals]);
   useEffect(()=>{
+    if(!boostSignal)return;
+    survival.current=applyEnergyDrink(survival.current);
+    onVitals({stamina:survival.current.stamina,exhausted:false,breath:0});
+  },[boostSignal,onVitals]);
+  useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
       if(!activeRef.current)return;
       if(e.code==='KeyC'&&!e.repeat)crouchToggle.current=!crouchToggle.current;
       if(e.code==='Space'&&!e.repeat)jumpQueued.current=true;
-      if(e.code==='KeyE'&&!e.repeat&&!canRef.current&&groundCanRef.current){
+      if(/^Digit[123]$/.test(e.code)&&!e.repeat)onSelectSlot(Number(e.code.slice(-1))-1);
+      if(e.code==='KeyE'&&!e.repeat && !canUsePanel(camera.position.x,camera.position.z,floorRef.current)){
         const ground=groundCanRef.current;
-        if(Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
-          canRef.current=true;
-          groundCanRef.current=null;
-          onPickCan();
+        if(!canRef.current&&ground&&Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
+          if(onPickCan()){
+            canRef.current=true;
+            groundCanRef.current=null;
+          }
+        } else {
+          const candidate=groundPickupsRef.current
+            .filter(item=>pickupRadius([camera.position.x,0,camera.position.z],item.position))
+            .sort((a,b)=>Math.hypot(camera.position.x-a.position[0],camera.position.z-a.position[2])
+              -Math.hypot(camera.position.x-b.position[0],camera.position.z-b.position[2]))[0];
+          if(candidate)onPickupGear(candidate.id);
         }
       }
-      if(e.code==='KeyG'&&!e.repeat&&canRef.current){
-        canRef.current=false;const look=new THREE.Vector3();camera.getWorldDirection(look);
-        const flat = new THREE.Vector3(look.x, 0, look.z);
-        if (flat.lengthSq()<.001) flat.set(0,0,-1);
+      if(e.code==='KeyG'&&!e.repeat){
+        const type=selectedTypeRef.current;
+        const look=new THREE.Vector3();
+        camera.getWorldDirection(look);
+        const flat=new THREE.Vector3(look.x,0,look.z);
+        if(flat.lengthSq()<.001)flat.set(0,0,-1);
         flat.normalize();
         let range=clamp(8-look.y*4,4,11);
         let endX,endZ;
@@ -187,7 +206,26 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         }
         const end=[endX,.18,endZ];
         const origin=camera.position.clone().addScaledVector(look,.6);
-        onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
+        if(type==='can'&&canRef.current){
+          canRef.current=false;
+          onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
+        }else if(type){
+          onUseGear(type,{
+            position:camera.position.toArray(),
+            end,
+            nearPanel:canUsePanel(camera.position.x,camera.position.z,floorRef.current),
+            powered:poweredRef.current
+          });
+        }
+      }
+      if(e.code==='KeyQ'&&!e.repeat){
+        const type=selectedTypeRef.current;
+        if(type&&type!=='can'){
+          const look=new THREE.Vector3();camera.getWorldDirection(look);
+          const xx=clamp(camera.position.x+look.x*.8,-18,18);
+          const zz=clamp(camera.position.z+look.z*.8,-43,37);
+          onDropGear(type,[xx,.24,zz]);
+        }
       }
       keys.current[e.code]=true;
       if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
@@ -298,7 +336,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
     }
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
-    playerRef.current={x:camera.position.x,z:camera.position.z};
+    playerRef.current={x:camera.position.x,z:camera.position.z,speed:movedDistance/Math.max(dt,.001),crouched:crouching};
     if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
     if(camera.position.z < -10 && direction.z>0.45&&!turnedOnce.current){turnedOnce.current=true;onTurn();}
     if(canEnterNextArea(camera.position.x,camera.position.z,floorRef.current,poweredRef.current))onFinish();
