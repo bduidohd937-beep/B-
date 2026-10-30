@@ -70,3 +70,11 @@
   .death-fx--dying .death-fx__blood{animation:none;opacity:.8}
   .death-fx--dying .death-fx__blackout{animation:death-blackout 1.55s ease-in both}
 }
+
+/* B2 repeat transition: momentary impossible floor-number reveal. */
+.floor-loop-flash{pointer-events:none;position:fixed;inset:0;z-index:8;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;background:radial-gradient(ellipse at center,#180b15ed,#030305fb 85%);animation:loop-vanish 2.25s ease-out forwards;letter-spacing:.24em;color:#d1c7be;text-shadow:0 0 22px #7b2233}
+.floor-loop-flash span{font-weight:700;font-size:clamp(28px,6vw,66px);color:#e8d5ce}
+.floor-loop-flash strong{font-size:clamp(11px,2vw,19px);color:#c57b85}
+.floor-loop-flash small{font-size:11px;color:#8d696e}
+@keyframes loop-vanish{0%,20%{opacity:1}60%{opacity:.85}100%{opacity:0}}
+@media(prefers-reduced-motion:reduce){.floor-loop-flash{animation:loop-vanish 2.25s linear forwards}}
