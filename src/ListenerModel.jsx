@@ -103,7 +103,7 @@ export default function ListenerModel({motionRef}){
     const alert=m.state==='investigate';
     const listening=m.state==='listen'||m.state==='search';
     const attack=m.state==='attack';
-    const moving=alert||m.state==='return';
+    const moving=alert||m.state==='return'||m.state==='patrol';
     const speed=moving?m.speed||0:0;
     const gait=t*(2.0+speed*1.45),swing=moving?Math.min(1,speed/3.4):.04;
     attackTime.current=attack?Math.min(1.4,attackTime.current+dt):0;
