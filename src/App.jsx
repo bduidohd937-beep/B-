@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import Listener from './Listener.jsx';
 
 const pillars = [];
 for (let z = -28; z <= 18; z += 9) for (const x of [-10, 10]) pillars.push([x, z]);
@@ -52,7 +53,7 @@ function Watcher({ shifted }) {
     <mesh position={[0,2.32,.23]}><boxGeometry args={[.31,.04,.02]}/><meshBasicMaterial color="#3a4141"/></mesh>
   </group>;
 }
-function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFinish, onNoise, onMoveMode }) {
+function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFinish, onNoise, onMoveMode, playerRef, respawnSignal }) {
   const { camera } = useThree();
   const keys = useRef({});
   const hadLooked = useRef(false);
@@ -72,6 +73,12 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   const movement = useMemo(()=>new THREE.Vector3(),[]);
   const direction = useMemo(()=>new THREE.Vector3(),[]);
   useEffect(()=>{
+    if(respawnSignal===0)return;
+    camera.position.set(0,1.7,8);
+    vertical.current=0;velocityY.current=0;stepClock.current=0;
+    crouchToggle.current=false;
+  },[respawnSignal,camera]);
+  useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
       if(e.code==='KeyC'&&!e.repeat)crouchToggle.current=!crouchToggle.current;
@@ -84,7 +91,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);};
   },[camera]);
   useEffect(()=>{
-    const lamp = new THREE.SpotLight('#e4eadc', 28, 24, Math.PI/7, .66, 2);
+    const lamp = new THREE.SpotLight('#e4eadc', 37, 29, Math.PI/7, .58, 2);
     lamp.position.set(.12,-.09,-.05);
     lamp.target.position.set(0,-.18,-8);
     camera.add(lamp); camera.add(lamp.target);
@@ -93,7 +100,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   },[camera]);
   useFrame((_,delta)=>{
     const lamp=camera.children.find(c=>c.userData?.flashlight);
-    if(lamp)lamp.intensity=torch?28:0;
+    if(lamp)lamp.intensity=torch?37:0;
     if(!active)return;
     camera.getWorldDirection(direction);
     forward.set(direction.x,0,direction.z).normalize();
@@ -137,6 +144,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
       }
     }else{stepClock.current=Math.min(stepClock.current,.15);}
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
+    playerRef.current={x:camera.position.x,z:camera.position.z};
     if(camera.position.z < -10)onNear();
     if(camera.position.z < -10 && direction.z>0.45&&!hadLooked.current){hadLooked.current=true;onTurn();}
     if(!shiftedOnce.current){
@@ -152,7 +160,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   });
   return null;
 }
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -171,7 +179,8 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <ambientLight intensity={.43} color="#9cadad"/>
     <Garage altered={altered} flicker={flicker}/>
     <Watcher shifted={shifted}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
 }
@@ -187,10 +196,28 @@ export default function App(){
   const [moveMode,setMoveMode]=useState('walk');
   const soundRef=useRef(null);
   const noiseLog=useRef([]);
+  const noiseId=useRef(0);
+  const playerRef=useRef({x:0,z:17});
+  const [respawnSignal,setRespawnSignal]=useState(0);
+  const [caught,setCaught]=useState(false);
+  const [creatureState,setCreatureState]=useState('idle');
+  const onCreatureState=useCallback(value=>setCreatureState(old=>old===value?old:value),[]);
+  const onCaught=useCallback(()=>{
+    setCaught(true);
+    document.exitPointerLock?.();
+  },[]);
+  const respawn=useCallback(()=>{
+    noiseLog.current=[];
+    setRespawnSignal(n=>n+1);
+    setCaught(false);
+    setCreatureState('idle');
+    const canvas=document.querySelector('canvas');
+    canvas?.requestPointerLock?.();
+  },[]);
   const onMoveMode=useCallback(mode=>setMoveMode(mode),[]);
   const onNoise=useCallback(event=>{
     // Shared noise event contract for a future sound-sensitive creature.
-    noiseLog.current.push({...event,time:performance.now()});
+    noiseLog.current.push({...event,id:++noiseId.current,time:performance.now()});
     if(noiseLog.current.length>32)noiseLog.current.shift();
     const sound=soundRef.current;
     if(!sound)return;
@@ -220,24 +247,26 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState}/>
     </Canvas>
     <div className="vignette"/>
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.3 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.4 / WORK IN PROGRESS</div>
       <div className="reticle"/>
       <div className="audio-toggle" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
+      <div className="creature-indicator">{creatureState==='investigate'?'어딘가에서 긁는 소리가 들린다':creatureState==='search'?'무언가가 주변을 수색 중이다':creatureState==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
+      <div className="torch-indicator">손전등 [F] {torch?'ON':'OFF'}</div>
       <div className="movement-indicator">{moveMode==='crouch'?'앉기 / 저소음':moveMode==='sprint'?'달리기 / 큰 발소리':'걷기 / 보통 발소리'}</div>
       <div className="controls">WASD 이동 · Shift 달리기 · Ctrl 누르기 / C 앉기 전환 · Space 점프 · F 손전등 · ESC 일시정지</div>
       {started&&locked&&!ending&&<div className="hint">{altered?'출구가 막혔다. 가까이 가서 확인하자.':shifted?'방금 전까지 저 기둥 뒤에 있지 않았나?':near?'기둥 뒤에 누군가 서 있다.':'출구를 찾아라. B2층 끝에 녹색 표시가 보인다.'}</div>}
     </div>
-    {(!started||!locked||ending)&&<div className="overlay"><section className="panel">
+    {(!started||!locked||ending||caught)&&<div className="overlay"><section className="panel">
       <div className="eyebrow">B∞ / THE ENDLESS PARKING GARAGE</div>
-      <h1>{ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
-      <p>{ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
-      <button onClick={()=>{if(ending)window.location.reload();else begin();}}>{ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.3 — TO BE CONTINUED</p>}
+      <h1>{caught?'들켰다.':ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
+      <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
+      <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
+      {ending&&<p className="red">PROTOTYPE 0.4 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
