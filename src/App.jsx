@@ -4,13 +4,16 @@ import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
+import Observer from './Observer.jsx';
+import ItemsWorld from './ItemsWorld.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import SurvivalHUD from './SurvivalHUD.jsx';
 import EscapePuzzle from './EscapePuzzle.jsx';
 import DistortedB2 from './DistortedB2.jsx';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
-import { freshSurvival, tickSurvival } from './survival.js';
+import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
+import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const pillars = [];
@@ -65,14 +68,6 @@ const Garage = React.memo(function Garage({ altered, flicker, canPosition }) {
     <mesh position={[0,.05,-32]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshBasicMaterial color="#22272b" transparent opacity={.5}/></mesh>
   </group>;
 });
-const Watcher = React.memo(function Watcher({ shifted }) {
-  return <group position={shifted?[-8,0,-8]:[9,0,-16]}>
-    <mesh position={[0,1.35,0]}><capsuleGeometry args={[.27,1.25,5,8]}/><meshStandardMaterial color="#080b0b" roughness={1}/></mesh>
-    <mesh position={[0,2.38,.03]}><sphereGeometry args={[.26,12,12]}/><meshStandardMaterial color="#080b0b"/></mesh>
-    {[-.16,.16].map(x=><mesh key={x} position={[x,.47,0]}><boxGeometry args={[.18,.95,.19]}/><meshStandardMaterial color="#090b0c"/></mesh>)}
-    <mesh position={[0,2.32,.23]}><boxGeometry args={[.31,.04,.02]}/><meshBasicMaterial color="#3a4141"/></mesh>
-  </group>;
-});
 function Flashlight({ enabled }) {
   const { camera, scene } = useThree();
   const lamp=useRef();
@@ -92,13 +87,14 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal }) {
   const { camera } = useThree();
   const keys = useRef({});
-  const hadLooked = useRef(false);
-  const sawWatcher = useRef(false);
-  const unseenTime = useRef(0);
-  const shiftedOnce = useRef(false);
+  const groundPickupsRef=useRef(pickupItems);
+  groundPickupsRef.current=pickupItems;
+  const selectedTypeRef=useRef(selectedType);
+  selectedTypeRef.current=selectedType;
+  const turnedOnce=useRef(false);
   const crouchToggle = useRef(false);
   const vertical = useRef(0);
   const velocityY = useRef(0);
@@ -164,23 +160,38 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     onPanelProgress(0);
   },[floorSignal,camera,onPanelProgress,onVitals]);
   useEffect(()=>{
+    if(!boostSignal)return;
+    survival.current=applyEnergyDrink(survival.current);
+    onVitals({stamina:survival.current.stamina,exhausted:false,breath:0});
+  },[boostSignal,onVitals]);
+  useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
       if(!activeRef.current)return;
       if(e.code==='KeyC'&&!e.repeat)crouchToggle.current=!crouchToggle.current;
       if(e.code==='Space'&&!e.repeat)jumpQueued.current=true;
-      if(e.code==='KeyE'&&!e.repeat&&!canRef.current&&groundCanRef.current){
+      if(/^Digit[123]$/.test(e.code)&&!e.repeat)onSelectSlot(Number(e.code.slice(-1))-1);
+      if(e.code==='KeyE'&&!e.repeat && !canUsePanel(camera.position.x,camera.position.z,floorRef.current)){
         const ground=groundCanRef.current;
-        if(Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
-          canRef.current=true;
-          groundCanRef.current=null;
-          onPickCan();
+        if(!canRef.current&&ground&&Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
+          if(onPickCan()){
+            canRef.current=true;
+            groundCanRef.current=null;
+          }
+        } else {
+          const candidate=groundPickupsRef.current
+            .filter(item=>pickupRadius([camera.position.x,0,camera.position.z],item.position))
+            .sort((a,b)=>Math.hypot(camera.position.x-a.position[0],camera.position.z-a.position[2])
+              -Math.hypot(camera.position.x-b.position[0],camera.position.z-b.position[2]))[0];
+          if(candidate)onPickupGear(candidate.id);
         }
       }
-      if(e.code==='KeyG'&&!e.repeat&&canRef.current){
-        canRef.current=false;const look=new THREE.Vector3();camera.getWorldDirection(look);
-        const flat = new THREE.Vector3(look.x, 0, look.z);
-        if (flat.lengthSq()<.001) flat.set(0,0,-1);
+      if(e.code==='KeyG'&&!e.repeat){
+        const type=selectedTypeRef.current;
+        const look=new THREE.Vector3();
+        camera.getWorldDirection(look);
+        const flat=new THREE.Vector3(look.x,0,look.z);
+        if(flat.lengthSq()<.001)flat.set(0,0,-1);
         flat.normalize();
         let range=clamp(8-look.y*4,4,11);
         let endX,endZ;
@@ -195,7 +206,26 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
         }
         const end=[endX,.18,endZ];
         const origin=camera.position.clone().addScaledVector(look,.6);
-        onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
+        if(type==='can'&&canRef.current){
+          canRef.current=false;
+          onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
+        }else if(type){
+          onUseGear(type,{
+            position:camera.position.toArray(),
+            end,
+            nearPanel:canUsePanel(camera.position.x,camera.position.z,floorRef.current),
+            powered:poweredRef.current
+          });
+        }
+      }
+      if(e.code==='KeyQ'&&!e.repeat){
+        const type=selectedTypeRef.current;
+        if(type&&type!=='can'){
+          const look=new THREE.Vector3();camera.getWorldDirection(look);
+          const xx=clamp(camera.position.x+look.x*.8,-18,18);
+          const zz=clamp(camera.position.z+look.z*.8,-43,37);
+          onDropGear(type,[xx,.24,zz]);
+        }
       }
       keys.current[e.code]=true;
       if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
@@ -269,7 +299,12 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=canUsePanel(camera.position.x,camera.position.z,floorRef.current);
-    const nextProximity=nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':null;
+    const canClose=groundCanRef.current&&
+      Math.hypot(camera.position.x-groundCanRef.current[0],camera.position.z-groundCanRef.current[2])<2.5;
+    const closeItem=groundPickupsRef.current.find(it=>pickupRadius(
+      [camera.position.x,0,camera.position.z],it.position));
+    const nextProximity=nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':
+      canClose?'can':closeItem?'item:'+closeItem.type:null;
     if(nextProximity!==proximityReported.current){
       proximityReported.current=nextProximity;
       onPuzzleProximity(nextProximity);
@@ -306,23 +341,14 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
       onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
     }
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
-    playerRef.current={x:camera.position.x,z:camera.position.z};
+    playerRef.current={x:camera.position.x,z:camera.position.z,speed:movedDistance/Math.max(dt,.001),crouched:crouching};
     if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
-    if(camera.position.z < -10 && direction.z>0.45&&!hadLooked.current){hadLooked.current=true;onTurn();}
-    if(!shiftedOnce.current){
-      const toWatcher=new THREE.Vector3(9-camera.position.x,2-camera.position.y,-16-camera.position.z);
-      const distance=toWatcher.length();
-      const visible=direction.dot(toWatcher.normalize())>.67;
-      if(distance<20&&visible)sawWatcher.current=true;
-      if(sawWatcher.current&&!visible)unseenTime.current+=delta;
-      else unseenTime.current=0;
-      if(unseenTime.current>1.2){shiftedOnce.current=true;onWatcherShift();}
-    }
+    if(camera.position.z < -10 && direction.z>0.45&&!turnedOnce.current){turnedOnce.current=true;onTurn();}
     if(canEnterNextArea(camera.position.x,camera.position.z,floorRef.current,poweredRef.current))onFinish();
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -343,10 +369,11 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
     <Flashlight enabled={torch}/>
-    <Watcher shifted={shifted}/>
+    {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
+    <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -358,7 +385,6 @@ export default function App(){
   const [near,setNear]=useState(false);
   const [altered,setAltered]=useState(false);
   const [ending,setEnding]=useState(false);
-  const [shifted,setShifted]=useState(false);
   const [audioOn,setAudioOn]=useState(true);
   const [moveMode,setMoveMode]=useState('idle');
   const [airborne,setAirborne]=useState(false);
@@ -367,6 +393,31 @@ export default function App(){
   const [showControls,setShowControls]=useState(false);
   const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
+  const canHeldRef=useRef(false);
+  canHeldRef.current=canCollected;
+  const [gear,setGear]=useState([]);
+  const gearRef=useRef([]);
+  gearRef.current=gear;
+  const [pickupItems,setPickupItems]=useState(()=>startingPickups(1));
+  const pickupItemsRef=useRef(pickupItems);
+  pickupItemsRef.current=pickupItems;
+  const [deployed,setDeployed]=useState([]);
+  const gadgetId=useRef(0);
+  const [selectedSlot,setSelectedSlot]=useState(0);
+  const bag=slots(canCollected,gear);
+  const selectedIndex=Math.min(selectedSlot,Math.max(0,bag.length-1));
+  const selectedType=bag[selectedIndex]||null;
+  const [boostSignal,setBoostSignal]=useState(0);
+  const [silentFloor,setSilentFloor]=useState(0);
+  const silentRef=useRef(0);
+  silentRef.current=silentFloor;
+  const [itemNotice,setItemNotice]=useState(null);
+  const notify=useCallback(text=>setItemNotice({text,id:Date.now()}),[]);
+  useEffect(()=>{
+    if(!itemNotice)return;
+    const timer=setTimeout(()=>setItemNotice(old=>old?.id===itemNotice.id?null:old),2100);
+    return ()=>clearTimeout(timer);
+  },[itemNotice]);
   const [checkpoint,setCheckpoint]=useState(false);
   const [powered,setPowered]=useState(false);
   const [echoRestored,setEchoRestored]=useState(false);
@@ -382,13 +433,85 @@ export default function App(){
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
   const onPickCan=useCallback(()=>{
+    if(!canAddToInventory(canHeldRef.current,gearRef.current)){
+      notify('가방이 꽉 찼다 · Q로 장비를 내려놓자');
+      return false;
+    }
+    canHeldRef.current=true;
     setCanCollected(true);
     setCanPosition(null);
+    setSelectedSlot(0);
+    notify('빈 캔 확보 · [1] 선택 후 G로 던지기');
+    return true;
+  },[notify]);
+  const onPickupGear=useCallback(id=>{
+    const item=pickupItemsRef.current.find(it=>it.id===id);
+    if(!item)return false;
+    if(!canAddToInventory(canHeldRef.current,gearRef.current)){
+      notify('가방이 꽉 찼다 · Q로 장비를 내려놓자');
+      return false;
+    }
+    const next=[...gearRef.current,item.type];
+    gearRef.current=next;
+    setGear(next);
+    const remaining=pickupItemsRef.current.filter(it=>it.id!==id);
+    pickupItemsRef.current=remaining;
+    setPickupItems(remaining);
+    setSelectedSlot(Math.min(2,slots(canHeldRef.current,next).length-1));
+    notify(ITEM_TYPES[item.type].label+' 획득');
+    return true;
+  },[notify]);
+  const onSelectSlot=useCallback(index=>{
+    const available=slots(canHeldRef.current,gearRef.current);
+    if(available[index])setSelectedSlot(index);
   },[]);
+  const onDropGear=useCallback((type,position)=>{
+    const index=gearRef.current.indexOf(type);
+    if(index<0)return false;
+    const updated=gearRef.current.filter((_,i)=>i!==index);
+    gearRef.current=updated;setGear(updated);
+    const drop={id:'drop-'+(++gadgetId.current),type,position};
+    const world=[...pickupItemsRef.current,drop];
+    pickupItemsRef.current=world;
+    setPickupItems(world);
+    setSelectedSlot(0);
+    notify(ITEM_TYPES[type].label+' 내려놓음');
+    return true;
+  },[notify]);
+  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered})=>{
+    const index=gearRef.current.indexOf(type);
+    if(index<0)return false;
+    const effect=itemEffect(type,nearPanel);
+    if(effect==='requires-panel'||(effect==='silence'&&alreadyPowered)){
+      notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
+      return false;
+    }
+    const updated=gearRef.current.filter((_,i)=>i!==index);
+    gearRef.current=updated;
+    setGear(updated);
+    setSelectedSlot(0);
+    if(effect==='silence'){
+      silentRef.current=floorRef.current;
+      setSilentFloor(floorRef.current);
+      notify('배전반 윤활 완료 · 이번 층은 소음 없이 조작');
+    }else if(effect==='boost'){
+      setBoostSignal(v=>v+1);
+      onNoiseRef.current?.({type:'gear',device:'energy',loudness:37,position});
+      notify('스태미나 +48 · 5초 동안 질주 강화');
+    }else if(effect==='deploy'){
+      setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
+      onNoiseRef.current?.({type:'gear',device:type,loudness:type==='glow'?8:17,position});
+      notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
+        type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
+    }
+    return true;
+  },[notify]);
+  const onGadgetExpired=useCallback(id=>setDeployed(old=>old.filter(g=>g.id!==id)),[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
   const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
   const onPanelAttempt=useCallback(()=>{
+    if(silentRef.current===floorRef.current)return;
     const position=panelPosition(floorRef.current);
     onNoiseRef.current?.({type:'switch',loudness:86,position:[position[0],1.5,position[1]]});
   },[]);
@@ -396,9 +519,10 @@ export default function App(){
     const position=panelPosition(floorRef.current);
     if(floorRef.current===2)setEchoRestored(true);
     else setPowered(true);
-    onNoiseRef.current?.({type:'power',loudness:92,position:[position[0],1.5,position[1]]});
+    if(silentRef.current!==floorRef.current)onNoiseRef.current?.({type:'power',loudness:92,position:[position[0],1.5,position[1]]});
   },[]);
   const onThrowCan=useCallback(({start,end})=>{
+    canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
     setProjectile({id:++projectileId.current,start,end});
@@ -425,6 +549,17 @@ export default function App(){
     setDeathPhase('dead');
   },[]);
   const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0,distance:Infinity});
+  const [observerInfo,setObserverInfo]=useState({mode:'scan',alert:0,distance:Infinity});
+  const observerModeRef=useRef('scan');
+  const observerDistanceRef=useRef(Infinity);
+  const onObserverState=useCallback((mode,alert,distance)=>{
+    observerDistanceRef.current=distance;
+    if(observerModeRef.current!==mode){
+      if(mode==='chase')soundRef.current?.observerAlert?.();
+      observerModeRef.current=mode;
+    }
+    setObserverInfo(old=>old.mode===mode&&old.alert===alert&&old.distance===distance?old:{mode,alert,distance});
+  },[]);
   const creatureDistanceRef=useRef(Infinity);
   const onVitals=useCallback(next=>{
     const data={stamina:Math.max(0,Math.min(100,Math.round(next.stamina??100))),
@@ -432,7 +567,7 @@ export default function App(){
     setVitals(previous=>previous.stamina===data.stamina&&previous.breath===data.breath&&previous.exhausted===data.exhausted
       ?previous:data);
     soundRef.current?.updateVitals?.({
-      active:true,breathLevel:data.breath,creatureDistance:creatureDistanceRef.current
+      active:true,breathLevel:data.breath,creatureDistance:Math.min(creatureDistanceRef.current,observerDistanceRef.current)
     });
   },[]);
   const onCreatureState=useCallback((mode,excitement,speed,distance=Infinity)=>{
@@ -463,6 +598,9 @@ export default function App(){
     setAirborne(false);
     setMoveMode('idle');
     setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
+    setObserverInfo({mode:'scan',alert:0,distance:Infinity});
+    observerModeRef.current='scan';
+    observerDistanceRef.current=Infinity;
     creatureDistanceRef.current=Infinity;
     setVitals({stamina:100,breath:0,exhausted:false});
     soundRef.current?.resume();
@@ -475,7 +613,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -487,9 +625,10 @@ export default function App(){
     if(event.type==='electric')sound.flicker();
     if(event.type==='switch')sound.switchStart();
     if(event.type==='power')sound.powerRestore();
+    if(event.type==='decoy')sound.devicePulse?.(event.device,event.position);
+    if(event.type==='gear')sound.gearClick?.(event.device);
   },[]);
   onNoiseRef.current=onNoise;
-  const onWatcherShift=useCallback(()=>setShifted(true),[]);
   const onFinish=useCallback(()=>{
     if(floorRef.current===1){
       floorRef.current=2; // Guard against repeated transitions during the same frame.
@@ -497,6 +636,16 @@ export default function App(){
       soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.loopTransition?.();
       noiseLog.current=[];
+      const nextItems=startingPickups(2);
+      pickupItemsRef.current=nextItems;
+      setPickupItems(nextItems);
+      setDeployed([]);
+      setSelectedSlot(0);
+      silentRef.current=0;
+      setSilentFloor(0);
+      setObserverInfo({mode:'scan',alert:0,distance:Infinity});
+      observerModeRef.current='scan';
+      observerDistanceRef.current=Infinity;
       setFloor(2);
       setFloorSignal(v=>v+1);
       setPanelProgress(0);
@@ -536,7 +685,10 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
+      pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
+      selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
+      onObserverState={onObserverState} boostSignal={boostSignal}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
@@ -555,9 +707,10 @@ export default function App(){
       <section className="mission-card" aria-label="현재 탈출 목표">
         <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'BROADCAST':'EMERGENCY EXIT'}</span></div>
         <div className="mission-card__text">{objectiveText(gatePowered,floor)}</div>
+        {floor===2&&<div className="mission-card__rule">귀 달린 놈 = 소리 · 관조자 = 움직임</div>}
       </section>
-      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo}/>}
-      <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20)):0}}/>
+      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2}/>}
+      <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
           <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
@@ -571,20 +724,47 @@ export default function App(){
           <strong>{gatePowered?'비상문 개방 · 통로로 이동':'비상문 잠김 · 전원 복구 필요'}</strong>
           {!gatePowered&&<span>{floor===2?'오른쪽 벽의 비상방송 제어반을 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
         </div>}
-      <div className="equipment-strip">
-        <span className="equipment-strip__item"><kbd>F</kbd> LIGHT <b>{torch?'ON':'OFF'}</b></span>
-        <span className="equipment-strip__item"><kbd>G</kbd> CAN <b>{canCollected?'READY':canPosition?'ON FLOOR':'AIRBORNE'}</b></span>
-        {checkpoint&&<span className="equipment-strip__checkpoint">CHECKPOINT SAVED</span>}
+      {started&&locked&&puzzleProximity==='can'&&<div className="interaction-callout" role="status">
+        <strong><kbd>E</kbd> 빈 캔 줍기</strong><span>회수한 캔은 다시 던질 수 있다</span>
+      </div>}
+      {started&&locked&&puzzleProximity?.startsWith('item:')&&<div className="interaction-callout" role="status">
+        <strong><kbd>E</kbd> {ITEM_TYPES[puzzleProximity.slice(5)]?.label} 줍기</strong>
+        <span>보유 {bag.length}/3 · 가득 차면 Q로 내려놓기</span>
+      </div>}
+      {itemNotice&&<div className="item-toast" role="status">{itemNotice.text}</div>}
+      <div className="equipment-strip equipment-strip--v010">
+        <div className="inventory-quickbar" role="group" aria-label="장비 3칸">
+          {[0,1,2].map(index=>{
+            const type=bag[index];
+            return <div key={index} className={'inventory-slot'+(type&&index===selectedIndex?' is-selected':'')}>
+              <kbd>{index+1}</kbd>
+              <span>{type?ITEM_TYPES[type].label:'비어 있음'}</span>
+              <small>{type?ITEM_TYPES[type].key:'EMPTY'}</small>
+            </div>;
+          })}
+        </div>
+        <div className="inventory-guide">
+          <span><kbd>G</kbd> {selectedType==='can'?'던지기':'사용'}</span>
+          <span><kbd>Q</kbd> 내려놓기</span>
+          <span><kbd>F</kbd> 손전등 {torch?'ON':'OFF'}</span>
+          {checkpoint&&<span className="equipment-strip__checkpoint">SAVE ✓</span>}
+        </div>
       </div>
       <div className="helper-bar" aria-label="키보드 도움말">
-        <span>{vitals.exhausted?'숨이 차 달릴 수 없다':vitals.breath>=14?'쉿… 숨소리가 새어 나온다':creatureInfo.mode==='listen'?'청음자가 듣고 있다':floor===2?'이곳도 B2층이다':'작은 소리도 위험하다'}</span>
+        <span>{observerInfo.mode==='chase'&&floor===2?'관조자 포착! 움직임을 멈추고 시야를 끊어라':
+          vitals.exhausted?'숨이 차 달릴 수 없다':
+          vitals.breath>=14?'쉿… 숨소리가 새어 나온다':
+          creatureInfo.mode==='listen'?'청음자가 듣고 있다':
+          floor===2?'소리와 움직임을 모두 조심하라':'작은 소리도 위험하다'}</span>
         <span><kbd>H</kbd> {showControls?'조작법 닫기':'조작법'}</span>
       </div>
       {showControls&&<div className="controls-sheet">
         <strong>CONTROLS · H로 닫기</strong>
         <span>WASD 이동 · SHIFT 질주(스태미나 소모) · Ctrl/C 은신</span>
-        <span>SPACE 점프 · E 줍기/장치 조작 · G 캔 던지기</span>
+        <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
+        <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
         <span>F 손전등 · ESC 일시정지 · H 조작법</span>
+        {floor===2&&<span>청음자: 소리 감지 · 관조자: 움직임 감지</span>}
       </div>}
     </div>
     {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel" role="dialog" aria-modal="true">
@@ -597,7 +777,7 @@ export default function App(){
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
         <p>H 조작법 · 헤드폰 권장 · 숨소리는 청음자가 들을 수 있습니다</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.9.2 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.10 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }

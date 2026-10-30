@@ -144,6 +144,53 @@ export function createSoundEngine() {
     }
   }
 
+  function gearClick(type) {
+    if(type==='energy'){
+      noise(1700,.12,.33);
+      tone(500,.18,.19);
+    }else if(type!=='glow'){
+      noise(1150,.09,.12);
+    }
+  }
+  function devicePulse(type,position=[0,.2,0]){
+    if(!enabled || ctx.state==='closed')return;
+    const time=ctx.currentTime;
+    const panner=ctx.createPanner();
+    panner.panningModel='HRTF';
+    panner.distanceModel='inverse';
+    panner.refDistance=3;
+    panner.maxDistance=38;
+    panner.rolloffFactor=1;
+    if(panner.positionX){
+      panner.positionX.value=position[0];
+      panner.positionY.value=position[1]||.3;
+      panner.positionZ.value=position[2];
+    }else panner.setPosition(position[0],position[1]||.3,position[2]);
+    const gain=ctx.createGain();
+    gain.gain.setValueAtTime(.0001,time);
+    gain.gain.exponentialRampToValueAtTime(type==='alarm'?.55:.28,time+.025);
+    gain.gain.exponentialRampToValueAtTime(.0001,time+(type==='alarm'?.42:.75));
+    let source,filter=null;
+    if(type==='radio'){
+      source=ctx.createBufferSource();source.buffer=noiseBuffer;
+      filter=ctx.createBiquadFilter();filter.type='bandpass';filter.frequency.value=1170;filter.Q.value=.47;
+      source.connect(filter);filter.connect(gain);
+    }else{
+      source=ctx.createOscillator();source.type='sine';source.frequency.setValueAtTime(820,time);
+      source.frequency.setValueAtTime(1050,time+.14);source.connect(gain);
+    }
+    gain.connect(panner);panner.connect(master);
+    source.start(time);
+    source.stop(time+(type==='alarm'?.45:.77));
+    source.onended=()=>{
+      try{source.disconnect();if(filter)filter.disconnect();gain.disconnect();panner.disconnect();}catch{}
+    };
+  }
+  function observerAlert(){
+    tone(410,.27,.14,'sawtooth');
+    noise(1880,.12,.15);
+  }
+
   function death() {
     // Synthetic short gasp/scream, blunt fall, wet scrape and muffled crunch.
     // No recorded person, licensed assets or visual gore textures.
@@ -219,7 +266,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, horrorCue, death,
+    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
     updateCreature: creatureAudio.update,
     updateVitals: playerVitalsAudio.update,
     resume() {
