@@ -1,3 +1,4 @@
+import {shouldPlayRushScrape,SCRAPE_COOLDOWN_SECONDS} from './chaseAudioRules.js';
 // Original synthesized 3D creature audio; no external samples or music.
 // PannerNode gives direction and distance. A low-pass filter simulates columns/cars.
 export function createSpatialCreatureAudio(ctx, master, sharedNoise) {
@@ -85,6 +86,7 @@ export function createSpatialCreatureAudio(ctx, master, sharedNoise) {
   }
 
   let nextStep = 0;
+  let nextScrape = 0;
   let disposed = false;
 
   function footfall(t, speed) {
@@ -110,6 +112,28 @@ export function createSpatialCreatureAudio(ctx, master, sharedNoise) {
     };
   }
 
+  function rushCarScrape(t,speed){
+    if(disposed)return;
+    const source=ctx.createBufferSource();
+    source.buffer=sharedNoise;
+    const filter=ctx.createBiquadFilter();
+    filter.type='bandpass';
+    filter.frequency.value=1100+Math.min(9,speed)*95;
+    filter.Q.value=.65;
+    const envelope=ctx.createGain();
+    envelope.gain.setValueAtTime(.0001,t);
+    envelope.gain.exponentialRampToValueAtTime(.27,t+.035);
+    envelope.gain.exponentialRampToValueAtTime(.16,t+.16);
+    envelope.gain.exponentialRampToValueAtTime(.0001,t+.39);
+    // Route through the SAME panner and occlusion filter as the creature
+    // footsteps: naturally distant and muffled through vehicle rows.
+    source.connect(filter);filter.connect(envelope);envelope.connect(occlusion);
+    source.start(t,Math.random()*.6);
+    source.stop(t+.41);
+    source.onended=()=>{
+      try{source.disconnect();filter.disconnect();envelope.disconnect();}catch{}
+    };
+  }
   function update(data) {
     if (disposed || ctx.state === 'closed') return;
     const t = ctx.currentTime;
@@ -118,7 +142,7 @@ export function createSpatialCreatureAudio(ctx, master, sharedNoise) {
       nextStep = t + 0.25;
       return;
     }
-    const { listenerPosition, forward, creaturePosition, occluded, speed = 0, state = 'idle', excitement = 0 } = data;
+    const { listenerPosition, forward, creaturePosition, occluded, nearCar=false, speed = 0, state = 'idle', excitement = 0 } = data;
     if (!listenerPosition || !forward || !creaturePosition) return;
     positionListener(listenerPosition, forward, t);
     positionCreature(creaturePosition, t);
@@ -134,6 +158,12 @@ export function createSpatialCreatureAudio(ctx, master, sharedNoise) {
     );
     voiceSource.frequency.setTargetAtTime(59 + excitement * 0.13, t, 0.2);
 
+    if(shouldPlayRushScrape({
+      state,speed,nearCar,distanceToPlayer:distance,now:t,nextAllowedAt:nextScrape
+    })){
+      rushCarScrape(t,speed);
+      nextScrape=t+SCRAPE_COOLDOWN_SECONDS;
+    }
     const walking = speed > 0.62 && (state === 'investigate' || state === 'return');
     if (!walking) {
       nextStep = t + 0.14;
