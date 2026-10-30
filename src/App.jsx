@@ -697,21 +697,30 @@ export default function App(){
     if(floorRef.current!==2)return;
     const position=[0,1.7,SECURITY_KEY_READER[2]-1.15];
     if(event==='insert'){
-      // Tactile key insertion sound, audible only to a close Listener.
+      // After a cancelled attempt, the key clicks again but the first siren
+      // is already active (or has decayed). Do not spam alarms on retries.
       onNoiseRef.current?.({type:'key-insert',loudness:27,
         position:[...SECURITY_KEY_READER]});
     }else if(event==='cancel'){
-      notify('인증 중단 · 키를 다시 삽입하고 E를 유지하라');
+      notify('인증 중단 · 경보는 계속 울린다! 키를 다시 돌려라');
     }else if(event==='alarm'){
+      // The first physical key turn starts the siren BEFORE authentication.
+      // Letting go cannot un-ring this bell; the Listener targets the gate.
+      onNoiseRef.current?.({type:'key-insert',loudness:27,
+        position:[...SECURITY_KEY_READER]});
       setEvidenceOpen(false);
       setMemoOpen(false);
       setAlarmActive(true);
       soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
+      onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
+      notify('키를 꽂자마자 비상 경보! E를 유지해 인증해야 셔터가 열린다');
+    }else if(event==='motor'){
       soundRef.current?.startShutterMotor?.(
         [0,1.3,SECURITY_KEY_READER[2]-2.25],SHUTTER_RAISE_SECONDS
       );
-      onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
-      notify('비상 경보 발동! 셔터가 서서히 열린다 · 숨어서 타이밍을 노려라');
+      onNoiseRef.current?.({type:'gate-motor',loudness:73,
+        position:[0,1.3,SECURITY_KEY_READER[2]-2.25]});
+      notify('인증 완료! 셔터 개방 중 · 숨었다가 통과하라');
     }else if(event==='open'){
       notify('서비스 셔터 완전 개방 · 탈출 통로로 이동');
     }
@@ -858,7 +867,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -1004,7 +1013,7 @@ export default function App(){
     </div>}
     {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
       <strong>EMERGENCY PROTOCOL · B2</strong>
-      <span>위이이잉— · 전자 사이렌 가동 · 청음자가 배전반으로 돌진</span>
+      <span>위이이잉— · 비상 경보 작동 · 청음자가 소리 난 지점으로 질주</span>
       <small>비상 방송 신호 왜곡 · 즉시 이동 또는 은폐</small>
     </div>}
     <div className="hud hud--v092">
@@ -1063,7 +1072,7 @@ export default function App(){
           <span>{!vehicleState.solved?'317번 차량에서 키를 찾아라':
             gateAuth.phase==='opening'?'청음자가 출입구로 달려온다 · 타이밍을 노려라':
             gateAuth.phase==='open'?'통과하기 전 시야와 발소리를 확인하라':
-            '키를 약 3초 유지하면 비상 사이렌이 작동한다'}</span>
+            '키를 꽂는 순간 사이렌 · E를 유지해야 셔터 개방'}</span>
           {vehicleState.solved&&gateAuth.phase==='authenticating'&&
             <div className="interaction-callout__progress" role="progressbar"
               aria-label="키 인증 진행률" aria-valuemin={0} aria-valuemax={100}
