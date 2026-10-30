@@ -6,7 +6,7 @@ import { createSoundEngine } from './sound.js';
 import {
  canReadCctv,canUseKeyReader,freshGateAuthentication,
  advanceGateAuthentication,gateLiftRatio,keyHoldProgress,
- SECURITY_KEY_READER,EXIT_ALARM_SECONDS,EXIT_ALARM_LOUDNESS
+ SECURITY_KEY_READER,EXIT_ALARM_SECONDS,EXIT_ALARM_LOUDNESS,SHUTTER_RAISE_SECONDS
 } from './exitAuthorization.js';
 import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
 import { tickFlashlight,rechargeFlashlight,clampCharge,lowBatteryBrightness,FLASHLIGHT_CLICK_NOISE } from './flashlightRules.js';
@@ -707,6 +707,9 @@ export default function App(){
       setMemoOpen(false);
       setAlarmActive(true);
       soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
+      soundRef.current?.startShutterMotor?.(
+        [0,1.3,SECURITY_KEY_READER[2]-2.25],SHUTTER_RAISE_SECONDS
+      );
       onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
       notify('비상 경보 발동! 셔터가 서서히 열린다 · 숨어서 타이밍을 노려라');
     }else if(event==='open'){
@@ -810,6 +813,7 @@ export default function App(){
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
     setMemoOpen(false);
@@ -825,6 +829,7 @@ export default function App(){
     setAlarmActive(false);
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
     setMemoOpen(false);
@@ -853,7 +858,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -872,6 +877,7 @@ export default function App(){
     if(event.type==='car-alarm')sound.startCarAlarm?.(event.position,CAR_ALARM_SECONDS);
     if(event.type==='cctv')sound.cctvRead?.();
     if(event.type==='vehicle')sound.vehicleLatch?.();
+    if(event.type==='key-insert')sound.securityKeyClick?.();
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -881,6 +887,7 @@ export default function App(){
       soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.stopSiren?.();
       soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
       setCarAlarm(null);
       setEvidenceOpen(false);
     setMemoOpen(false);
@@ -917,6 +924,7 @@ export default function App(){
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
     setMemoOpen(false);
