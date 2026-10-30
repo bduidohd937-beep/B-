@@ -544,6 +544,10 @@ export default function App(){
     setDeathPhase('dead');
   },[]);
   const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0,distance:Infinity});
+  const [observerInfo,setObserverInfo]=useState({mode:'scan',alert:0,distance:Infinity});
+  const onObserverState=useCallback((mode,alert,distance)=>{
+    setObserverInfo(old=>old.mode===mode&&old.alert===alert&&old.distance===distance?old:{mode,alert,distance});
+  },[]);
   const creatureDistanceRef=useRef(Infinity);
   const onVitals=useCallback(next=>{
     const data={stamina:Math.max(0,Math.min(100,Math.round(next.stamina??100))),
@@ -582,6 +586,7 @@ export default function App(){
     setAirborne(false);
     setMoveMode('idle');
     setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
+    setObserverInfo({mode:'scan',alert:0,distance:Infinity});
     creatureDistanceRef.current=Infinity;
     setVitals({stamina:100,breath:0,exhausted:false});
     soundRef.current?.resume();
@@ -594,7 +599,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -606,6 +611,8 @@ export default function App(){
     if(event.type==='electric')sound.flicker();
     if(event.type==='switch')sound.switchStart();
     if(event.type==='power')sound.powerRestore();
+    if(event.type==='decoy')sound.devicePulse?.(event.device,event.position);
+    if(event.type==='gear')sound.gearClick?.(event.device);
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -615,6 +622,14 @@ export default function App(){
       soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.loopTransition?.();
       noiseLog.current=[];
+      const nextItems=startingPickups(2);
+      pickupItemsRef.current=nextItems;
+      setPickupItems(nextItems);
+      setDeployed([]);
+      setSelectedSlot(0);
+      silentRef.current=0;
+      setSilentFloor(0);
+      setObserverInfo({mode:'scan',alert:0,distance:Infinity});
       setFloor(2);
       setFloorSignal(v=>v+1);
       setPanelProgress(0);
