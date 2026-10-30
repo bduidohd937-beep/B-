@@ -395,7 +395,13 @@ export default function App(){
   const [projectile,setProjectile]=useState(null);
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
-  const onPickCan=useCallback(()=>{
+  const emitItemNoise=useCallback((item,action,position,crouching=false)=>{
+    onNoiseRef.current?.({
+      type:'item',item,action,position,
+      crouching,loudness:itemActionNoise(item,action,{crouching})
+    });
+  },[]);
+  const onPickCan=useCallback(({position=[0,1.7,17],crouching=false}={})=>{
     if(!canAddToInventory(canHeldRef.current,gearRef.current)){
       notify('가방이 꽉 찼다 · Q로 장비를 내려놓자');
       return false;
@@ -404,10 +410,11 @@ export default function App(){
     setCanCollected(true);
     setCanPosition(null);
     setSelectedSlot(0);
+    emitItemNoise('can','pickup',position,crouching);
     notify('빈 캔 확보 · [1] 선택 후 G로 던지기');
     return true;
-  },[notify]);
-  const onPickupGear=useCallback(id=>{
+  },[notify,emitItemNoise]);
+  const onPickupGear=useCallback((id,{position=[0,1.7,17],crouching=false}={})=>{
     const item=pickupItemsRef.current.find(it=>it.id===id);
     if(!item)return false;
     if(!canAddToInventory(canHeldRef.current,gearRef.current)){
@@ -421,14 +428,15 @@ export default function App(){
     pickupItemsRef.current=remaining;
     setPickupItems(remaining);
     setSelectedSlot(Math.min(2,slots(canHeldRef.current,next).length-1));
+    emitItemNoise(item.type,'pickup',position,crouching);
     notify(ITEM_TYPES[item.type].label+' 획득');
     return true;
-  },[notify]);
+  },[notify,emitItemNoise]);
   const onSelectSlot=useCallback(index=>{
     const available=slots(canHeldRef.current,gearRef.current);
     if(available[index])setSelectedSlot(index);
   },[]);
-  const onDropGear=useCallback((type,position)=>{
+  const onDropGear=useCallback((type,position,{crouching=false}={})=>{
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const updated=gearRef.current.filter((_,i)=>i!==index);
@@ -438,14 +446,15 @@ export default function App(){
     pickupItemsRef.current=world;
     setPickupItems(world);
     setSelectedSlot(0);
-    notify(ITEM_TYPES[type].label+' 내려놓음');
+    emitItemNoise(type,'drop',position,crouching);
+    notify(ITEM_TYPES[type].label+' 내려놓음 · 주변 소음 주의');
     return true;
-  },[notify]);
-  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered})=>{
+  },[notify,emitItemNoise]);
+  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered,crouching=false})=>{
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const effect=itemEffect(type,nearPanel);
-    if(effect==='requires-panel'||(effect==='silence'&&alreadyPowered)){
+    if(effect==='requires-panel'||(effect==='attenuate'&&alreadyPowered)){
       notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
       return false;
     }
@@ -453,22 +462,21 @@ export default function App(){
     gearRef.current=updated;
     setGear(updated);
     setSelectedSlot(0);
-    if(effect==='silence'){
+    emitItemNoise(type,'use',position,crouching);
+    if(effect==='attenuate'){
       silentRef.current=floorRef.current;
       setSilentFloor(floorRef.current);
-      notify('배전반 윤활 완료 · 이번 층은 소음 없이 조작');
+      notify('윤활 완료 · 기계음 감소 · 비상 사이렌은 그대로 작동!');
     }else if(effect==='boost'){
       setBoostSignal(v=>v+1);
-      onNoiseRef.current?.({type:'gear',device:'energy',loudness:37,position});
-      notify('스태미나 +48 · 5초 동안 질주 강화');
+      notify('스태미나 +48 · 5초 동안 질주 강화 · 개봉 소음 발생');
     }else if(effect==='deploy'){
       setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
-      if(gearMakesNoise(type))onNoiseRef.current?.({type:'gear',device:type,loudness:17,position});
       notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
         type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
     }
     return true;
-  },[notify]);
+  },[notify,emitItemNoise]);
   const onGadgetExpired=useCallback(id=>setDeployed(old=>old.filter(g=>g.id!==id)),[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
