@@ -369,7 +369,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
     <Flashlight enabled={torch}/>
-    {floor===2&&<Observer key={floorSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
+    {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
