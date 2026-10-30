@@ -439,7 +439,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -468,7 +468,8 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
+    <ThrowGuide aimRef={throwAimRef}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -571,6 +572,7 @@ export default function App(){
   const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
   const [projectile,setProjectile]=useState(null);
+  const throwAimRef=useRef(null);
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
   const emitItemNoise=useCallback((item,action,position,crouching=false)=>{
@@ -628,7 +630,7 @@ export default function App(){
     notify(ITEM_TYPES[type].label+' 내려놓음 · 주변 소음 주의');
     return true;
   },[notify,emitItemNoise]);
-  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered,crouching=false})=>{
+  const onUseGear=useCallback((type,{position,start,end,nearPanel,powered:alreadyPowered,crouching=false})=>{
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const effect=itemEffect(type,nearPanel);
@@ -657,9 +659,13 @@ export default function App(){
       setRechargeSignal(v=>v+1);
       notify('예비 건전지 교체 · 손전등 +45% · 교체음 발생');
     }else if(effect==='deploy'){
-      setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
-      notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
-        type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
+      if(start&&end){
+        setProjectile({id:++projectileId.current,type,start,end});
+      }else{
+        setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end||position}]);
+      }
+      notify(type==='alarm'?'태엽시계 투척 · 착지 4초 후 알람 작동':
+        type==='radio'?'무전기 투척 · 착지 후 잡음 유인': '야광봉 투척 · 착지 후 50초간 유지');
     }
     return true;
   },[notify,emitItemNoise]);
@@ -787,12 +793,18 @@ export default function App(){
     canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
-    setProjectile({id:++projectileId.current,start,end});
+    setProjectile({id:++projectileId.current,type:'can',start,end});
   },[emitItemNoise]);
-  const onProjectileImpact=useCallback(end=>{
-    setCanPosition(end);
+  const onProjectileImpact=useCallback((end,type='can')=>{
     setProjectile(null);
-    onNoiseRef.current?.({type:'throw',loudness:100,position:end});
+    if(type==='can'){
+      setCanPosition(end);
+      onNoiseRef.current?.({type:'throw',loudness:100,position:end});
+    }else{
+      setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
+      onNoiseRef.current?.({type:'throw',loudness:type==='alarm'?34:type==='radio'?31:16,
+        position:end});
+    }
   },[]);
   const soundRef=useRef(null);
   const onHorrorCue=useCallback(type=>{
@@ -1023,7 +1035,7 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
