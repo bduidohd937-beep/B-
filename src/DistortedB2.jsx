@@ -8,7 +8,7 @@ import * as THREE from 'three';
 // collision/navigation rules remain honest. The distortions are visual only.
 const GHOSTS=[[-12,-5,0.12],[13,6,-.2],[-13,-29,.18]];
 const SHADOW=[15,-31];
-export default function DistortedB2({onEvent}) {
+function DistortedB2({onEvent}) {
   const {camera}=useThree();
   const signs=useRef([]);
   const glow=useRef();
@@ -126,3 +126,5 @@ export default function DistortedB2({onEvent}) {
     </group>
   </group>;
 }
+
+export default React.memo(DistortedB2);
