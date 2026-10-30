@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
 import Listener from './Listener.jsx';
 import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
@@ -318,8 +319,8 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
   const {camera}=useThree();
   return <>
     <color attach="background" args={[floor===2?'#121017':'#101719']}/>
-    <fog attach="fog" args={[floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
-    <ambientLight intensity={floor===2?.27:.43} color={floor===2?'#ae8e98':'#9cadad'}/>
+    <fog attach="fog" args={[alarmActive?'#2a0f18':floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
+    <ambientLight intensity={floor===2?.27:.43} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}/>
     <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
@@ -342,6 +343,7 @@ export default function App(){
   const [altered,setAltered]=useState(false);
   const [ending,setEnding]=useState(false);
   const [audioOn,setAudioOn]=useState(true);
+  const [sirenVolume,setSirenVolume]=useState(DEFAULT_SIREN_VOLUME);
   const [moveMode,setMoveMode]=useState('idle');
   const [airborne,setAirborne]=useState(false);
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
@@ -678,10 +680,12 @@ export default function App(){
   },[]);
   useEffect(()=>()=>soundRef.current?.dispose(),[]);
   useEffect(()=>{soundRef.current?.setEnabled(audioOn);},[audioOn]);
+  useEffect(()=>{soundRef.current?.setSirenVolume?.(sirenVolume);},[sirenVolume]);
   const begin=()=>{
     setStarted(true);
     if(!soundRef.current)soundRef.current=createSoundEngine();
     soundRef.current?.setEnabled(audioOn);
+    soundRef.current?.setSirenVolume?.(sirenVolume);
     soundRef.current?.resume();
     const canvas=document.querySelector('canvas');
     canvas?.requestPointerLock?.();
@@ -701,9 +705,14 @@ export default function App(){
       <div className="death-fx__blood"/>
       <div className="death-fx__blackout"/>
     </div>}
+    {alarmActive&&<div className={'emergency-dread'+(reducedEffects?' emergency-dread--reduced':'')} aria-hidden="true">
+      <div className="emergency-dread__blackout"/>
+      <div className="emergency-dread__red"/>
+    </div>}
     {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
-      <strong>EMERGENCY ALARM</strong>
-      <span>경보 발생 · 청음자가 배전반으로 돌진한다</span>
+      <strong>EMERGENCY PROTOCOL · B2</strong>
+      <span>위이이잉— · 전자 사이렌 가동 · 청음자가 배전반으로 돌진</span>
+      <small>비상 방송 신호 왜곡 · 즉시 이동 또는 은폐</small>
     </div>}
     <div className="hud hud--v092">
       <header className="game-header">
@@ -785,9 +794,16 @@ export default function App(){
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
-        <p>H 조작법 · 헤드폰 권장 · 숨소리는 청음자가 들을 수 있습니다</p>
+        <label className="siren-volume-control" htmlFor="siren-volume">
+          <span>비상 사이렌 음량 · {Math.round(sirenVolume*100)}%</span>
+          <input id="siren-volume" type="range" min="0" max="100" step="5"
+            value={Math.round(sirenVolume*100)}
+            onChange={e=>setSirenVolume(Number(e.target.value)/100)}
+            aria-label="사이렌 음량"/>
+        </label>
+        <p>처음은 낮은 음량으로 테스트 권장 · 헤드폰 사용자 주의 · ESC 일시정지</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.10.1 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.11.1 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
