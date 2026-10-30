@@ -5,8 +5,9 @@ import { gateBlocksPlayer } from './puzzle.js';
 import { crouchReaction } from './stealth.js';
 import { breathHearingRadius } from './survival.js';
 import ListenerModel from './ListenerModel.jsx';
-import { PILLARS,PARKED_CARS,WALK_BOUNDS,terrainBlocked } from './garageLayout.js';
-import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
+import { PILLARS,PARKED_CARS,terrainBlockedRadius,LISTENER_COLLISION_RADIUS } from './garageLayout.js';
+import {sweepMove,segmentCrossesSolid} from './movementCollision.js';
+import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed,LISTENER_REACTION_SECONDS } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 import {buildRoute} from './navigationGrid.js';
 import {passesParkedCar} from './chaseAudioRules.js';
@@ -23,7 +24,7 @@ const BASE = new THREE.Vector3(FIRST_GUARD_HOME[0],0,FIRST_GUARD_HOME[1]);
 const LOOP_BASE = new THREE.Vector3(-14,0,-7);
 const PATROL = FIRST_GUARD_PATROL.map(([x,z])=>new THREE.Vector3(x,0,z));
 const CARS=PARKED_CARS;
-const obstructed=(x,z,powered=false)=>terrainBlocked(x,z,powered);
+const obstructed=(x,z,powered=false)=>terrainBlockedRadius(x,z,LISTENER_COLLISION_RADIUS,powered);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 
 // Approximate sound obstruction by columns and cars, without a physics dependency.
@@ -79,6 +80,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
   const noProgressTime=useRef(0);
   const soundClock=useRef(0);
   const rushTime=useRef(0);
+  const reactionTime=useRef(0);
   const listenerLocation=useRef(new THREE.Vector3());
   const listenerDirection=useRef(new THREE.Vector3());
   const modelMotion=useRef({state:'idle',speed:0,excitement:0});
@@ -93,7 +95,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     cooldown.current=0;
     excitement.current=0;
     currentSpeed.current=1.2;
-    rushTime.current=0;
+    rushTime.current=0;reactionTime.current=0;
     route.current=[];
     routeTime.current=0;
     modelMotion.current={state:'idle',speed:0,excitement:0};
@@ -117,7 +119,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       patrolIndex.current=1;
       watchTime.current=0;stuckTime.current=0;
       lastGoalDistance.current=Infinity;noProgressTime.current=0;
-      excitement.current=0;currentSpeed.current=1.2;rushTime.current=0;
+      excitement.current=0;currentSpeed.current=1.2;rushTime.current=0;reactionTime.current=0;
       modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
       soundClock.current-=dt;
@@ -162,7 +164,10 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
           : softStep ? crouchReaction(distanceToSound, excitement.current, event.loudness)
             : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
       if(reaction!=='none'){
-        if(event.type==='siren')rushTime.current=RUSH_SECONDS;
+        if(event.type==='siren'){
+          rushTime.current=RUSH_SECONDS;
+          reactionTime.current=LISTENER_REACTION_SECONDS;
+        }
         if(event.type==='car-alarm')rushTime.current=Math.max(rushTime.current,5.8);
         target.current.copy(point); // Only sound-event position, never player tracking.
         state.current=reaction==='listen'?'listen':'investigate';
@@ -181,8 +186,9 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       excitement.current=Math.max(0,excitement.current-dt*(state.current==='investigate'?9:14));
     }
     rushTime.current=Math.max(0,rushTime.current-dt);
-    const targetSpeed=state.current==='investigate'
-      ?rushSpeed(rushTime.current,excitement.current)
+    reactionTime.current=Math.max(0,reactionTime.current-dt);
+    const targetSpeed=reactionTime.current>0?0:state.current==='investigate'
+      ?rushSpeed(rushTime.current,excitement.current,floor)
       :state.current==='patrol'?FIRST_GUARD_WALK_SPEED:
         state.current==='return'?1.45:state.current==='search'?.6:0;
     currentSpeed.current=THREE.MathUtils.damp(currentSpeed.current,targetSpeed,
@@ -215,10 +221,13 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       const dz=(waypoint.z-pos.z)/range*dt*speed;
       const [stepX,stepZ]=chooseClearStep(pos.x,pos.z,dx,dz,
         (x,z)=>obstructed(x,z,powered));
-      pos.x+=stepX;pos.z+=stepZ;
+      // Sweep the entire physical creature footprint, preventing 3D body
+      // phasing through concrete, parked cars, gate or breaker at high speed.
+      const moved=sweepMove(pos.x,pos.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered);
+      pos.x=moved.x;pos.z=moved.z;
       // If the obstacle-grid path is stale, recalculate to a FREE cell
       // instead of endlessly leaning into a car, column or breaker cabinet.
-      if(Math.hypot(stepX,stepZ)<.0002){
+      if(moved.moved<.0002){
         stuckTime.current+=dt;
         if(stuckTime.current>=FIRST_GUARD_STUCK_SECONDS){
           route.current=[];routeTime.current=0;stuckTime.current=0;
@@ -275,7 +284,8 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     const player=playerRef.current;
     let capturedNow=false;
     if(player&&cooldown.current===0&&
-       canListenerCatch(pos,player,(x,z)=>obstructed(x,z,powered))){
+       canListenerCatch(pos,player,(x,z)=>terrainBlockedRadius(x,z,0,powered))&&
+       !segmentCrossesSolid(pos,player,powered)){
       cooldown.current=4;
       state.current='return';target.current.copy(home);
       capturedNow=true;
