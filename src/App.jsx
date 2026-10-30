@@ -300,7 +300,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -318,6 +318,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <fog attach="fog" args={[floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
     <ambientLight intensity={floor===2?.27:.43} color={floor===2?'#ae8e98':'#9cadad'}/>
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}/>
+    <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
     <Flashlight enabled={torch}/>
@@ -343,6 +344,13 @@ export default function App(){
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
   const [reducedEffects,setReducedEffects]=useState(false);
   const [showControls,setShowControls]=useState(false);
+  const [alarmActive,setAlarmActive]=useState(false);
+  const alarmFiredRef=useRef(false);
+  useEffect(()=>{
+    if(!alarmActive)return;
+    const id=setTimeout(()=>setAlarmActive(false),SIREN_SECONDS*1000);
+    return ()=>clearTimeout(id);
+  },[alarmActive]);
   const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
   const canHeldRef=useRef(false);
@@ -463,9 +471,17 @@ export default function App(){
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
   const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
   const onPanelAttempt=useCallback(()=>{
-    if(silentRef.current===floorRef.current)return;
-    const position=panelPosition(floorRef.current);
-    onNoiseRef.current?.({type:'switch',loudness:86,position:[position[0],1.5,position[1]]});
+    if(!canTriggerSiren({
+      silent:silentRef.current===floorRef.current,
+      alreadyTriggered:alarmFiredRef.current
+    }))return;
+    alarmFiredRef.current=true;
+    const position=sirenPosition(floorRef.current);
+    setAlarmActive(true);
+    soundRef.current?.switchStart?.();
+    soundRef.current?.startSiren?.(position,SIREN_SECONDS);
+    // Sound AI receives the BREAKER's position, never player tracking.
+    onNoiseRef.current?.({type:'siren',loudness:SIREN_LOUDNESS,position});
   },[]);
   const onPowerRestored=useCallback(()=>{
     const position=panelPosition(floorRef.current);
@@ -540,6 +556,8 @@ export default function App(){
     deathPhaseRef.current='dying';
     soundRef.current?.updateCreature?.({active:false});
     soundRef.current?.updateVitals?.({active:false});
+    soundRef.current?.stopSiren?.();
+    setAlarmActive(false);
     soundRef.current?.death?.();
     setCaught(true);
     setDeathPhase('dying');
@@ -547,6 +565,9 @@ export default function App(){
   },[]);
   const respawn=useCallback(()=>{
     noiseLog.current=[];
+    alarmFiredRef.current=false;
+    setAlarmActive(false);
+    soundRef.current?.stopSiren?.();
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
@@ -590,6 +611,9 @@ export default function App(){
       floorRef.current=2; // Guard against repeated transitions during the same frame.
       soundRef.current?.updateCreature?.({active:false});
       soundRef.current?.updateVitals?.({active:false});
+      soundRef.current?.stopSiren?.();
+      setAlarmActive(false);
+      alarmFiredRef.current=false;
       soundRef.current?.loopTransition?.();
       noiseLog.current=[];
       const nextItems=startingPickups(2);
@@ -614,6 +638,8 @@ export default function App(){
     }
     soundRef.current?.updateCreature?.({active:false});
     soundRef.current?.updateVitals?.({active:false});
+    soundRef.current?.stopSiren?.();
+    setAlarmActive(false);
     setEnding(true);
   },[canCollected]);
   useEffect(()=>{
@@ -644,7 +670,7 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
@@ -653,6 +679,10 @@ export default function App(){
     {deathPhase!=='alive'&&<div className={'death-fx death-fx--'+deathPhase+(reducedEffects?' death-fx--reduced':'')} aria-hidden="true">
       <div className="death-fx__blood"/>
       <div className="death-fx__blackout"/>
+    </div>}
+    {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
+      <strong>EMERGENCY ALARM</strong>
+      <span>경보 발생 · 청음자가 배전반으로 돌진한다</span>
     </div>}
     <div className="hud hud--v092">
       <header className="game-header">
@@ -670,7 +700,7 @@ export default function App(){
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
           <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
-          <span>{silentFloor===floor?'윤활 완료 · 소음 없이 작동 가능':'큰 소음 발생 · 먼저 청음자를 유인하라'}</span>
+          <span>{silentFloor===floor?'윤활 완료 · 사이렌 없이 작동 가능':'경보 발생 시 붉은 비상등과 청음자 긴급 추적'}</span>
           <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
