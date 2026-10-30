@@ -1,4 +1,5 @@
 import { gateBlocksPlayer,POWER_PANEL,GATE_Z,GATE_HALF_OPENING } from './puzzle.js';
+import {STAGE_ONE_SAFE_CENTER} from './stageOneRules.js';
 
 // V0.11: large, fog-shrouded navigable basement with repeated bays.
 // Gameplay and rendering consume the same solid geometry. No arbitrary
@@ -34,7 +35,8 @@ export function surfaceAt(x,z){
 export function terrainBlocked(x,z,powered=false){
   // The first-loop electrical cabinet is physically solid. Previously the
   // player and Listener could stand inside / exploit its rear to dodge pursuit.
-  return (Math.abs(x-POWER_PANEL[0])<1.08&&Math.abs(z-POWER_PANEL[1])<.72)
+  return (Math.abs(x-STAGE_ONE_SAFE_CENTER[0])<.76&&Math.abs(z-STAGE_ONE_SAFE_CENTER[1])<.59)
+    || (Math.abs(x-POWER_PANEL[0])<1.08&&Math.abs(z-POWER_PANEL[1])<.72)
     || PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
     || PARKED_CARS.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7)
     || gateBlocksPlayer(x,z,powered);
@@ -50,6 +52,7 @@ export function terrainBlockedRadius(x,z,radius=0,powered=false){
   if(!Number.isFinite(x)||!Number.isFinite(z))return true;
   if(x-r<WALK_BOUNDS.minX||x+r>WALK_BOUNDS.maxX||
      z-r<WALK_BOUNDS.minZ||z+r>WALK_BOUNDS.maxZ)return true;
+  if(Math.abs(x-STAGE_ONE_SAFE_CENTER[0])<.76+r&&Math.abs(z-STAGE_ONE_SAFE_CENTER[1])<.59+r)return true;
   if(Math.abs(x-POWER_PANEL[0])<1.08+r&&Math.abs(z-POWER_PANEL[1])<.72+r)
     return true;
   if(PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15+r&&Math.abs(z-pz)<1.15+r))
