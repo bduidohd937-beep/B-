@@ -3,11 +3,11 @@ import React, { useEffect, useState } from 'react';
 const ACTIONS={idle:'정지','crouch-idle':'몸 낮춤',crouch:'은신 이동',walk:'걷기',sprint:'질주',jump:'공중'};
 const MESSAGES={
   jump:'점프 소음 발생',land:'착지 충격! 크게 들린다',throw:'캔 충돌 · 유인 소음',
-  switch:'배전반 작동 · 큰 소음',power:'전력 복구 · 경보음',breath:'거친 숨소리 · 가까이서 감지 위험'
+  switch:'배전반 작동 · 큰 소음',power:'전력 복구 · 경보음',breath:'거친 숨소리 · 가까이서 감지 위험',decoy:'유인 장치 작동 · 청음자가 듣는다',gear:'장비 사용 · 소음 발생'
 };
 function noiseSeverity(noise){return noise>=75?'danger':noise>=35?'warning':'quiet';}
 
-export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vitals,creature}){
+export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vitals,creature,observer,secondFloor=false}){
   const [displayNoise,setDisplayNoise]=useState(0);
   const [notice,setNotice]=useState(null);
   useEffect(()=>{
@@ -54,6 +54,12 @@ export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vi
       </div>
       <div className="survival-panel__micro">{movement} · {breath>=14?'거친 숨소리 위험':severity==='danger'?'큰 소음 발생':severity==='warning'?'소음 주의':'저소음 유지'}</div>
     </section>
+    {secondFloor&&<div className={'survival-panel__observer'+(observer?.mode==='chase'?' is-danger':'')}>
+      관조자 · {observer?.mode==='chase'?'움직임 포착! 멈추거나 차량 뒤로':
+        observer?.mode==='alert'?'움직임을 감지하고 있다':
+        observer?.mode==='search'?'마지막 위치를 수색 중':
+        observer?.mode==='return'?'순찰 복귀 중':'시야를 피해 이동'}
+    </div>}
     <div className={'survival-panel__notice '+(notice?'is-visible':'')} aria-live="polite">
       {notice?notice.label:danger||'소리를 죽여라'}
     </div>
