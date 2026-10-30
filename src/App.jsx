@@ -5,11 +5,12 @@ import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
 import ThrownCan from './ThrownCan.jsx';
-import NoiseHUD from './NoiseHUD.jsx';
+import SurvivalHUD from './SurvivalHUD.jsx';
 import EscapePuzzle from './EscapePuzzle.jsx';
 import DistortedB2 from './DistortedB2.jsx';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
+import { freshSurvival, tickSurvival } from './survival.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const pillars = [];
@@ -91,7 +92,7 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals }) {
   const { camera } = useThree();
   const keys = useRef({});
   const hadLooked = useRef(false);
@@ -102,6 +103,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
   const vertical = useRef(0);
   const velocityY = useRef(0);
   const stepMeter = useRef({meters:0,elapsed:1,moving:false});
+  const survival=useRef(freshSurvival());
+  const breathClock=useRef(0);
+  const vitalsClock=useRef(0);
   const bobClock = useRef(0);
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
@@ -135,24 +139,30 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     camera.rotation.set(0,0,0);
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
+    survival.current=freshSurvival();
+    breathClock.current=0;vitalsClock.current=0;
+    onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     proximityReported.current=null;
     onPanelProgress(0);
-  },[respawnSignal,camera,checkpoint,onPanelProgress]);
+  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals]);
   useEffect(()=>{
     if(!floorSignal)return;
     camera.position.set(...SECOND_FLOOR_START);
     camera.rotation.set(0,0,0);
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
+    survival.current=freshSurvival();
+    breathClock.current=0;vitalsClock.current=0;
+    onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     checkSet.current=true;
     proximityReported.current=null;
     keys.current={};
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     onPanelProgress(0);
-  },[floorSignal,camera,onPanelProgress]);
+  },[floorSignal,camera,onPanelProgress,onVitals]);
   useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
@@ -212,9 +222,24 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     if(keys.current.KeyA||keys.current.ArrowLeft)movement.sub(right);
     const dt=Math.min(delta,.05);
     const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
-    const sprinting=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
-    const mode=crouching?'crouch':sprinting?'sprint':'walk';
+    const sprintIntent=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
     const moving=movement.lengthSq()>0;
+    const survivalTick=tickSurvival(survival.current,{
+      dt,wantsSprint:sprintIntent,moving,crouching,airborne:vertical.current>0
+    });
+    survival.current=survivalTick.state;
+    const sprinting=survivalTick.sprinting;
+    const mode=crouching?'crouch':sprinting?'sprint':'walk';
+    vitalsClock.current-=dt;
+    if(vitalsClock.current<=0){
+      onVitals({stamina:survival.current.stamina,exhausted:survivalTick.exhausted,breath:survivalTick.breath});
+      vitalsClock.current=.13;
+    }
+    breathClock.current-=dt;
+    if(survivalTick.breath>=14&&breathClock.current<=0){
+      onNoise({type:'breath',loudness:survivalTick.breath,position:camera.position.toArray()});
+      breathClock.current=1.22;
+    }else if(survivalTick.breath<14){breathClock.current=0;}
     if(jumpQueued.current){
       if(!crouching&&vertical.current===0){velocityY.current=4.5;onNoise({type:'jump',loudness:72,position:camera.position.toArray()});}
       jumpQueued.current=false;
