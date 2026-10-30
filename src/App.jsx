@@ -388,6 +388,31 @@ export default function App(){
   const [showControls,setShowControls]=useState(false);
   const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
+  const canHeldRef=useRef(false);
+  canHeldRef.current=canCollected;
+  const [gear,setGear]=useState([]);
+  const gearRef=useRef([]);
+  gearRef.current=gear;
+  const [pickupItems,setPickupItems]=useState(()=>startingPickups(1));
+  const pickupItemsRef=useRef(pickupItems);
+  pickupItemsRef.current=pickupItems;
+  const [deployed,setDeployed]=useState([]);
+  const gadgetId=useRef(0);
+  const [selectedSlot,setSelectedSlot]=useState(0);
+  const bag=slots(canCollected,gear);
+  const selectedIndex=Math.min(selectedSlot,Math.max(0,bag.length-1));
+  const selectedType=bag[selectedIndex]||null;
+  const [boostSignal,setBoostSignal]=useState(0);
+  const [silentFloor,setSilentFloor]=useState(0);
+  const silentRef=useRef(0);
+  silentRef.current=silentFloor;
+  const [itemNotice,setItemNotice]=useState(null);
+  const notify=useCallback(text=>setItemNotice({text,id:Date.now()}),[]);
+  useEffect(()=>{
+    if(!itemNotice)return;
+    const timer=setTimeout(()=>setItemNotice(old=>old?.id===itemNotice.id?null:old),2100);
+    return ()=>clearTimeout(timer);
+  },[itemNotice]);
   const [checkpoint,setCheckpoint]=useState(false);
   const [powered,setPowered]=useState(false);
   const [echoRestored,setEchoRestored]=useState(false);
@@ -403,13 +428,85 @@ export default function App(){
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
   const onPickCan=useCallback(()=>{
+    if(!canAddToInventory(canHeldRef.current,gearRef.current)){
+      notify('가방이 꽉 찼다 · Q로 장비를 내려놓자');
+      return false;
+    }
+    canHeldRef.current=true;
     setCanCollected(true);
     setCanPosition(null);
+    setSelectedSlot(0);
+    notify('빈 캔 확보 · [1] 선택 후 G로 던지기');
+    return true;
+  },[notify]);
+  const onPickupGear=useCallback(id=>{
+    const item=pickupItemsRef.current.find(it=>it.id===id);
+    if(!item)return false;
+    if(!canAddToInventory(canHeldRef.current,gearRef.current)){
+      notify('가방이 꽉 찼다 · Q로 장비를 내려놓자');
+      return false;
+    }
+    const next=[...gearRef.current,item.type];
+    gearRef.current=next;
+    setGear(next);
+    const remaining=pickupItemsRef.current.filter(it=>it.id!==id);
+    pickupItemsRef.current=remaining;
+    setPickupItems(remaining);
+    setSelectedSlot(Math.min(2,slots(canHeldRef.current,next).length-1));
+    notify(ITEM_TYPES[item.type].label+' 획득');
+    return true;
+  },[notify]);
+  const onSelectSlot=useCallback(index=>{
+    const available=slots(canHeldRef.current,gearRef.current);
+    if(available[index])setSelectedSlot(index);
   },[]);
+  const onDropGear=useCallback((type,position)=>{
+    const index=gearRef.current.indexOf(type);
+    if(index<0)return false;
+    const updated=gearRef.current.filter((_,i)=>i!==index);
+    gearRef.current=updated;setGear(updated);
+    const drop={id:'drop-'+(++gadgetId.current),type,position};
+    const world=[...pickupItemsRef.current,drop];
+    pickupItemsRef.current=world;
+    setPickupItems(world);
+    setSelectedSlot(0);
+    notify(ITEM_TYPES[type].label+' 내려놓음');
+    return true;
+  },[notify]);
+  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered})=>{
+    const index=gearRef.current.indexOf(type);
+    if(index<0)return false;
+    const effect=itemEffect(type,nearPanel);
+    if(effect==='requires-panel'||(effect==='silence'&&alreadyPowered)){
+      notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
+      return false;
+    }
+    const updated=gearRef.current.filter((_,i)=>i!==index);
+    gearRef.current=updated;
+    setGear(updated);
+    setSelectedSlot(0);
+    if(effect==='silence'){
+      silentRef.current=floorRef.current;
+      setSilentFloor(floorRef.current);
+      notify('배전반 윤활 완료 · 이번 층은 소음 없이 조작');
+    }else if(effect==='boost'){
+      setBoostSignal(v=>v+1);
+      onNoiseRef.current?.({type:'gear',device:'energy',loudness:37,position});
+      notify('스태미나 +48 · 5초 동안 질주 강화');
+    }else if(effect==='deploy'){
+      setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
+      onNoiseRef.current?.({type:'gear',device:type,loudness:type==='glow'?8:17,position});
+      notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
+        type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
+    }
+    return true;
+  },[notify]);
+  const onGadgetExpired=useCallback(id=>setDeployed(old=>old.filter(g=>g.id!==id)),[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
   const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
   const onPanelAttempt=useCallback(()=>{
+    if(silentRef.current===floorRef.current)return;
     const position=panelPosition(floorRef.current);
     onNoiseRef.current?.({type:'switch',loudness:86,position:[position[0],1.5,position[1]]});
   },[]);
@@ -417,9 +514,10 @@ export default function App(){
     const position=panelPosition(floorRef.current);
     if(floorRef.current===2)setEchoRestored(true);
     else setPowered(true);
-    onNoiseRef.current?.({type:'power',loudness:92,position:[position[0],1.5,position[1]]});
+    if(silentRef.current!==floorRef.current)onNoiseRef.current?.({type:'power',loudness:92,position:[position[0],1.5,position[1]]});
   },[]);
   const onThrowCan=useCallback(({start,end})=>{
+    canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
     setProjectile({id:++projectileId.current,start,end});
