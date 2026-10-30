@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   freshStageOne,applyStageOneAction,stageOneObjective,
   stageOneGateReady,stageOneGateOpen,STAGE_ONE_SAFE_STEPS,
-  findStageOneInteraction,STAGE_ONE_SAFE
+  findStageOneInteraction,STAGE_ONE_SAFE,SAFE_METAL_HEARING_RADIUS
 } from '../src/stageOneRules.js';
 import {freshGateAuthentication} from '../src/exitAuthorization.js';
 
@@ -18,7 +18,7 @@ test('Stage 01 requires record -> 317 -> three safe latches -> power -> shutter'
   assert.match(stageOneObjective(state),/금고/);
   for(let i=0;i<STAGE_ONE_SAFE_STEPS;i++){
     const out=applyStageOneAction(state,'safe');
-    assert.equal(out.noise,68);
+    assert.equal(out.noise,92);
     state=out.state;
     assert.equal(state.tumblers,i+1);
   }
@@ -46,4 +46,10 @@ test('Physical focus requires approaching and looking at actual safe face',()=>{
   assert.equal(findStageOneInteraction([x,y,z+1.3],[0,0,-1])?.kind,'safe');
   assert.notEqual(findStageOneInteraction([x,y,z+10],[0,0,-1])?.kind,'safe');
   assert.notEqual(findStageOneInteraction([x,y,z+1.3],[0,0,1])?.kind,'safe');
+});
+
+test('Mechanical safe emits a real positional investigation sound with sufficient reach',()=>{
+  assert.ok(SAFE_METAL_HEARING_RADIUS>=31);
+  const state=applyStageOneAction(applyStageOneAction(freshStageOne(),'record').state,'vehicle').state;
+  assert.equal(applyStageOneAction(state,'safe').noise,92);
 });
