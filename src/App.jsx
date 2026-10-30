@@ -15,7 +15,7 @@ import DistortedB2 from './DistortedB2.jsx';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
-import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
+import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect,gearMakesNoise } from './items.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const pillars = [];
@@ -502,7 +502,7 @@ export default function App(){
       notify('스태미나 +48 · 5초 동안 질주 강화');
     }else if(effect==='deploy'){
       setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
-      onNoiseRef.current?.({type:'gear',device:type,loudness:type==='glow'?8:17,position});
+      if(gearMakesNoise(type))onNoiseRef.current?.({type:'gear',device:type,loudness:17,position});
       notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
         type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
     }
@@ -720,7 +720,7 @@ export default function App(){
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
           <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
-          <span>큰 소음 발생 · 먼저 청음자를 유인하라</span>
+          <span>{silentFloor===floor?'윤활 완료 · 소음 없이 작동 가능':'큰 소음 발생 · 먼저 청음자를 유인하라'}</span>
           <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
