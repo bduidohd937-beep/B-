@@ -9,6 +9,7 @@ export const STAGE_ONE_SAFE=Object.freeze([-22,1.45,13.7]);
 export const STAGE_ONE_SAFE_CENTER=Object.freeze([-22,13]);
 export const STAGE_ONE_SAFE_STEPS=3;
 export const SAFE_LATCH_HOLD_SECONDS=1.65;
+export const SAFE_METAL_HEARING_RADIUS=42;
 const LOCATIONS=Object.freeze([
   {kind:'record',position:STAGE_ONE_TERMINAL},
   {kind:'vehicle',position:STAGE_ONE_VEHICLE},
@@ -40,7 +41,7 @@ export function applyStageOneAction(previous,kind){
     const tumblers=Math.min(STAGE_ONE_SAFE_STEPS,current.tumblers+1);
     const key=tumblers===STAGE_ONE_SAFE_STEPS;
     return {state:{...current,tumblers,key},
-      event:key?'key':'tumbler',noise:68};
+      event:key?'key':'tumbler',noise:92};
   }
   return {state:current,event:'invalid',noise:0};
 }
