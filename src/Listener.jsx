@@ -110,7 +110,9 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     const pos=group.current.position;
     if(!active){
       if(deathPhase==='dying'){
-        // Keep the beast beside the collapsing player until the screen fades.
+        // Remain at the point of capture, looking at the collapsing player.
+        const player=playerRef.current;
+        if(player)group.current.rotation.y=Math.atan2(player.x-pos.x,player.z-pos.z);
         modelMotion.current={state:'attack',speed:0,excitement:100};
         soundClock.current-=dt;
         if(soundClock.current<=0){onSpatial?.({active:false});soundClock.current=.18;}
@@ -165,7 +167,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     const waypoint=route.current.length?route.current[0]:destination;
     const range=dist(pos,waypoint);
     const goalRange=dist(pos,destination);
-    if(range>.6){
+    if(range>.6&&(state.current==='investigate'||state.current==='return')){
       const speed=currentSpeed.current;
       const dx=(waypoint.x-pos.x)/range*dt*speed;
       const dz=(waypoint.z-pos.z)/range*dt*speed;
@@ -188,15 +190,20 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
       if(searchTime.current>4.5){state.current='return';}
     }
     if(state.current==='listen'){
-      // Hearing a whisper nearby makes the creature turn, but not sprint.
-      // Standing still or moving away quietly can still save the player.
+      // Stand still and rotate toward last-heard sound rather than sliding closer.
+      // Moving away silently remains a viable option.
+      const facing=Math.atan2(target.current.x-pos.x,target.current.z-pos.z);
+      group.current.rotation.y=THREE.MathUtils.damp(group.current.rotation.y,facing,5.8,dt);
       searchTime.current+=dt;
       if(searchTime.current>1.6){state.current='return';}
     }
     const player=playerRef.current;
+    let capturedNow=false;
     if(player&&cooldown.current===0&&dist(pos,player)<1.28){
       cooldown.current=4;
       state.current='return';target.current.copy(home);
+      capturedNow=true;
+      group.current.rotation.y=Math.atan2(player.x-pos.x,player.z-pos.z);
       modelMotion.current={state:'attack',speed:0,excitement:100};
       onCaught();
     }
@@ -218,7 +225,9 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
       });
       soundClock.current=.05;
     }
-    modelMotion.current={state:state.current,speed:currentSpeed.current,excitement:excitement.current};
+    if(!capturedNow){
+      modelMotion.current={state:state.current,speed:currentSpeed.current,excitement:excitement.current};
+    }
     statusTime.current+=dt;
     if(statusTime.current>.3){
       statusTime.current=0;
