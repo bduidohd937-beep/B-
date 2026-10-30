@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
  SECURITY_KEY_READER,KEY_HOLD_SECONDS,SHUTTER_RAISE_SECONDS,
  SHUTTER_PASS_SECONDS,CCTV_MAX_DISTANCE,EXIT_ALARM_LOUDNESS,
- canReadCctv,canUseKeyReader,freshGateAuthentication,
+ canReadCctv,canUseKeyReader,canStartKeyReader,canHoldKeyReader,freshGateAuthentication,
  advanceGateAuthentication,gatePassable,gateLiftRatio,keyHoldProgress
 } from '../src/exitAuthorization.js';
 import {CCTV_STATION,initialVehiclePuzzle,vehicleGateOpen,reviewCctv,examineVehicle} from '../src/vehiclePuzzle.js';
@@ -86,4 +86,23 @@ test('stage 1 gate remains independent of the key and late stage cannot be skipp
  assert.equal(vehicleGateOpen(1,false,key,{phase:'open',elapsed:10}),false);
  assert.equal(vehicleGateOpen(2,false,key,freshGateAuthentication()),false);
  assert.ok(SHUTTER_RAISE_SECONDS>SHUTTER_PASS_SECONDS);
+});
+
+test('key lock requires FRONT and gaze only at insertion, not during hold',()=>{
+ const [x,,z]=SECURITY_KEY_READER;
+ const eye=[x,1.7,z+1.3],rear=[x,1.7,z-1.1];
+ assert.equal(canStartKeyReader(eye,[0,-.1,-1]),true);
+ assert.equal(canStartKeyReader(eye,[0,0,1]),false);
+ assert.equal(canStartKeyReader(rear,[0,-.1,1]),false);
+ assert.equal(canHoldKeyReader(eye[0],eye[2]),true);
+ assert.equal(canHoldKeyReader(rear[0],rear[2]),false);
+ assert.equal(canHoldKeyReader(x,z+3),false);
+});
+test('shutter passable only AFTER opening duration threshold, not at initial siren',()=>{
+ const start=step(freshGateAuthentication(),KEY_HOLD_SECONDS+.05);
+ assert.equal(gatePassable(start.state),false);
+ const almost=step(start.state,SHUTTER_PASS_SECONDS-.2,{holding:false,near:false});
+ assert.equal(gatePassable(almost.state),false);
+ const open=step(almost.state,.35,{holding:false,near:false});
+ assert.equal(gatePassable(open.state),true);
 });
