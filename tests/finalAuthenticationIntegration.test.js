@@ -16,7 +16,7 @@ test('UI: full CCTV is limited to console proximity, while J accesses only note'
 });
 test('UI: second-stage access uses a real key reader with sustained hold',()=>{
  assert.match(escape,/SECURITY_KEY_READER/);
- assert.match(escape,/authentication=\{gateAuth\}/);
+ assert.match(app,/authentication=\{gateAuth\}/);
  assert.match(app,/advanceGateAuthentication\(gateAuthRef\.current/);
  assert.match(app,/holding:Boolean\(keys\.current\.KeyE\)/);
 });
