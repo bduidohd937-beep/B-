@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { gateBlocksPlayer } from './puzzle.js';
 import { crouchReaction } from './stealth.js';
+import ListenerModel from './ListenerModel.jsx';
 
 const BASE = new THREE.Vector3(-13, 0, -25);
 const PILLARS = Array.from({length:6},(_,i)=>-28+i*9).flatMap(z=>[-10,10].map(x=>[x,z]));
@@ -71,7 +72,7 @@ function buildRoute(from,to,powered){
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-export default function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false}) {
+export default function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,floor=1,levelSignal=0,deathPhase='alive'}) {
   const {camera}=useThree();
   const group=useRef(null);
   const lastEvent=useRef(0);
@@ -87,13 +88,35 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
   const soundClock=useRef(0);
   const listenerLocation=useRef(new THREE.Vector3());
   const listenerDirection=useRef(new THREE.Vector3());
+  const modelMotion=useRef({state:'idle',speed:0,excitement:0});
+  useEffect(()=>{
+    if(group.current)group.current.position.copy(BASE);
+    state.current='idle';
+    target.current.copy(BASE);
+    searchTime.current=0;
+    cooldown.current=0;
+    excitement.current=0;
+    currentSpeed.current=1.2;
+    route.current=[];
+    routeTime.current=0;
+    modelMotion.current={state:'idle',speed:0,excitement:0};
+    lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
+  },[floor,levelSignal,events]);
   useFrame((_,rawDelta)=>{
     if(!group.current)return;
     const dt=Math.min(rawDelta,.06);
     const pos=group.current.position;
     if(!active){
+      if(deathPhase==='dying'){
+        // Keep the beast beside the collapsing player until the screen fades.
+        modelMotion.current={state:'attack',speed:0,excitement:100};
+        soundClock.current-=dt;
+        if(soundClock.current<=0){onSpatial?.({active:false});soundClock.current=.18;}
+        return;
+      }
       state.current='idle';pos.copy(BASE);route.current=[];routeTime.current=0;
       excitement.current=0;currentSpeed.current=1.2;
+      modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
       soundClock.current-=dt;
       if(soundClock.current<=0){onSpatial?.({active:false});soundClock.current=.18;}
@@ -172,6 +195,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     if(player&&cooldown.current===0&&dist(pos,player)<1.28){
       cooldown.current=4;
       state.current='return';target.current.copy(BASE);
+      modelMotion.current={state:'attack',speed:0,excitement:100};
       onCaught();
     }
     // Audio follows the camera and creature about 20 times a second.
@@ -192,6 +216,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
       });
       soundClock.current=.05;
     }
+    modelMotion.current={state:state.current,speed:currentSpeed.current,excitement:excitement.current};
     statusTime.current+=dt;
     if(statusTime.current>.3){
       statusTime.current=0;
@@ -199,27 +224,6 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     }
   });
   return <group ref={group} position={[-13,0,-25]}>
-    <mesh position={[0,.82,0]} rotation={[.13,0,-.12]}>
-      <capsuleGeometry args={[.37,.7,5,10]}/>
-      <meshStandardMaterial color="#111515" roughness={1}/>
-    </mesh>
-    <mesh position={[0,1.57,.1]} scale={[1.05,.7,1]}>
-      <sphereGeometry args={[.32,14,12]}/>
-      <meshStandardMaterial color="#181e1d" roughness={.9}/>
-    </mesh>
-    {[-.39,.39].map(x=><group key={x}>
-      <mesh position={[x,1.59,.15]} rotation={[0,0,x*-.4]}>
-        <sphereGeometry args={[.19,10,10]}/>
-        <meshStandardMaterial color="#373f3b" roughness={.95}/>
-      </mesh>
-      <mesh position={[x*.42,.33,0]} rotation={[0,0,x*.3]}>
-        <capsuleGeometry args={[.12,.5,4,8]}/>
-        <meshStandardMaterial color="#0d1010"/>
-      </mesh>
-      <mesh position={[x*1.45,.97,.05]} rotation={[0,0,x*.4]}>
-        <capsuleGeometry args={[.1,.95,4,8]}/>
-        <meshStandardMaterial color="#111413"/>
-      </mesh>
-    </group>)}
+    <ListenerModel motionRef={modelMotion}/>
   </group>;
 }
