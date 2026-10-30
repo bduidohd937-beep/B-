@@ -38,12 +38,14 @@ export default function DistortedB2() {
     )}
     {[-31,-14,3,20].map((z,i)=>
       <group key={z} position={[i%2===0?-13.6:13.6,0,z]}>
-        <mesh position={[0,2.8,0]} ref={el=>{signs.current[i]=el;}}>
-          <boxGeometry args={[2.45,.77,.08]}/>
-          <meshStandardMaterial color="#1b171e" emissive="#a21b32" emissiveIntensity={.68}/>
-        </mesh>
-        <Text position={[0,2.8,.06]} fontSize={.46} color="#f2aaad">B2</Text>
-        <Text position={[0,2.26,.06]} fontSize={.12} color="#be606b">YOU ARE STILL HERE</Text>
+        <group position={[0,2.8,0]} ref={el=>{signs.current[i]=el;}}>
+          <mesh>
+            <boxGeometry args={[2.45,.77,.08]}/>
+            <meshStandardMaterial color="#1b171e" emissive="#a21b32" emissiveIntensity={.68}/>
+          </mesh>
+          <Text position={[0,.01,.06]} fontSize={.46} color="#f2aaad">B2</Text>
+          <Text position={[0,-.55,.06]} fontSize={.12} color="#be606b">YOU ARE STILL HERE</Text>
+        </group>
       </group>
     )}
     {/* Phantom parked-car shadows that vanish when approached (no collision). */}
