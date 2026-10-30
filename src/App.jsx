@@ -231,7 +231,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   });
   return null;
 }
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -251,7 +251,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <Garage altered={altered} flicker={flicker} canPosition={canPosition}/>
     <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
-    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
@@ -301,7 +301,11 @@ export default function App(){
     setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed
       ?old:{mode,excitement,speed});
   },[]);
+  const onSpatial=useCallback(data=>{
+    soundRef.current?.updateCreature?.(data);
+  },[]);
   const onCaught=useCallback(()=>{
+    soundRef.current?.updateCreature?.({active:false});
     setCaught(true);
     document.exitPointerLock?.();
   },[]);
@@ -312,6 +316,7 @@ export default function App(){
     setAirborne(false);
     setMoveMode('idle');
     setCreatureInfo({mode:'idle',excitement:0,speed:0});
+    soundRef.current?.resume();
     const canvas=document.querySelector('canvas');
     canvas?.requestPointerLock?.();
   },[]);
@@ -334,7 +339,10 @@ export default function App(){
   },[]);
   onNoiseRef.current=onNoise;
   const onWatcherShift=useCallback(()=>setShifted(true),[]);
-  const onFinish=useCallback(()=>setEnding(true),[]);
+  const onFinish=useCallback(()=>{
+    soundRef.current?.updateCreature?.({active:false});
+    setEnding(true);
+  },[]);
   const onNear=useCallback(()=>setNear(true),[]);
   const onTurn=useCallback(()=>setAltered(true),[]);
   useEffect(()=>{
@@ -355,14 +363,14 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact}/>
     </Canvas>
     <div className="vignette"/>
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.6 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.7 / WORK IN PROGRESS</div>
       <div className="reticle"/>
-      <div className="audio-toggle" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
+      <div className="audio-toggle" title="청음자의 방향성 숨소리와 발소리는 헤드폰 사용을 권장합니다" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
       <div className="creature-indicator">{creatureInfo.mode==='investigate'?'청음자가 소리를 향해 다가온다':creatureInfo.mode==='search'?'무언가가 주변을 수색 중이다':creatureInfo.mode==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
       {started&&<NoiseHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} creature={creatureInfo}/>}
       <div className="item-indicator">{canCollected?'빈 캔 보유 · G 던지기':canPosition?'바닥에 떨어진 캔 · 가까이 가서 E로 줍기':'캔이 날아가는 중…'}{checkpoint?' · 체크포인트 확보':''}</div>
@@ -376,7 +384,7 @@ export default function App(){
       <h1>{caught?'들켰다.':ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
       <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.6 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.7 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }

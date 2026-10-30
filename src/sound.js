@@ -1,3 +1,5 @@
+import { createSpatialCreatureAudio } from './spatialAudio.js';
+
 // Original synthesized footsteps and impacts. No external sound assets.
 export function createSoundEngine() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -34,6 +36,8 @@ export function createSoundEngine() {
   const noiseBuffer = ctx.createBuffer(1, Math.round(ctx.sampleRate), ctx.sampleRate);
   const values = noiseBuffer.getChannelData(0);
   for (let i = 0; i < values.length; i++) values[i] = Math.random() * 2 - 1;
+
+  const creatureAudio = createSpatialCreatureAudio(ctx, master, noiseBuffer);
 
   function envelope(gain, time, length, peak) {
     const attack = Math.min(.012, length / 6);
@@ -114,6 +118,7 @@ export function createSoundEngine() {
 
   return {
     step, jump, land, metal, splash, throwCan, flicker,
+    updateCreature: creatureAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();
       return Promise.resolve();
@@ -125,6 +130,7 @@ export function createSoundEngine() {
       }
     },
     dispose() {
+      creatureAudio.dispose();
       try { hum.stop(); } catch {}
       if (ctx.state !== 'closed') ctx.close();
     }

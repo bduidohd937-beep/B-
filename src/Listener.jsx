@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 const BASE = new THREE.Vector3(-13, 0, -25);
@@ -8,6 +8,31 @@ const CARS = [[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
 const obstructed=(x,z)=>PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
  || CARS.some(([cx,cz])=>Math.abs(x-cx)<1.8&&Math.abs(z-cz)<2.8);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+
+// Approximate sound obstruction by columns and cars, without a physics dependency.
+// This affects only how the human PLAYER hears the creature, not the AI hearing logic.
+function lineCrossesBox(from,to,cx,cz,halfX,halfZ){
+  const dx=to.x-from.x,dz=to.z-from.z;
+  let enter=0,exit=1;
+  for(const [p,d,min,max] of [
+    [from.x,dx,cx-halfX,cx+halfX],
+    [from.z,dz,cz-halfZ,cz+halfZ]
+  ]){
+    if(Math.abs(d)<1e-6){
+      if(p<min||p>max)return false;
+    }else{
+      const t1=(min-p)/d,t2=(max-p)/d;
+      enter=Math.max(enter,Math.min(t1,t2));
+      exit=Math.min(exit,Math.max(t1,t2));
+      if(enter>exit)return false;
+    }
+  }
+  return exit>.03 && enter<.97;
+}
+function blockedToListener(creature,viewer){
+  return PILLARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,.85,.85))
+    || CARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,1.45,2.4));
+}
 
 const STEP=2;
 const cols=18,rows=42;
@@ -43,7 +68,8 @@ function buildRoute(from,to){
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-export default function Listener({active,events,playerRef,onCaught,onState}) {
+export default function Listener({active,events,playerRef,onCaught,onState,onSpatial}) {
+  const {camera}=useThree();
   const group=useRef(null);
   const lastEvent=useRef(0);
   const state=useRef('idle');
@@ -55,6 +81,9 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
   const currentSpeed=useRef(1.2);
   const route=useRef([]);
   const routeTime=useRef(0);
+  const soundClock=useRef(0);
+  const listenerLocation=useRef(new THREE.Vector3());
+  const listenerDirection=useRef(new THREE.Vector3());
   useFrame((_,rawDelta)=>{
     if(!group.current)return;
     const dt=Math.min(rawDelta,.06);
@@ -63,6 +92,8 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
       state.current='idle';pos.copy(BASE);route.current=[];routeTime.current=0;
       excitement.current=0;currentSpeed.current=1.2;
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
+      soundClock.current-=dt;
+      if(soundClock.current<=0){onSpatial?.({active:false});soundClock.current=.18;}
       return;
     }
     cooldown.current=Math.max(0,cooldown.current-dt);
@@ -130,6 +161,24 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
       cooldown.current=4;
       state.current='return';target.current.copy(BASE);
       onCaught();
+    }
+    // Audio follows the camera and creature about 20 times a second.
+    soundClock.current-=dt;
+    if(soundClock.current<=0){
+      camera.getWorldPosition(listenerLocation.current);
+      camera.getWorldDirection(listenerDirection.current);
+      const viewer=listenerLocation.current;
+      onSpatial?.({
+        active:true,
+        listenerPosition:[viewer.x,viewer.y,viewer.z],
+        forward:listenerDirection.current.toArray(),
+        creaturePosition:[pos.x,1.3,pos.z],
+        occluded:blockedToListener(pos,viewer),
+        state:state.current,
+        speed:currentSpeed.current,
+        excitement:excitement.current
+      });
+      soundClock.current=.05;
     }
     statusTime.current+=dt;
     if(statusTime.current>.3){
