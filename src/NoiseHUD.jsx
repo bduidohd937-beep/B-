@@ -7,7 +7,7 @@ const LABELS = {
   throw: '캔 충돌 · 소음 발생!'
 };
 const SURFACES = {concrete:'콘크리트',metal:'금속판',water:'물웅덩이'};
-const MOVEMENTS = {crouch:'앉아서 이동',walk:'걷기',sprint:'달리기'};
+const MOVEMENTS = {idle:'정지', 'crouch-idle':'앉아서 정지', crouch:'앉아서 이동',walk:'걷기',sprint:'달리기',jump:'점프 중'};
 
 function severity(value) {
   if (value >= 75) return 'danger';
