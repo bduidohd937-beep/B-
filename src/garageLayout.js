@@ -1,4 +1,4 @@
-import { gateBlocksPlayer,POWER_PANEL } from './puzzle.js';
+import { gateBlocksPlayer,POWER_PANEL,GATE_Z,GATE_HALF_OPENING } from './puzzle.js';
 
 // V0.11: large, fog-shrouded navigable basement with repeated bays.
 // Gameplay and rendering consume the same solid geometry. No arbitrary
@@ -58,8 +58,8 @@ export function terrainBlockedRadius(x,z,radius=0,powered=false){
     return true;
   // Shutter and its adjacent concrete walls are both solid, at the same
   // corridor depth as the physical mesh. No side slip while raised.
-  if(Math.abs(z-(-38))<.85+r &&
-     (Math.abs(x)+r>=3.1||!powered))return true;
+  if(Math.abs(z-GATE_Z)<.85+r &&
+     (Math.abs(x)+r>=GATE_HALF_OPENING||!powered))return true;
   return false;
 }
 
