@@ -348,3 +348,20 @@
  .cctv-pocket-note p{font-size:11px}
 }
 @media(prefers-reduced-motion:reduce){.cctv-pocket-note{animation:none!important;transition:none!important}}
+
+/* V0.12.3: opt-in performance readout (F3). No diagnostic work or
+   extra React renders while the readout is hidden. */
+.performance-debug{position:fixed;left:14px;top:74px;z-index:9;
+ pointer-events:none;width:197px;max-width:calc(100vw - 28px);
+ background:#0a1114ef;border:1px solid #536f6dca;border-left:3px solid #7aa6a1;
+ color:#d5e2d8;font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;
+ letter-spacing:0;padding:10px 12px;box-shadow:0 7px 33px #000b}
+.performance-debug strong{display:block;color:#e0d7b7;letter-spacing:.075em;
+ font-size:10px;padding-bottom:5px;margin-bottom:4px;border-bottom:1px solid #526662}
+.performance-debug>span{display:flex;justify-content:space-between;gap:10px}
+.performance-debug b{font-variant-numeric:tabular-nums;font-size:12px;color:#cce1d8}
+.performance-debug small{display:block;margin-top:6px;font-size:9px;color:#88a8a1;line-height:1.4}
+@media(max-width:760px){.performance-debug{left:8px;top:54px;width:178px;
+ padding:7px 9px;font-size:10px}}
+@media(prefers-reduced-motion:reduce){.performance-debug{animation:none!important;
+ transition:none!important}}

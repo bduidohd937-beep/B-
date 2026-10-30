@@ -35,35 +35,44 @@ test('key must be found first; holding from far away cannot advance',()=>{
  }
  assert.equal(vehicleGateOpen(2,true,{solved:true},freshGateAuthentication()),false);
 });
-test('inserting key produces one tactile click and charging hold takes real time',()=>{
+test('key insertion instantly starts ONE siren without waiting for full E hold',()=>{
  const first=advanceGateAuthentication(freshGateAuthentication(),{dt:.05,active:true,hasKey:true,near:true,holding:true});
- assert.equal(first.event,'insert');
- const mid=step(first.state,2);
- assert.equal(mid.state.phase,'authenticating');
- assert.ok(keyHoldProgress(mid.state)>0&&keyHoldProgress(mid.state)<1);
- const cancelled=advanceGateAuthentication(mid.state,{dt:.05,active:true,hasKey:true,near:false,holding:true});
- assert.equal(cancelled.event,'cancel');
- assert.deepEqual(cancelled.state,freshGateAuthentication());
+ assert.equal(first.event,'alarm');
+ assert.equal(first.state.hold,.05);
+ assert.equal(first.state.alarmRaised,true);
+ const continued=advanceGateAuthentication(first.state,{dt:.05,active:true,hasKey:true,near:true,holding:true});
+ assert.equal(continued.event,null);
+ assert.equal(continued.state.phase,'authenticating');
+ assert.ok(keyHoldProgress(continued.state)<1);
 });
-test('full hold triggers siren once; after that player can hide as gate opens',()=>{
- let current=freshGateAuthentication(),alarms=0;
- for(let i=0;i<Math.ceil(KEY_HOLD_SECONDS/.05)+3;i++){
-  const r=advanceGateAuthentication(current,{dt:.05,active:true,hasKey:true,near:true,holding:true});
-  current=r.state;if(r.event==='alarm')alarms++;
- }
- assert.equal(alarms,1);
- assert.equal(current.phase,'opening');
- assert.equal(gatePassable(current),false);
- const waiting=step(current,SHUTTER_PASS_SECONDS-.2,{near:false,holding:false});
+test('releasing E aborts key turn but NEVER rolls back or restarts siren',()=>{
+ const first=step(freshGateAuthentication(),1.5);
+ assert.equal(first.events.alarm,1);
+ const cancelled=advanceGateAuthentication(first.state,{dt:.05,active:true,near:false,holding:false,hasKey:true});
+ assert.equal(cancelled.event,'cancel');
+ assert.equal(cancelled.state.phase,'locked');
+ assert.equal(cancelled.state.hold,0);
+ assert.equal(cancelled.state.alarmRaised,true);
+ const retry=step(cancelled.state,KEY_HOLD_SECONDS+.2);
+ assert.equal(retry.events.alarm,undefined);
+ assert.equal(retry.events.insert,1);
+ assert.equal(retry.events.motor,1);
+});
+test('successful hold starts shutter MOTOR once, player can hide after that',()=>{
+ const first=step(freshGateAuthentication(),KEY_HOLD_SECONDS+.25);
+ assert.equal(first.events.alarm,1);
+ assert.equal(first.events.motor,1);
+ assert.equal(first.state.phase,'opening');
+ assert.equal(gatePassable(first.state),false);
+ const waiting=step(first.state,SHUTTER_PASS_SECONDS-.2,{near:false,holding:false});
  assert.equal(gatePassable(waiting.state),false);
  const cleared=step(waiting.state,.3,{near:false,holding:false});
  assert.equal(gatePassable(cleared.state),true);
- assert.equal(vehicleGateOpen(2,false,{solved:true},cleared.state),true);
  assert.ok(gateLiftRatio(cleared.state)>0&&gateLiftRatio(cleared.state)<1);
  assert.equal(EXIT_ALARM_LOUDNESS,100);
 });
-test('pause stops alarm/door timer and open shutter stays open',()=>{
- let ready=step(freshGateAuthentication(),KEY_HOLD_SECONDS+.1).state;
+test('pause freezes shutter and once fully opened it stays open',()=>{
+ const ready=step(freshGateAuthentication(),KEY_HOLD_SECONDS+.2).state;
  const frozen=advanceGateAuthentication(ready,{dt:2,active:false,near:false,holding:false,hasKey:true});
  assert.deepEqual(frozen.state,ready);
  const opened=step(ready,SHUTTER_RAISE_SECONDS+.1,{near:false,holding:false});

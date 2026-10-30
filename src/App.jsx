@@ -15,6 +15,9 @@ import Listener from './Listener.jsx';
 import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
 import ThrownCan from './ThrownCan.jsx';
+import ThrowGuide from './ThrowGuide.jsx';
+import PerformanceSampler from './PerformanceSampler.jsx';
+import {isThrowable,planThrow} from './throwRules.js';
 import SurvivalHUD from './SurvivalHUD.jsx';
 import GameClock from './GameClock.jsx';
 import { inventoryControls } from './uiRules.js';
@@ -61,9 +64,10 @@ function Flashlight({enabled,charge=100,reducedEffects=false}){
     decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
   const { camera } = useThree();
   const keys = useRef({});
+  const aimClock=useRef(0);
   const groundPickupsRef=useRef(pickupItems);
   groundPickupsRef.current=pickupItems;
   const selectedTypeRef=useRef(selectedType);
@@ -200,31 +204,20 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       }
       if(e.code==='KeyG'&&!e.repeat){
         const type=selectedTypeRef.current;
-        const look=new THREE.Vector3();
-        camera.getWorldDirection(look);
-        const flat=new THREE.Vector3(look.x,0,look.z);
-        if(flat.lengthSq()<.001)flat.set(0,0,-1);
-        flat.normalize();
-        let range=clamp(8-look.y*4,4,11);
-        let endX,endZ;
-        while(range>2.5){
-          endX=clamp(camera.position.x+flat.x*range,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
-          endZ=clamp(camera.position.z+flat.z*range,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
-          const obstacle=terrainBlocked(endX,endZ,poweredRef.current);
-          if(!obstacle)break;
-          range-=.5;
+        if(type&&isThrowable(type)){
+          // Aim with G; physically release the key to throw.
+          aimClock.current=performance.now();
+          keys.current.KeyG=true;
+          e.preventDefault();
+          return;
         }
-        const end=[endX,.18,endZ];
-        const origin=camera.position.clone().addScaledVector(look,.6);
-        if(type==='can'&&canRef.current){
-          canRef.current=false;
-          onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
-        }else if(type){
+        if(type){
           onUseGear(type,{
-            position:camera.position.toArray(),end,
-            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current),
-            nearPanel:canUsePanel(camera.position.x,camera.position.z,floorRef.current),
-            powered:poweredRef.current
+            position:camera.position.toArray(),
+            nearPanel:floorRef.current===1&&
+              canUsePanel(camera.position.x,camera.position.z,1),
+            powered:poweredRef.current,
+            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current)
           });
         }
       }
@@ -242,12 +235,44 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       keys.current[e.code]=true;
       if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
     };
-    const up=e=>{keys.current[e.code]=false;};
+    const up=e=>{
+      if(e.code==='KeyG'&&aimClock.current>0){
+        const heldMs=performance.now()-aimClock.current;
+        aimClock.current=0;
+        throwAimRef.current=null;
+        const type=selectedTypeRef.current;
+        if(activeRef.current&&isThrowable(type)&&(type!=='can'||canRef.current)){
+          const look=new THREE.Vector3();
+          camera.getWorldDirection(look);
+          const launch=planThrow(camera.position.toArray(),look.toArray(),{
+            powered:poweredRef.current,
+            short:type!=='can'&&heldMs<260
+          });
+          if(launch){
+            if(type==='can'){
+              if(onThrowCan({start:launch.start,end:launch.end})){
+                canRef.current=false;
+              }
+            }else{
+              onUseGear(type,{
+                position:camera.position.toArray(),
+                start:launch.start,end:launch.end,
+                crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current),
+                nearPanel:false,powered:poweredRef.current
+              });
+            }
+          }
+        }
+      }
+      keys.current[e.code]=false;
+    };
     window.addEventListener('keydown',down);window.addEventListener('keyup',up);
     return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);};
   },[camera]);
   useFrame((_,delta)=>{
     if(!active){
+      throwAimRef.current=null;
+      aimClock.current=0;
       lastActive.current=false;
       stepMeter.current.moving=false;
       if(panelHeld.current){panelHeld.current=false;panelTime.current=0;onPanelProgress(0);}
@@ -255,6 +280,13 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     }
     if(!lastActive.current){keys.current={};jumpQueued.current=false;lastActive.current=true;}
     camera.getWorldDirection(direction);
+    if(keys.current.KeyG&&isThrowable(selectedTypeRef.current)){
+      const plan=planThrow(camera.position.toArray(),direction.toArray(),
+        {powered:poweredRef.current});
+      throwAimRef.current=plan?{active:true,plan}:null;
+    }else{
+      throwAimRef.current=null;
+    }
     forward.set(direction.x,0,direction.z).normalize();
     right.crossVectors(forward,camera.up).normalize();
     movement.set(0,0,0);
@@ -409,7 +441,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -438,7 +470,9 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
+    <ThrowGuide aimRef={throwAimRef}/>
+    <PerformanceSampler enabled={perfVisible} onSample={onPerformance}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -467,6 +501,9 @@ export default function App(){
   const [airborne,setAirborne]=useState(false);
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
   const [reducedEffects,setReducedEffects]=useState(false);
+  const [perfVisible,setPerfVisible]=useState(false);
+  const [perfSample,setPerfSample]=useState(null);
+  const onPerformance=useCallback(value=>setPerfSample(value),[]);
   const [showControls,setShowControls]=useState(false);
   const [alarmActive,setAlarmActive]=useState(false);
   const alarmFiredRef=useRef(false);
@@ -541,6 +578,8 @@ export default function App(){
   const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
   const [projectile,setProjectile]=useState(null);
+  const projectileRef=useRef(null);
+  const throwAimRef=useRef(null);
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
   const emitItemNoise=useCallback((item,action,position,crouching=false)=>{
@@ -598,10 +637,14 @@ export default function App(){
     notify(ITEM_TYPES[type].label+' 내려놓음 · 주변 소음 주의');
     return true;
   },[notify,emitItemNoise]);
-  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered,crouching=false})=>{
+  const onUseGear=useCallback((type,{position,start,end,nearPanel,powered:alreadyPowered,crouching=false})=>{
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const effect=itemEffect(type,nearPanel);
+    if(effect==='deploy'&&projectileRef.current){
+      notify('아직 날아가는 장비가 있다 · 착지한 뒤 다시 던지자');
+      return false;
+    }
     if(effect==='requires-panel'||(effect==='attenuate'&&alreadyPowered)){
       notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
       return false;
@@ -627,9 +670,15 @@ export default function App(){
       setRechargeSignal(v=>v+1);
       notify('예비 건전지 교체 · 손전등 +45% · 교체음 발생');
     }else if(effect==='deploy'){
-      setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
-      notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
-        type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
+      if(start&&end){
+        const next={id:++projectileId.current,type,start,end};
+        projectileRef.current=next;
+        setProjectile(next);
+      }else{
+        setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end||position}]);
+      }
+      notify(type==='alarm'?'태엽시계 투척 · 착지 4초 후 알람 작동':
+        type==='radio'?'무전기 투척 · 착지 후 잡음 유인': '야광봉 투척 · 착지 후 50초간 유지');
     }
     return true;
   },[notify,emitItemNoise]);
@@ -697,21 +746,30 @@ export default function App(){
     if(floorRef.current!==2)return;
     const position=[0,1.7,SECURITY_KEY_READER[2]-1.15];
     if(event==='insert'){
-      // Tactile key insertion sound, audible only to a close Listener.
+      // After a cancelled attempt, the key clicks again but the first siren
+      // is already active (or has decayed). Do not spam alarms on retries.
       onNoiseRef.current?.({type:'key-insert',loudness:27,
         position:[...SECURITY_KEY_READER]});
     }else if(event==='cancel'){
-      notify('인증 중단 · 키를 다시 삽입하고 E를 유지하라');
+      notify('인증 중단 · 경보는 계속 울린다! 키를 다시 돌려라');
     }else if(event==='alarm'){
+      // The first physical key turn starts the siren BEFORE authentication.
+      // Letting go cannot un-ring this bell; the Listener targets the gate.
+      onNoiseRef.current?.({type:'key-insert',loudness:27,
+        position:[...SECURITY_KEY_READER]});
       setEvidenceOpen(false);
       setMemoOpen(false);
       setAlarmActive(true);
       soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
+      onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
+      notify('키를 꽂자마자 비상 경보! E를 유지해 인증해야 셔터가 열린다');
+    }else if(event==='motor'){
       soundRef.current?.startShutterMotor?.(
         [0,1.3,SECURITY_KEY_READER[2]-2.25],SHUTTER_RAISE_SECONDS
       );
-      onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
-      notify('비상 경보 발동! 셔터가 서서히 열린다 · 숨어서 타이밍을 노려라');
+      onNoiseRef.current?.({type:'gate-motor',loudness:73,
+        position:[0,1.3,SECURITY_KEY_READER[2]-2.25]});
+      notify('인증 완료! 셔터 개방 중 · 숨었다가 통과하라');
     }else if(event==='open'){
       notify('서비스 셔터 완전 개방 · 탈출 통로로 이동');
     }
@@ -744,16 +802,30 @@ export default function App(){
     });
   },[]);
   const onThrowCan=useCallback(({start,end})=>{
+    if(projectileRef.current){
+      notify('아직 투척 중이다 · 착지한 뒤 다시 던지자');
+      return false;
+    }
     emitItemNoise('can','use',start,false);
     canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
-    setProjectile({id:++projectileId.current,start,end});
-  },[emitItemNoise]);
-  const onProjectileImpact=useCallback(end=>{
-    setCanPosition(end);
+    const next={id:++projectileId.current,type:'can',start,end};
+    projectileRef.current=next;
+    setProjectile(next);
+    return true;
+  },[emitItemNoise,notify]);
+  const onProjectileImpact=useCallback((end,type='can')=>{
+    projectileRef.current=null;
     setProjectile(null);
-    onNoiseRef.current?.({type:'throw',loudness:100,position:end});
+    if(type==='can'){
+      setCanPosition(end);
+      onNoiseRef.current?.({type:'throw',item:'can',loudness:100,position:end});
+    }else{
+      setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
+      onNoiseRef.current?.({type:'throw',item:type,loudness:type==='alarm'?34:type==='radio'?31:16,
+        position:end});
+    }
   },[]);
   const soundRef=useRef(null);
   const onHorrorCue=useCallback(type=>{
@@ -825,6 +897,9 @@ export default function App(){
   },[]);
   const respawn=useCallback(()=>{
     noiseLog.current=[];
+    projectileRef.current=null;
+    throwAimRef.current=null;
+    setProjectile(null);
     alarmFiredRef.current=false;
     setAlarmActive(false);
     soundRef.current?.stopSiren?.();
@@ -858,14 +933,17 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
     if(!sound)return;
     if(event.type==='step'){sound.step(event.mode);if(event.surface==='metal')sound.metal();if(event.surface==='water')sound.splash();}
     if(event.type==='jump')sound.jump();
-    if(event.type==='throw')sound.throwCan();
+    if(event.type==='throw'){
+      if(event.item&&event.item!=='can')sound.itemAction?.(event.item,'drop');
+      else sound.throwCan();
+    }
     if(event.type==='land')sound.land();
     if(event.type==='electric')sound.flicker();
     if(event.type==='switch')sound.switchStart(Boolean(event.lubricated));
@@ -917,6 +995,8 @@ export default function App(){
       setFloorFlash(true);
       // The next loop contains another can unless the player carries theirs.
       setCanPosition(canCollected?null:[2,.18,12]);
+      projectileRef.current=null;
+      throwAimRef.current=null;
       setProjectile(null);
       return;
     }
@@ -941,6 +1021,11 @@ export default function App(){
   useEffect(()=>{
     const key=e=>{
       if(e.repeat)return;
+      if(e.code==='F3'){
+        e.preventDefault();
+        setPerfVisible(v=>!v);
+        return;
+      }
       if(e.code==='KeyH')setShowControls(v=>!v);
       if(e.code==='KeyJ'&&started&&locked&&!caught&&!ending&&floorRef.current===2){
         if(vehicleStateRef.current.reviewed){
@@ -980,12 +1065,21 @@ export default function App(){
     canvas?.requestPointerLock?.();
   };
   return <>
-    <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
+    <Canvas dpr={[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} perfVisible={perfVisible} onPerformance={onPerformance}/>
     </Canvas>
+    {perfVisible&&<aside className="performance-debug" aria-label="실시간 렌더링 성능 진단">
+      <strong>PERFORMANCE · F3</strong>
+      <span>FPS <b>{perfSample?.fps??'—'}</b></span>
+      <span>느린 프레임 <b>{perfSample?.worstMs??'—'} ms</b></span>
+      <span>Draw calls <b>{perfSample?.drawCalls??'—'}</b></span>
+      <span>Triangles <b>{perfSample?.triangles?.toLocaleString?.()??'—'}</b></span>
+      <span>DPR <b>{perfSample?.pixelRatio??'—'}</b></span>
+      <small>F3 종료 · 0.8초 단위 표본 · 실제 기기 측정</small>
+    </aside>}
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
       <span>STAIR B2</span><strong>YOU ARE STILL HERE</strong><small>03:17 — AGAIN</small>
@@ -1004,7 +1098,7 @@ export default function App(){
     </div>}
     {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
       <strong>EMERGENCY PROTOCOL · B2</strong>
-      <span>위이이잉— · 전자 사이렌 가동 · 청음자가 배전반으로 돌진</span>
+      <span>위이이잉— · 비상 경보 작동 · 청음자가 소리 난 지점으로 질주</span>
       <small>비상 방송 신호 왜곡 · 즉시 이동 또는 은폐</small>
     </div>}
     <div className="hud hud--v092">
@@ -1063,7 +1157,7 @@ export default function App(){
           <span>{!vehicleState.solved?'317번 차량에서 키를 찾아라':
             gateAuth.phase==='opening'?'청음자가 출입구로 달려온다 · 타이밍을 노려라':
             gateAuth.phase==='open'?'통과하기 전 시야와 발소리를 확인하라':
-            '키를 약 3초 유지하면 비상 사이렌이 작동한다'}</span>
+            '키를 꽂는 순간 사이렌 · E를 유지해야 셔터 개방'}</span>
           {vehicleState.solved&&gateAuth.phase==='authenticating'&&
             <div className="interaction-callout__progress" role="progressbar"
               aria-label="키 인증 진행률" aria-valuemin={0} aria-valuemax={100}
@@ -1117,7 +1211,7 @@ export default function App(){
           })}
         </div>
         <div className="inventory-guide">
-          {inventoryControls(selectedType).use&&<span><kbd>G</kbd> {selectedType==='can'?'캔 던지기':'장비 사용'}</span>}
+          {inventoryControls(selectedType).use&&<span><kbd>G</kbd> {isThrowable(selectedType)?'조준 후 놓아 투척':'장비 사용'}</span>}
           {inventoryControls(selectedType).drop&&<span><kbd>Q</kbd> 장비 내려놓기</span>}
           <span className={'flashlight-status'+(flashlightCharge<=18?' is-low':'')}>
             <kbd>F</kbd> 손전등 {torch?'ON':'OFF'}
@@ -1142,7 +1236,8 @@ export default function App(){
         <span>WASD 이동 · SHIFT 질주(스태미나 소모) · Ctrl/C 은신</span>
         <span>F 손전등 딸깍 · 배터리 7분 · 예비 건전지 선택 후 G 충전</span>
         <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
-        <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
+        <span>G 길게 눌러 궤적 확인 후 놓아 던지기 · 짧게 누르면 유인 장비 가까이 놓기</span>
+        <span>F3 성능 진단 FPS / 프레임 시간 · Q 장비 내려놓기</span>
         <span>F 손전등 · ESC 일시정지 · H 조작법 · J 확보한 단서 메모</span>
         {floor===2&&<span>2층: CCTV → 317번 차량 출입키 → 셔터 우측 단말기(E 유지) → 사이렌 도주</span>}
       </div>}

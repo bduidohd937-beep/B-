@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FLOOR_SIZE,LEAK,SERVICE_GRATE } from './garageLayout.js';
 import { VEHICLES } from './vehiclePuzzle.js';
+import InstancedCars from './InstancedCars.jsx';
 
 const COLORS=['#36444a','#494d4b','#394842','#4b4b46'];
 const Car=React.memo(function Car({x,z,index,identified=null,solved=false}){
@@ -114,9 +115,13 @@ function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehic
    </mesh>
    {/* The basement has NO visible perimeter walls. Fog hides edges; repeated rows imply continuation. */}
    <RepeatedColumns/>
-   {PARKED_CARS.map(([x,z],i)=>{
-     const identified=floor===2?VEHICLES.find(v=>v.position[0]===x&&v.position[1]===z):null;
-     return <Car key={i} x={x} z={z} index={i} identified={identified} solved={vehicleSolved}/>;
+   {/* Most identical cars are now GPU-instanced. The three investigation
+       vehicles remain independent so their plates/trunk can show clues. */}
+   <InstancedCars floor={floor}/>
+   {floor===2&&VEHICLES.map(v=>{
+     const index=PARKED_CARS.findIndex(([x,z])=>x===v.position[0]&&z===v.position[1]);
+     return <Car key={v.id} x={v.position[0]} z={v.position[1]}
+       index={index} identified={v} solved={vehicleSolved}/>;
    })}
    <CeilingFixtures flicker={flicker}/>
    {Array.from({length:36},(_,i)=><mesh key={i} position={[i%2===0?-19:19,.017,-66+i*3.8]} rotation={[-Math.PI/2,0,0]}>
