@@ -51,16 +51,24 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
   const searchTime=useRef(0);
   const cooldown=useRef(0);
   const statusTime=useRef(0);
+  const excitement=useRef(0);
+  const currentSpeed=useRef(1.2);
   const route=useRef([]);
   const routeTime=useRef(0);
   useFrame((_,rawDelta)=>{
     if(!group.current)return;
     const dt=Math.min(rawDelta,.06);
     const pos=group.current.position;
-    if(!active){state.current='idle';pos.copy(BASE);route.current=[];routeTime.current=0;lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;return;}
+    if(!active){
+      state.current='idle';pos.copy(BASE);route.current=[];routeTime.current=0;
+      excitement.current=0;currentSpeed.current=1.2;
+      lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
+      return;
+    }
     cooldown.current=Math.max(0,cooldown.current-dt);
     const recent=events.current.filter(e=>e.id>lastEvent.current);
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
+    let heardSomething=false;
     for(const event of recent){
       if(!['step','jump','land','throw','horn'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
@@ -70,8 +78,21 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
         target.current.copy(point);
         state.current='investigate';
         searchTime.current=0;
+        routeTime.current=0; // Recalculate route to the latest heard position.
+        excitement.current=Math.min(100,Math.max(excitement.current,event.loudness || 0));
+        heardSomething=true;
       }
     }
+    // Loud noises produce fast investigations. The excitement fades gradually in silence,
+    // even if the creature reaches the location it last heard.
+    if(!heardSomething){
+      excitement.current=Math.max(0,excitement.current-dt*(state.current==='investigate'?9:14));
+    }
+    const targetSpeed=state.current==='investigate'
+      ?1.2+4.5*excitement.current/100
+      :state.current==='return'?1.45:state.current==='search'?.6:0;
+    currentSpeed.current=THREE.MathUtils.damp(currentSpeed.current,targetSpeed,
+      state.current==='investigate'?2.8:1.25,dt);
     const destination=(state.current==='idle'||state.current==='return')?BASE:target.current;
     routeTime.current-=dt;
     if(routeTime.current<=0){
@@ -83,7 +104,7 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
     const range=dist(pos,waypoint);
     const goalRange=dist(pos,destination);
     if(range>.6){
-      const speed=state.current==='investigate'?2.9:1.4;
+      const speed=currentSpeed.current;
       const dx=(waypoint.x-pos.x)/range*dt*speed;
       const dz=(waypoint.z-pos.z)/range*dt*speed;
       if(!obstructed(pos.x+dx,pos.z+dz)){pos.x+=dx;pos.z+=dz;}
@@ -111,7 +132,10 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
       onCaught();
     }
     statusTime.current+=dt;
-    if(statusTime.current>.3){statusTime.current=0;onState(state.current);}
+    if(statusTime.current>.3){
+      statusTime.current=0;
+      onState(state.current,Math.round(excitement.current),Math.round(currentSpeed.current*10)/10);
+    }
   });
   return <group ref={group} position={[-13,0,-25]}>
     <mesh position={[0,.82,0]} rotation={[.13,0,-.12]}>

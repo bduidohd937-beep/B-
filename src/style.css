@@ -3,3 +3,28 @@
 .movement-indicator{position:absolute;left:25px;bottom:58px;background:#151e20bb;border-left:2px solid #b7ad82;padding:5px 10px;color:#c6d4cb;font-size:12px;letter-spacing:.06em}@media(max-width:600px){.movement-indicator{left:14px;bottom:48px}}
 .creature-indicator{position:absolute;top:85px;left:25px;font-size:12px;letter-spacing:.055em;color:#d9c7ad;text-shadow:0 1px 10px #000}.torch-indicator{position:absolute;bottom:62px;right:24px;padding:6px 10px;border:1px solid #4e605b;background:#0d1619bb;color:#c2d7cf;font-size:11px;letter-spacing:.09em}@media(max-width:600px){.creature-indicator{top:85px;left:14px;font-size:10px}.torch-indicator{right:14px;bottom:48px}}
 .item-indicator{position:absolute;right:24px;bottom:94px;background:#111b1dcc;border:1px solid #52615e;color:#d0c8a9;font-size:11px;padding:7px 10px;letter-spacing:.025em}@media(max-width:600px){.item-indicator{right:14px;bottom:80px;max-width:55vw}}
+
+/* Debug-friendly sound HUD: event loudness and creature excitement are separate. */
+.noise-hud{position:absolute;top:108px;right:24px;width:232px;padding:12px 13px;background:rgba(9,16,18,.82);border:1px solid rgba(123,142,139,.55);border-left:3px solid #83a89e;color:#d5ded7;box-shadow:0 5px 30px #0007;font-size:11px;line-height:1.5;text-shadow:0 1px 2px #000}
+.noise-hud--warning{border-left-color:#caaa70}
+.noise-hud--danger{border-left-color:#e77d73}
+.noise-hud__header{display:flex;justify-content:space-between;align-items:baseline;gap:8px;letter-spacing:.075em;color:#b6c3bc}
+.noise-hud__header strong{font-size:20px;color:#e6e9df;font-variant-numeric:tabular-nums}
+.noise-hud__header small{font-size:10px;color:#8f9e97}
+.noise-hud__meter,.noise-hud__creature-meter{height:8px;background:#243032;overflow:hidden;margin:6px 0 10px;border-radius:2px}
+.noise-hud__meter>div{height:100%;background:#83a89e;transition:width 70ms linear}
+.noise-hud--warning .noise-hud__meter>div{background:#caaa70}
+.noise-hud--danger .noise-hud__meter>div{background:#e77d73}
+.noise-hud__row{display:flex;justify-content:space-between;gap:9px;padding:2px 0}
+.noise-hud__row>span,.noise-hud__detail{color:#9babac}
+.noise-hud__row strong{font-weight:600;color:#e4e6dc}
+.noise-hud__detail{margin-top:4px;font-size:10px}
+.noise-hud__alert{font-size:11px;color:#acb9b3;margin-top:9px;padding:7px 8px;background:#172326bb;min-height:30px}
+.noise-hud__alert.is-active{border-left:2px solid #e2ae82;background:#342b25aa;color:#f6d7a4;font-weight:600}
+.noise-hud__creature{padding-top:11px;margin-top:10px;border-top:1px solid #415052}
+.noise-hud__creature>span{color:#a3b0a8}
+.noise-hud__creature>strong{float:right;font-variant-numeric:tabular-nums}
+.noise-hud__creature-meter{height:5px;margin:7px 0}
+.noise-hud__creature-meter>div{height:100%;background:#c27c65;transition:width 200ms linear}
+.noise-hud__creature>small{display:block;text-align:right;font-size:10px;color:#a1aea8}
+@media(max-width:650px){.noise-hud{top:107px;right:12px;width:182px;font-size:10px;padding:9px}.noise-hud__header strong{font-size:17px}.noise-hud__alert{font-size:10px}.hint{bottom:92px}}
