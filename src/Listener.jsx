@@ -38,7 +38,7 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
         searchTime.current=0;
       }
     }
-    const destination=state.current==='idle'?BASE:target.current;
+    const destination=(state.current==='idle'||state.current==='return')?BASE:target.current;
     const range=dist(pos,destination);
     if(range>.6){
       const speed=state.current==='investigate'?2.9:1.4;
