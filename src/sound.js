@@ -212,6 +212,67 @@ export function createSoundEngine() {
     tone(220,.26,.23,'triangle');
     tone(510,.16,.09,'square');
   }
+  function securityKeyClick(){
+    // Heavily damped metal-on-metal tumbler inside the wall reader.
+    noise(1750,.11,.21,'bandpass');
+    tone(390,.09,.17,'square');
+    tone(255,.19,.13,'triangle');
+  }
+  let shutterAudio=null;
+  function stopShutterMotor(){
+    if(!shutterAudio)return;
+    const {sources,gain}=shutterAudio;
+    shutterAudio=null;
+    if(ctx.state==='closed')return;
+    const now=ctx.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(.0001,now,.05);
+    for(const source of sources)try{source.stop(now+.22);}catch{}
+  }
+  function startShutterMotor(position=[0,1.1,-38],duration=5.25){
+    stopShutterMotor();
+    if(!enabled||ctx.state==='closed')return;
+    const t=ctx.currentTime;
+    const end=t+Math.max(.3,Math.min(9,duration));
+    const panner=ctx.createPanner();
+    panner.panningModel='HRTF';panner.distanceModel='inverse';
+    panner.refDistance=11;panner.maxDistance=85;panner.rolloffFactor=.46;
+    if(panner.positionX){
+      panner.positionX.value=position[0];panner.positionY.value=position[1];
+      panner.positionZ.value=position[2];
+    }else panner.setPosition(position[0],position[1],position[2]);
+    const gain=ctx.createGain();
+    gain.gain.setValueAtTime(.0001,t);
+    gain.gain.linearRampToValueAtTime(.32,Math.min(t+.18,end));
+    gain.gain.setValueAtTime(.32,Math.max(t+.2,end-.45));
+    gain.gain.linearRampToValueAtTime(.0001,end);
+    gain.connect(panner);panner.connect(master);
+    const motor=ctx.createOscillator();
+    motor.type='sawtooth';motor.frequency.value=70;
+    const motorFilter=ctx.createBiquadFilter();
+    motorFilter.type='lowpass';motorFilter.frequency.value=205;
+    const motorLevel=ctx.createGain();motorLevel.gain.value=.23;
+    motor.connect(motorFilter);motorFilter.connect(motorLevel);motorLevel.connect(gain);
+    const grinding=ctx.createBufferSource();
+    grinding.buffer=noiseBuffer;grinding.loop=true;
+    const scrapeFilter=ctx.createBiquadFilter();
+    scrapeFilter.type='bandpass';scrapeFilter.frequency.value=470;scrapeFilter.Q.value=.48;
+    const scrapeLevel=ctx.createGain();scrapeLevel.gain.value=.20;
+    grinding.connect(scrapeFilter);scrapeFilter.connect(scrapeLevel);scrapeLevel.connect(gain);
+    motor.start(t);grinding.start(t);
+    motor.stop(end+.03);grinding.stop(end+.03);
+    const sources=[motor,grinding];
+    const nodes=[panner,gain,motor,motorFilter,motorLevel,grinding,scrapeFilter,scrapeLevel];
+    let remaining=2;
+    for(const source of sources)source.onended=()=>{
+      remaining--;
+      if(remaining===0){
+        for(const node of nodes)try{node.disconnect();}catch{}
+        if(shutterAudio?.sources===sources)shutterAudio=null;
+      }
+    };
+    shutterAudio={sources,gain};
+  }
   function switchStart(lubricated=false) {
     const scale=lubricated?.40:1;
     noise(1900,.38,.65*scale);
@@ -368,7 +429,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, startCarAlarm, stopCarAlarm, cctvRead, vehicleLatch, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
+    step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, startCarAlarm, stopCarAlarm, cctvRead, vehicleLatch, securityKeyClick, startShutterMotor, stopShutterMotor, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
     updateCreature: creatureAudio.update,
     updateVitals: playerVitalsAudio.update,
     resume() {
@@ -384,6 +445,7 @@ export function createSoundEngine() {
     dispose() {
       stopSiren();
       stopCarAlarm();
+      stopShutterMotor();
       emergencyAudio.dispose();
       creatureAudio.dispose();
       playerVitalsAudio.dispose();
