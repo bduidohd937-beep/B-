@@ -43,10 +43,13 @@ export default function EscapePuzzle({ powered, floor=1 }) {
     {/* Lit gate sign; it changes only after real power restoration. */}
     <group position={[0,GARAGE_HEIGHT-.62,GATE_Z+.3]}>
       <mesh><boxGeometry args={[5.8,.47,.13]}/><meshStandardMaterial color={powered?'#14594c':'#672d2b'} emissive={powered?'#1b7658':'#8d2927'} emissiveIntensity={1.4}/></mesh>
-      <Text position={[0,0,.08]} fontSize={.27} color="#e1e9e0">{powered?(second?'NO EXIT — B2':'EMERGENCY EXIT — OPEN'):(second?'B2 — AGAIN':'EMERGENCY EXIT — LOCKED')}</Text>
+      <Text position={[0,0,.08]} fontSize={.27} color="#e1e9e0">{powered?(second?'SERVICE PASS — OPEN':'EMERGENCY EXIT — OPEN'):(second?'SERVICE ACCESS — IDENTIFY VEHICLE':'EMERGENCY EXIT — LOCKED')}</Text>
       <pointLight position={[0,-.5,1]} intensity={powered?1.2:.75} color={powered?'#57bb8c':second?'#e35073':'#de514d'} distance={7}/>
     </group>
-    {/* Distribution box: visible red beacon beside the creature's initial territory. */}
+    {/* On loop 02 the emergency broadcast breaker is gone. The vehicle
+         transponder is the ONLY way to open the service shutter here. */}
+    {!second&&<group>
+    {/* First-floor power breaker keeps the V0.11 red emergency siren. */}
     <group position={[panel[0],0,panel[1]]}>
       <mesh position={[0,.91,.18]}><boxGeometry args={[1.15,1.85,.65]}/><meshStandardMaterial color="#495355" metalness={.45} roughness={.6}/></mesh>
       <mesh position={[0,1.53,.53]}><boxGeometry args={[.82,.54,.05]}/><meshStandardMaterial color="#101719" roughness={.45}/></mesh>
@@ -56,6 +59,8 @@ export default function EscapePuzzle({ powered, floor=1 }) {
       <Text position={[0,1.20,.57]} fontSize={.15} color="#d8e3dc">{powered?(second?'SIGNAL RESTORED':'POWER ONLINE'):(second?'HOLD E — RESET':'HOLD E TO RESTART')}</Text>
       <pointLight position={[0,1.62,.65]} intensity={powered?1.4:1.1} color={powered?'#55bb8e':second?'#d82a72':'#cb4640'} distance={8}/>
     </group>
+
+    </group>}
     {/* The impossible corridor: a short visual teaser beyond the barrier. */}
     {[-3.6,3.6].map(x=><mesh key={x} position={[x,GARAGE_HEIGHT/2,-43]}>
       <boxGeometry args={[.20,GARAGE_HEIGHT+.1,11]}/>
