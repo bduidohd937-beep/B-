@@ -6,6 +6,7 @@ import { crouchReaction } from './stealth.js';
 import ListenerModel from './ListenerModel.jsx';
 
 const BASE = new THREE.Vector3(-13, 0, -25);
+const LOOP_BASE = new THREE.Vector3(9, 0, -24);
 const PILLARS = Array.from({length:6},(_,i)=>-28+i*9).flatMap(z=>[-10,10].map(x=>[x,z]));
 const CARS = [[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
 const obstructed=(x,z,powered=false)=>PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
@@ -74,6 +75,7 @@ function buildRoute(from,to,powered){
 // only explicit sound events provide destinations. Player position is checked for contact.
 export default function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,floor=1,levelSignal=0,deathPhase='alive'}) {
   const {camera}=useThree();
+  const home=floor===2?LOOP_BASE:BASE;
   const group=useRef(null);
   const lastEvent=useRef(0);
   const state=useRef('idle');
@@ -90,9 +92,9 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
   const listenerDirection=useRef(new THREE.Vector3());
   const modelMotion=useRef({state:'idle',speed:0,excitement:0});
   useEffect(()=>{
-    if(group.current)group.current.position.copy(BASE);
+    if(group.current)group.current.position.copy(home);
     state.current='idle';
-    target.current.copy(BASE);
+    target.current.copy(home);
     searchTime.current=0;
     cooldown.current=0;
     excitement.current=0;
@@ -101,7 +103,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     routeTime.current=0;
     modelMotion.current={state:'idle',speed:0,excitement:0};
     lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
-  },[floor,levelSignal,events]);
+  },[floor,levelSignal,events,home]);
   useFrame((_,rawDelta)=>{
     if(!group.current)return;
     const dt=Math.min(rawDelta,.06);
@@ -114,7 +116,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
         if(soundClock.current<=0){onSpatial?.({active:false});soundClock.current=.18;}
         return;
       }
-      state.current='idle';pos.copy(BASE);route.current=[];routeTime.current=0;
+      state.current='idle';pos.copy(home);route.current=[];routeTime.current=0;
       excitement.current=0;currentSpeed.current=1.2;
       modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
@@ -153,7 +155,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
       :state.current==='return'?1.45:state.current==='search'?.6:0;
     currentSpeed.current=THREE.MathUtils.damp(currentSpeed.current,targetSpeed,
       state.current==='investigate'?2.8:1.25,dt);
-    const destination=(state.current==='idle'||state.current==='return')?BASE:target.current;
+    const destination=(state.current==='idle'||state.current==='return')?home:target.current;
     routeTime.current-=dt;
     if(routeTime.current<=0){
       route.current=buildRoute(pos,destination,powered);
@@ -194,7 +196,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     const player=playerRef.current;
     if(player&&cooldown.current===0&&dist(pos,player)<1.28){
       cooldown.current=4;
-      state.current='return';target.current.copy(BASE);
+      state.current='return';target.current.copy(home);
       modelMotion.current={state:'attack',speed:0,excitement:100};
       onCaught();
     }
