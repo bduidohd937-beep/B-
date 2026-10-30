@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { gateBlocksPlayer } from './puzzle.js';
 import { crouchReaction } from './stealth.js';
+import { breathHearingRadius } from './survival.js';
 import ListenerModel from './ListenerModel.jsx';
 
 const BASE = new THREE.Vector3(-13, 0, -25);
@@ -131,12 +132,16 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
     let heardSomething=false;
     for(const event of recent){
-      if(!['step','jump','land','throw','horn','switch','power'].includes(event.type))continue;
+      if(!['step','jump','land','throw','horn','switch','power','breath'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
       const distanceToSound=dist(pos,point);
-      const reaction=softStep ? crouchReaction(distanceToSound, excitement.current, event.loudness)
-        : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
+      const reaction=event.type==='breath'
+        ? (distanceToSound<=breathHearingRadius(event.loudness)
+          ? (distanceToSound<=1.7?'investigate':'listen')
+          : 'none')
+        : softStep ? crouchReaction(distanceToSound, excitement.current, event.loudness)
+          : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
       if(reaction!=='none'){
         target.current.copy(point); // Only sound-event position, never player tracking.
         state.current=reaction==='listen'?'listen':'investigate';
@@ -231,7 +236,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     statusTime.current+=dt;
     if(statusTime.current>.3){
       statusTime.current=0;
-      onState(state.current,Math.round(excitement.current),Math.round(currentSpeed.current*10)/10);
+      onState(state.current,Math.round(excitement.current),Math.round(currentSpeed.current*10)/10, playerRef.current ? dist(pos,playerRef.current):Infinity);
     }
   });
   return <group ref={group} position={[-13,0,-25]}>
