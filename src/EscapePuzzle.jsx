@@ -48,8 +48,7 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
     <group position={[0,GARAGE_HEIGHT-.62,GATE_Z+.3]}>
       <mesh><boxGeometry args={[5.8,.47,.13]}/><meshStandardMaterial color={powered?'#14594c':'#672d2b'} emissive={powered?'#1b7658':'#8d2927'} emissiveIntensity={1.4}/></mesh>
       <Text position={[0,0,.08]} fontSize={.27} color="#e1e9e0">
-        {second?(powered?'SERVICE EXIT — OPEN':authentication?.phase==='opening'?'SHUTTER OPENING':hasKey?'KEY REQUIRED — RIGHT TERMINAL':'SERVICE ACCESS — LOCKED')
-          :powered?'EMERGENCY EXIT — OPEN':'EMERGENCY EXIT — LOCKED'}
+        {second?'B2 — SERVICE':powered?'EMERGENCY EXIT':'B2 — EXIT'}
       </Text>
       <pointLight position={[0,-.5,1]} intensity={powered?1.2:.75} color={powered?'#57bb8c':second?'#e35073':'#de514d'} distance={7}/>
     </group>
@@ -62,8 +61,8 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
       <mesh position={[0,1.53,.53]}><boxGeometry args={[.82,.54,.05]}/><meshStandardMaterial color="#101719" roughness={.45}/></mesh>
       <mesh position={[0,1.52,.565]}><boxGeometry args={[.36,.25,.025]}/><meshBasicMaterial color={powered?'#4fcc9d':'#d6453e'}/></mesh>
       <mesh position={[0,.85,.57]}><boxGeometry args={[.46,.16,.13]}/><meshStandardMaterial color={powered?'#54b894':'#b14d44'} emissive={powered?'#296e50':'#5d1b1b'} emissiveIntensity={.7}/></mesh>
-      <Text position={[0,1.94,.55]} fontSize={.18} color="#f3d0b0">{second?'EMERGENCY BROADCAST':'EMERGENCY POWER'}</Text>
-      <Text position={[0,1.20,.57]} fontSize={.15} color="#d8e3dc">{powered?(second?'SIGNAL RESTORED':'POWER ONLINE'):(second?'HOLD E — RESET':'HOLD E TO RESTART')}</Text>
+      <Text position={[0,1.94,.55]} fontSize={.18} color="#f3d0b0">EMERGENCY POWER</Text>
+      <Text position={[0,1.20,.57]} fontSize={.15} color="#d8e3dc">{powered?'POWER ONLINE':'NO SIGNAL'}</Text>
       <pointLight position={[0,1.62,.65]} intensity={powered?1.4:1.1} color={powered?'#55bb8e':second?'#d82a72':'#cb4640'} distance={8}/>
     </group>
 
@@ -92,12 +91,8 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
         <boxGeometry args={[.19,.19,.022]}/>
         <meshStandardMaterial color={hasKey?'#baa476':'#6c7272'} metalness={.68} roughness={.55}/>
       </mesh>
-      <Text position={[0,.53,.34]} fontSize={.12} color="#d6ded3">
-        SERVICE AUTH
-      </Text>
-      <Text position={[0,-.19,.31]} fontSize={.098} color="#c2d5c5">
-        {authentication?.phase==='opening'?'MOTOR ACTIVE':powered?'ACCESS GRANTED':hasKey?'TURN KEY — HOLD E':'RFID KEY REQUIRED'}
-      </Text>
+      {/* Only physical lock slot and status LEDs: no large floating
+           instructional text that gives away the puzzle. */}
       <pointLight position={[0,.25,.45]} intensity={.36} distance={3.7}
         color={powered?'#5de4b2':authentication?.phase==='opening'?'#f1ab68':'#d65e62'} decay={2}/>
     </group>}
