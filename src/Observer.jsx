@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame,useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { motionExposure,sightBlocked,tickObservation,OBSERVER_VIEW_DISTANCE,OBSERVER_DOT_THRESHOLD,OBSERVER_LOSE_SIGHT_SECONDS,OBSERVER_PURSUIT_SPEED,patrolWaypoint } from './observerRules.js';
 import { PILLARS,PARKED_CARS,terrainBlocked } from './garageLayout.js';
@@ -19,17 +19,27 @@ function moveSafely(pos,target,speed,dt,powered){
   }
   return false;
 }
-function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
+function Observer({active,floor,playerRef,powered=false,onCaught,onState,onSpatial}){
+  const {camera}=useThree();
   const body=useRef(),head=useRef(),left=useRef(),right=useRef(),lens=useRef(),beam=useRef();
   const mode=useRef('scan'),suspicion=useRef(0),lost=useRef(0),search=useRef(0),patrolIndex=useRef(1);
   const target=useRef(HOME.clone()),clock=useRef(0),statusClock=useRef(0);
+  const spatialClock=useRef(0);
+  const listenerPosition=useRef(new THREE.Vector3());
   const activeRef=useRef(active);
   activeRef.current=active;
   useEffect(()=>{
     if(body.current)body.current.position.copy(HOME);
     mode.current='scan';suspicion.current=0;lost.current=0;search.current=0;
     target.current.copy(HOME);clock.current=0;patrolIndex.current=1;
+    spatialClock.current=0;
   },[floor]);
+  // Silence the Observer synth on pause, death, floor change and unmount.
+  // No noise event is emitted to the hearing-only Listener.
+  useEffect(()=>{
+    if(!active)onSpatial?.({active:false});
+    return ()=>onSpatial?.({active:false});
+  },[active,onSpatial]);
   useFrame((_,raw)=>{
     if(!body.current)return;
     const dt=Math.min(.06,raw);
@@ -110,6 +120,19 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
     }
     if(beam.current){
       beam.current.material.opacity=status==='chase'?.16:status==='alert'?.11:.055;
+    }
+    // A sparse, direct-to-WebAudio position update (not React state).
+    // The Observer's sounds originate from its ACTUAL model in 3D space.
+    spatialClock.current-=dt;
+    if(spatialClock.current<=0){
+      camera.getWorldPosition(listenerPosition.current);
+      const eye=listenerPosition.current;
+      onSpatial?.({
+        active:true,position:[pos.x,2.0,pos.z],
+        listenerPosition:[eye.x,eye.y,eye.z],
+        state:status,suspicion:suspicion.current
+      });
+      spatialClock.current=.075;
     }
     statusClock.current-=dt;
     if(statusClock.current<=0){

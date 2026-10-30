@@ -441,7 +441,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, onSpatialObserver, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -466,7 +466,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor} hasKey={vehicleState.solved} authentication={gateAuth}/>
     <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
-    {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
+    {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState} onSpatial={onSpatialObserver}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
@@ -856,7 +856,8 @@ export default function App(){
   const onObserverState=useCallback((mode,alert,distance)=>{
     observerDistanceRef.current=distance;
     if(observerModeRef.current!==mode){
-      if(mode==='chase')soundRef.current?.observerAlert?.();
+      // Observer warning and chase sounds originate from its actual model,
+      // via its spatial audio channel. No global double-ping on HUD update.
       observerModeRef.current=mode;
     }
     setObserverInfo(old=>old.mode===mode&&old.alert===alert&&old.distance===distance?old:{mode,alert,distance});
@@ -883,10 +884,14 @@ export default function App(){
   const onSpatial=useCallback(data=>{
     soundRef.current?.updateCreature?.(data);
   },[]);
+  const onSpatialObserver=useCallback(data=>{
+    soundRef.current?.updateObserver?.(data);
+  },[]);
   const onCaught=useCallback(()=>{
     if(deathPhaseRef.current!=='alive')return;
     deathPhaseRef.current='dying';
     soundRef.current?.updateCreature?.({active:false});
+    soundRef.current?.updateObserver?.({active:false});
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
@@ -924,6 +929,7 @@ export default function App(){
     setMoveMode('idle');
     setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
     setObserverInfo({mode:'scan',alert:0,distance:Infinity});
+    soundRef.current?.updateObserver?.({active:false});
     observerModeRef.current='scan';
     observerDistanceRef.current=Infinity;
     creatureDistanceRef.current=Infinity;
@@ -1080,7 +1086,7 @@ export default function App(){
   };
   return <>
     <Canvas dpr={performanceMode?1:[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} onSpatialObserver={onSpatialObserver} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
       onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} perfVisible={perfVisible} onPerformance={onPerformance}/>

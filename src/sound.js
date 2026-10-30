@@ -1,4 +1,5 @@
 import { createSpatialCreatureAudio } from './spatialAudio.js';
+import { createSpatialObserverAudio } from './observerSpatialAudio.js';
 import { createVitalsAudio } from './vitalsAudio.js';
 import { createEmergencyAudio } from './emergencyAudio.js';
 
@@ -40,6 +41,7 @@ export function createSoundEngine() {
   for (let i = 0; i < values.length; i++) values[i] = Math.random() * 2 - 1;
 
   const creatureAudio = createSpatialCreatureAudio(ctx, master, noiseBuffer);
+  const observerAudio = createSpatialObserverAudio(ctx, master, noiseBuffer);
   const playerVitalsAudio = createVitalsAudio(ctx, master, noiseBuffer);
   const emergencyAudio = createEmergencyAudio(ctx, master, noiseBuffer);
 
@@ -431,6 +433,7 @@ export function createSoundEngine() {
   return {
     step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, startCarAlarm, stopCarAlarm, cctvRead, vehicleLatch, securityKeyClick, startShutterMotor, stopShutterMotor, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
     updateCreature: creatureAudio.update,
+    updateObserver: observerAudio.update,
     updateVitals: playerVitalsAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();
@@ -448,6 +451,7 @@ export function createSoundEngine() {
       stopShutterMotor();
       emergencyAudio.dispose();
       creatureAudio.dispose();
+      observerAudio.dispose();
       playerVitalsAudio.dispose();
       try { hum.stop(); } catch {}
       if (ctx.state !== 'closed') ctx.close();
