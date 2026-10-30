@@ -117,6 +117,77 @@ export function createSoundEngine() {
     tone(790, .30, .36);
   }
   function flicker() { noise(2400, .035, .16); }
+  let sirenNodes=null;
+  function stopSiren(){
+    if(!sirenNodes)return;
+    const {oscillator,staticSource,sirenGain,staticGain,endAt}=sirenNodes;
+    sirenNodes=null;
+    if(ctx.state==='closed')return;
+    const t=ctx.currentTime;
+    for(const gain of [sirenGain,staticGain]){
+      gain.gain.cancelScheduledValues(t);
+      gain.gain.setTargetAtTime(0.0001,t,.06);
+    }
+    try{oscillator.stop(t+.25);}catch{}
+    try{staticSource.stop(t+.25);}catch{}
+  }
+  function startSiren(position=[0,1.7,-25],duration=9){
+    stopSiren();
+    if(!enabled||ctx.state==='closed')return;
+    const time=ctx.currentTime;
+    const end=time+Math.max(1,Math.min(12,duration));
+    const panner=ctx.createPanner();
+    panner.panningModel='HRTF';panner.distanceModel='inverse';
+    panner.refDistance=17;panner.maxDistance=98;panner.rolloffFactor=.46;
+    if(panner.positionX){
+      panner.positionX.value=position[0];panner.positionY.value=position[1];
+      panner.positionZ.value=position[2];
+    }else panner.setPosition(position[0],position[1],position[2]);
+    panner.connect(master);
+
+    const oscillator=ctx.createOscillator();
+    const sirenFilter=ctx.createBiquadFilter();
+    sirenFilter.type='lowpass';sirenFilter.frequency.value=1640;
+    oscillator.type='sawtooth';
+    const sirenGain=ctx.createGain();
+    sirenGain.gain.setValueAtTime(.0001,time);
+    sirenGain.gain.exponentialRampToValueAtTime(.40,time+.11);
+    sirenGain.gain.setValueAtTime(.40,Math.max(time+.12,end-.3));
+    sirenGain.gain.exponentialRampToValueAtTime(.0001,end);
+    for(let t=time;t<end;t+=.8){
+      oscillator.frequency.setValueAtTime(485,t);
+      oscillator.frequency.linearRampToValueAtTime(825,Math.min(t+.37,end));
+      if(t+.40<end){
+        oscillator.frequency.setValueAtTime(825,t+.40);
+        oscillator.frequency.linearRampToValueAtTime(485,Math.min(t+.79,end));
+      }
+    }
+    oscillator.connect(sirenFilter);sirenFilter.connect(sirenGain);sirenGain.connect(panner);
+    oscillator.start(time);
+    oscillator.stop(end+.02);
+
+    const staticSource=ctx.createBufferSource();
+    staticSource.buffer=noiseBuffer;staticSource.loop=true;
+    const hissFilter=ctx.createBiquadFilter();
+    hissFilter.type='bandpass';hissFilter.frequency.value=680;hissFilter.Q.value=.36;
+    const staticGain=ctx.createGain();
+    staticGain.gain.setValueAtTime(.0001,time);
+    staticGain.gain.exponentialRampToValueAtTime(.18,time+.07);
+    staticGain.gain.setValueAtTime(.18,Math.max(time+.1,end-.25));
+    staticGain.gain.exponentialRampToValueAtTime(.0001,end);
+    staticSource.connect(hissFilter);hissFilter.connect(staticGain);staticGain.connect(panner);
+    staticSource.start(time,.05);staticSource.stop(end+.02);
+    let finished=0;
+    const cleanup=()=>{
+      finished++;
+      if(finished!==2)return;
+      try{oscillator.disconnect();sirenFilter.disconnect();sirenGain.disconnect();
+        staticSource.disconnect();hissFilter.disconnect();staticGain.disconnect();panner.disconnect();}catch{}
+      if(sirenNodes?.oscillator===oscillator)sirenNodes=null;
+    };
+    oscillator.onended=cleanup;staticSource.onended=cleanup;
+    sirenNodes={oscillator,staticSource,sirenGain,staticGain,endAt:end};
+  }
   function switchStart() {
     noise(1900, .38, .65);
     tone(180, .32, .34, 'sawtooth');
@@ -271,7 +342,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
+    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, startSiren, stopSiren, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
     updateCreature: creatureAudio.update,
     updateVitals: playerVitalsAudio.update,
     resume() {
@@ -285,6 +356,7 @@ export function createSoundEngine() {
       }
     },
     dispose() {
+      stopSiren();
       creatureAudio.dispose();
       playerVitalsAudio.dispose();
       try { hum.stop(); } catch {}
