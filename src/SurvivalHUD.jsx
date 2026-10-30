@@ -7,7 +7,7 @@ const MESSAGES={
   switch:'배전반 작동 · 큰 소음',power:'전력 복구 · 경보음',breath:'거친 숨소리 · 가까이서 감지 위험',decoy:'유인 장치 작동 · 청음자가 듣는다',gear:'장비 사용 · 소음 발생'
 };
 
-export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vitals,creature,observer,secondFloor=false,reducedEffects=false}){
+export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vitals,creature,observer,secondFloor=false,reducedEffects=false,active=true}){
   const [displayNoise,setDisplayNoise]=useState(0);
   const [notice,setNotice]=useState(null);
   useEffect(()=>{
@@ -18,9 +18,10 @@ export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vi
     }
   },[latestNoise]);
   useEffect(()=>{
+    if(!active)return;
     const id=setInterval(()=>setDisplayNoise(value=>Math.max(0,value-6)),95);
     return ()=>clearInterval(id);
-  },[]);
+  },[active]);
   useEffect(()=>{
     if(!notice)return;
     const id=setTimeout(()=>setNotice(previous=>previous?.id===notice.id?null:previous),1700);
