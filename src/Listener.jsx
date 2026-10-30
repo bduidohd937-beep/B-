@@ -8,6 +8,7 @@ import ListenerModel from './ListenerModel.jsx';
 import { PILLARS,PARKED_CARS,WALK_BOUNDS,terrainBlocked } from './garageLayout.js';
 import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
+import {buildRoute} from './navigationGrid.js';
 
 // Alarm rush starts far enough from each circuit to leave a genuine escape window.
 const BASE = new THREE.Vector3(14,0,-8);
@@ -40,42 +41,6 @@ function blockedToListener(creature,viewer){
   return PILLARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,.85,.85))
     || CARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,1.45,2.4));
 }
-
-const STEP=2.5;
-const cols=Math.floor((WALK_BOUNDS.maxX-WALK_BOUNDS.minX)/STEP)+1;
-const rows=Math.floor((WALK_BOUNDS.maxZ-WALK_BOUNDS.minZ)/STEP)+1;
-const toGrid=(x,z)=>[
- Math.max(0,Math.min(cols-1,Math.round((x-WALK_BOUNDS.minX)/STEP))),
- Math.max(0,Math.min(rows-1,Math.round((z-WALK_BOUNDS.minZ)/STEP)))
-];
-const toWorld=(gx,gz)=>[WALK_BOUNDS.minX+gx*STEP,WALK_BOUNDS.minZ+gz*STEP];
-const key=(x,z)=>x+z*cols;
-function buildRoute(from,to,powered){
-  const [sx,sz]=toGrid(from.x,from.z),[tx,tz]=toGrid(to.x,to.z);
-  const start=key(sx,sz),goal=key(tx,tz);
-  const q=[start],parents=new Map([[start,-1]]);
-  for(let i=0;i<q.length;i++){
-    const k=q[i];if(k===goal)break;
-    const x=k%cols,z=Math.floor(k/cols);
-    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
-      const nx=x+dx,nz=z+dz;
-      if(nx<0||nz<0||nx>=cols||nz>=rows)continue;
-      const id=key(nx,nz);if(parents.has(id))continue;
-      const [wx,wz]=toWorld(nx,nz);
-      if(obstructed(wx,wz,powered))continue;
-      parents.set(id,k);q.push(id);
-    }
-  }
-  if(!parents.has(goal))return [];
-  const result=[];let current=goal;
-  while(current!==start&&result.length<cols*rows){
-    const gx=current%cols,gz=Math.floor(current/cols);
-    const [x,z]=toWorld(gx,gz);result.push({x,z});
-    current=parents.get(current);
-  }
-  return result.reverse();
-}
-
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
@@ -175,10 +140,18 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     currentSpeed.current=THREE.MathUtils.damp(currentSpeed.current,targetSpeed,
       state.current==='investigate'&&rushTime.current>0?9:state.current==='investigate'?2.8:1.25,dt);
     const destination=(state.current==='idle'||state.current==='return')?home:target.current;
-    routeTime.current-=dt;
-    if(routeTime.current<=0){
-      route.current=buildRoute(pos,destination,powered);
-      routeTime.current=1;
+    if(state.current==='investigate'||state.current==='return'){
+      routeTime.current-=dt;
+      if(routeTime.current<=0){
+        route.current=buildRoute(pos,destination,powered);
+        // Cached occupancy eliminates recurring grid collision checks; avoid
+        // repathing every second unless a new noise resets routeTime to zero.
+        routeTime.current=2.3;
+      }
+    }else{
+      // Neither listening nor searching needs a full-map BFS every frame.
+      route.current=[];
+      routeTime.current=0;
     }
     while(route.current.length&&dist(pos,route.current[0])<.65)route.current.shift();
     const waypoint=route.current.length?route.current[0]:destination;
