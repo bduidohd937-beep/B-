@@ -31,6 +31,7 @@ export const VEHICLES=Object.freeze([
  })
 ]);
 export const CAR_ALARM_NOISE=98;
+export const CAR_ALARM_HEARING_RADIUS=72;
 export const CAR_ALARM_SECONDS=5.5;
 export const CCTV_READ_NOISE=17;
 export const CORRECT_TRUNK_NOISE=35;
