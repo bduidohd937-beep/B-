@@ -11,7 +11,7 @@ export function cameraMotion({mode='idle',distanceIntoStep=0,moving=false,ground
  const rollAmplitude=mode==='sprint'?.014:mode==='crouch'?.002:.004;
  // Both ends return to zero so each sound impact and visual step coincide.
  return {
-  rise:Math.max(0,Math.sin(phase/2))*riseAmplitude*scale,
+  rise:phase>=Math.PI*2?0:Math.max(0,Math.sin(phase/2))*riseAmplitude*scale,
   roll:Math.sin(phase)*rollAmplitude*scale
  };
 }
