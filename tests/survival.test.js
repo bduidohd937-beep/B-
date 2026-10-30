@@ -10,7 +10,7 @@ function simulate(state,seconds,options){
   }
   return result;
 }
-test('approximately 8 seconds of running, never negative stamina',()=>{
+test('approximately 6 seconds of running, never negative stamina',()=>{
   const r=simulate(freshSurvival(),8,{moving:true,wantsSprint:true});
   assert.ok(r.state.stamina<1);
   assert.ok(r.exhausted);
@@ -21,6 +21,14 @@ test('exhaustion disables running without disabling ordinary walking',()=>{
   r=tickSurvival(exhausted,{dt:.05,moving:true,wantsSprint:true});
   assert.equal(r.sprinting,false);
   assert.ok(r.state.stamina>=0);
+});
+test('normal walking and crouched movement now cost stamina, but still permit stealth',()=>{
+ const normal=simulate(freshSurvival(),20,{moving:true});
+ const crouched=simulate(freshSurvival(),20,{moving:true,crouching:true});
+ assert.ok(normal.state.stamina<80 && normal.state.stamina>65);
+ assert.ok(crouched.state.stamina<100 && crouched.state.stamina>normal.state.stamina);
+ const rested=simulate(normal.state,4,{moving:false,crouching:true});
+ assert.ok(rested.state.stamina>normal.state.stamina);
 });
 test('resting and crouching recover more quickly than walking',()=>{
   const start={stamina:24,lockout:0,recentlyRan:0};
