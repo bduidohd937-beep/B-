@@ -257,3 +257,26 @@
  .emergency-dread__blackout{display:none!important}
  .emergency-dread__red{animation:none!important;opacity:.34!important}
 }
+
+/* V0.11.2 — restrained equipment light meter, player-adjustable head bob. */
+.flashlight-status{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px;color:#b7c5b8}
+.flashlight-status strong{font-size:11px;font-variant-numeric:tabular-nums;color:#d4d1b0;letter-spacing:0}
+.flashlight-status__track{display:inline-flex;position:relative;height:4px;width:39px;overflow:hidden;
+ background:#344341;border-radius:3px;vertical-align:middle}
+.flashlight-status__track>i{display:block;background:#98ac97;border-radius:3px;height:100%;
+ transition:width .2s linear}
+.flashlight-status.is-low strong{color:#eaa478}
+.flashlight-status.is-low .flashlight-status__track>i{background:#d88968}
+.camera-shake-control{flex-basis:100%;display:flex;align-items:center;gap:11px;
+ margin:8px 0 0;padding:8px 4px;font-size:12px;color:#dbe2d9;justify-content:space-between}
+.camera-shake-control>span{min-width:190px;text-align:left}
+.camera-shake-control input{flex:1;min-width:90px;accent-color:#a19a82;cursor:pointer}
+@media(max-width:760px){.flashlight-status__track{width:23px}}
+@media(max-width:465px){
+ .camera-shake-control{flex-wrap:wrap;gap:6px}
+ .camera-shake-control input{width:100%;flex-basis:100%}
+ .flashlight-status{gap:3px}
+ .flashlight-status__track{width:20px}
+ .flashlight-status strong{font-size:9px}
+}
+@media(prefers-reduced-motion:reduce){.flashlight-status__track>i{transition:none}}
