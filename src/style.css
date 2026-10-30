@@ -330,3 +330,21 @@
 @media(prefers-reduced-motion:reduce){
  .cctv-evidence,.car-theft-alarm{animation:none!important;transition:none!important}
 }
+
+/* B∞ V0.12.2 — handheld recollection, not a remotely controlled CCTV screen. */
+.cctv-pocket-note{position:fixed;left:50%;top:24%;transform:translateX(-50%);
+ z-index:7;pointer-events:none;width:min(275px,calc(100vw - 30px));max-width:90vw;
+ padding:15px 18px 12px;background:#252c2aee;color:#d6dbcc;
+ border:1px solid #8f968b9e;border-left:4px solid #b8a879;
+ box-shadow:0 13px 45px #000c;letter-spacing:.015em;line-height:1.5}
+.cctv-pocket-note strong{display:block;font-size:12px;font-weight:850;
+ border-bottom:1px solid #89918956;padding-bottom:7px;color:#e4d9b9}
+.cctv-pocket-note p{margin:8px 0;font-size:12px}
+.cctv-pocket-note small{display:block;margin-top:8px;color:#aaa993;font-size:10px}
+.cctv-pocket-note kbd{border:1px solid #b7b4a2;padding:0 3px;font:inherit}
+.interaction-callout:has(.interaction-callout__progress){max-width:min(420px,calc(100vw - 35px))}
+@media(max-width:760px){
+ .cctv-pocket-note{top:29%;padding:11px 13px}
+ .cctv-pocket-note p{font-size:11px}
+}
+@media(prefers-reduced-motion:reduce){.cctv-pocket-note{animation:none!important;transition:none!important}}
