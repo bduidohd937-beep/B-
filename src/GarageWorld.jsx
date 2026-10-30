@@ -18,9 +18,19 @@ const Car=React.memo(function Car({x,z,index,identified=null,solved=false}){
    {[-.75,.75].map(offset=><mesh key={offset} position={[offset,.72,2.23]}>
      <boxGeometry args={[.38,.19,.04]}/><meshBasicMaterial color="#6b302e"/>
    </mesh>)}
-   {identified&&<group position={[0,.79,2.285]}>
-      <mesh><boxGeometry args={[.81,.27,.035]}/><meshStandardMaterial color="#c0c5bd" roughness={.62}/></mesh>
-      <Text position={[0,0,.025]} fontSize={.205} color="#252d2f" anchorX="center" anchorY="middle">{identified.plate}</Text>
+   {identified&&<group position={[0,.82,2.285]}>
+      {/* Matching physical rear bumper plate; high contrast, no emission. */}
+      <mesh><boxGeometry args={[1.03,.36,.04]}/><meshStandardMaterial color="#d5dad3" roughness={.78} metalness={.06}/></mesh>
+      <Text position={[0,0,.03]} fontSize={.285} fontWeight={700} color="#19262d"
+        anchorX="center" anchorY="middle" outlineWidth={.008} outlineColor="#d5dad3">
+        {identified.plate}
+      </Text>
+   </group>}
+   {identified&&<group position={[0,.80,-2.29]} rotation={[0,Math.PI,0]}>
+      {/* Front license plate, too: the player can investigate from either lane. */}
+      <mesh><boxGeometry args={[1.03,.36,.04]}/><meshStandardMaterial color="#d5dad3" roughness={.78}/></mesh>
+      <Text position={[0,0,.03]} fontSize={.285} fontWeight={700} color="#19262d"
+        anchorX="center" anchorY="middle">{identified.plate}</Text>
    </group>}
    {identified?.correct&&solved&&<group>
      <mesh position={[0,1.34,2.31]} rotation={[-.45,0,0]}>
@@ -111,8 +121,22 @@ function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehic
    <InstancedCars floor={floor}/>
    {floor===2&&VEHICLES.map(v=>{
      const index=PARKED_CARS.findIndex(([x,z])=>x===v.position[0]&&z===v.position[1]);
-     return <Car key={v.id} x={v.position[0]} z={v.position[1]}
-       index={index} identified={v} solved={vehicleSolved}/>;
+     return <group key={v.id}>
+       <Car x={v.position[0]} z={v.position[1]}
+         index={index} identified={v} solved={vehicleSolved}/>
+       {/* Actual weathered bay stencil on concrete. Compare it to CAM-C
+           footage; no floating marker or remotely highlighted target. */}
+       <group position={[v.position[0],.032,v.position[1]+3.7]} rotation={[-Math.PI/2,0,0]}>
+         <Text fontSize={.57} fontWeight={700} color="#969b93"
+           anchorX="center" anchorY="middle" outlineWidth={.018}
+           outlineColor="#363c3b">{v.bay}</Text>
+       </group>
+       <mesh position={[v.position[0]+1.48,.027,v.position[1]+3.65]}
+             rotation={[-Math.PI/2,0,0]}>
+         <planeGeometry args={[.12,1.9]}/>
+         <meshBasicMaterial color="#8b8c7b" transparent opacity={.55} depthWrite={false}/>
+       </mesh>
+     </group>;
    })}
    <GarageFixtures flicker={flicker}/>
    <MaintenanceSurfaces/>
