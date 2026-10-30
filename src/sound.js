@@ -119,6 +119,12 @@ export function createSoundEngine() {
     tone(790, .30, .36);
   }
   function flicker() { noise(2400, .035, .16); }
+  function flashlightClick(on=true){
+    // A close, dry handheld mechanical click. Real AI hearing is a separate
+    // event and only matters when the Listener is within a few meters.
+    noise(on?1380:1150,.038,.14);
+    tone(on?1050:820,.044,.065,'square');
+  }
   // The warning is louder in *perception*, not unlimited amplitude:
   // layered motor, two sweeping harmonics, PA crackle and concrete echo.
   function startSiren(position,duration){
@@ -145,6 +151,11 @@ export function createSoundEngine() {
       noise(action==='use'?2300:970,action==='use'?.20:.13,
         action==='use'?.32:intensity);
       if(action==='use')tone(270,.12,.12);
+    }else if(type==='battery'){
+      // Plastic pack and metallic battery-terminal taps.
+      noise(action==='use'?1680:980,action==='use'?.23:.10,
+        action==='use'?.23:intensity);
+      tone(action==='use'?560:370,.08,.095);
     }
   }
   function switchStart(lubricated=false) {
@@ -303,7 +314,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
+    step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
     updateCreature: creatureAudio.update,
     updateVitals: playerVitalsAudio.update,
     resume() {
