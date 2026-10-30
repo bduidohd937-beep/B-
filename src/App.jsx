@@ -715,7 +715,7 @@ export default function App(){
         <div className="mission-card__text">{objectiveText(gatePowered,floor)}</div>
         {floor===2&&<div className="mission-card__rule">귀 달린 놈 = 소리 · 관조자 = 움직임</div>}
       </section>
-      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects}/>}
+      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
