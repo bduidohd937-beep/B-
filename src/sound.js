@@ -115,9 +115,18 @@ export function createSoundEngine() {
     tone(790, .30, .36);
   }
   function flicker() { noise(2400, .035, .16); }
+  function switchStart() {
+    noise(1900, .38, .65);
+    tone(180, .32, .34, 'sawtooth');
+  }
+  function powerRestore() {
+    noise(750, .62, .75);
+    tone(110, .65, .58);
+    tone(440, .26, .24);
+  }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker,
+    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore,
     updateCreature: creatureAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();

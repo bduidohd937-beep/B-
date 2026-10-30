@@ -1,12 +1,14 @@
 import React, { useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { gateBlocksPlayer } from './puzzle.js';
 
 const BASE = new THREE.Vector3(-13, 0, -25);
 const PILLARS = Array.from({length:6},(_,i)=>-28+i*9).flatMap(z=>[-10,10].map(x=>[x,z]));
 const CARS = [[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
-const obstructed=(x,z)=>PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
- || CARS.some(([cx,cz])=>Math.abs(x-cx)<1.8&&Math.abs(z-cz)<2.8);
+const obstructed=(x,z,powered=false)=>PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
+ || CARS.some(([cx,cz])=>Math.abs(x-cx)<1.8&&Math.abs(z-cz)<2.8)
+ || gateBlocksPlayer(x,z,powered);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 
 // Approximate sound obstruction by columns and cars, without a physics dependency.
@@ -39,7 +41,7 @@ const cols=18,rows=42;
 const toGrid=(x,z)=>[Math.max(0,Math.min(cols-1,Math.round((x+17)/STEP))),Math.max(0,Math.min(rows-1,Math.round((z+44)/STEP)))];
 const toWorld=(gx,gz)=>[-17+gx*STEP,-44+gz*STEP];
 const key=(x,z)=>x+z*cols;
-function buildRoute(from,to){
+function buildRoute(from,to,powered){
   const [sx,sz]=toGrid(from.x,from.z),[tx,tz]=toGrid(to.x,to.z);
   const start=key(sx,sz),goal=key(tx,tz);
   const q=[start],parents=new Map([[start,-1]]);
@@ -51,7 +53,7 @@ function buildRoute(from,to){
       if(nx<0||nz<0||nx>=cols||nz>=rows)continue;
       const id=key(nx,nz);if(parents.has(id))continue;
       const [wx,wz]=toWorld(nx,nz);
-      if(obstructed(wx,wz))continue;
+      if(obstructed(wx,wz,powered))continue;
       parents.set(id,k);q.push(id);
     }
   }
@@ -68,7 +70,7 @@ function buildRoute(from,to){
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-export default function Listener({active,events,playerRef,onCaught,onState,onSpatial}) {
+export default function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false}) {
   const {camera}=useThree();
   const group=useRef(null);
   const lastEvent=useRef(0);
@@ -101,7 +103,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
     let heardSomething=false;
     for(const event of recent){
-      if(!['step','jump','land','throw','horn'].includes(event.type))continue;
+      if(!['step','jump','land','throw','horn','switch','power'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const hearingRadius=event.type==='horn'?44:Math.max(1.4,event.loudness*.28);
       // A pillar/car blocks the direct path but only attenuates the sound.
@@ -127,7 +129,7 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     const destination=(state.current==='idle'||state.current==='return')?BASE:target.current;
     routeTime.current-=dt;
     if(routeTime.current<=0){
-      route.current=buildRoute(pos,destination);
+      route.current=buildRoute(pos,destination,powered);
       routeTime.current=1;
     }
     while(route.current.length&&dist(pos,route.current[0])<.65)route.current.shift();
@@ -138,14 +140,14 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
       const speed=currentSpeed.current;
       const dx=(waypoint.x-pos.x)/range*dt*speed;
       const dz=(waypoint.z-pos.z)/range*dt*speed;
-      if(!obstructed(pos.x+dx,pos.z+dz)){pos.x+=dx;pos.z+=dz;}
+      if(!obstructed(pos.x+dx,pos.z+dz,powered)){pos.x+=dx;pos.z+=dz;}
       else {
         // Steer around parked cars and columns without passing through them.
         const side=state.current==='investigate'?-1:1;
         const sx=-dz*side,sz=dx*side;
-        if(!obstructed(pos.x+sx,pos.z+sz)){pos.x+=sx;pos.z+=sz;}
-        else if(!obstructed(pos.x+dx,pos.z)){pos.x+=dx;}
-        else if(!obstructed(pos.x,pos.z+dz)){pos.z+=dz;}
+        if(!obstructed(pos.x+sx,pos.z+sz,powered)){pos.x+=sx;pos.z+=sz;}
+        else if(!obstructed(pos.x+dx,pos.z,powered)){pos.x+=dx;}
+        else if(!obstructed(pos.x,pos.z+dz,powered)){pos.z+=dz;}
       }
       group.current.rotation.y=Math.atan2(destination.x-pos.x,destination.z-pos.z);
     }

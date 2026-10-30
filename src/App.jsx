@@ -6,6 +6,8 @@ import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import NoiseHUD from './NoiseHUD.jsx';
+import EscapePuzzle from './EscapePuzzle.jsx';
+import { POWER_PANEL, POWER_HOLD_SECONDS, canUsePanel, isNearGate, gateBlocksPlayer, objectiveText } from './puzzle.js';
 
 const pillars = [];
 for (let z = -28; z <= 18; z += 9) for (const x of [-10, 10]) pillars.push([x, z]);
@@ -42,7 +44,7 @@ function Garage({ altered, flicker, canPosition }) {
       <mesh><boxGeometry args={[4.3,1.15,.3]}/><meshStandardMaterial color={altered?'#662e30':'#24654e'} emissive={altered?'#681d20':'#176c46'} emissiveIntensity={1.5}/></mesh>
       <Text position={[0,0,.18]} fontSize={.56} color="#e6e8dd">{altered?'B ∞':'EXIT ↑'}</Text>
     </group>
-    {altered && <mesh position={[0,1.8,-38]}><boxGeometry args={[7,3.6,.8]}/><meshStandardMaterial color="#596063"/></mesh>}
+
     {Array.from({length:10},(_,i)=><mesh key={'bay'+i} position={[i%2===0?-13.7:13.7,.018,-35+i*6]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[.11,4.8]}/><meshBasicMaterial color="#9c9b76" transparent opacity={.48}/></mesh>)}
     <mesh position={[0,.023,-6]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshStandardMaterial color="#657176" metalness={.72}/></mesh>
     <mesh position={[2,.028,-14]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,3]}/><meshStandardMaterial color="#273f46" metalness={.62}/></mesh>
@@ -86,7 +88,7 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint }) {
+function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
   const { camera } = useThree();
   const keys = useRef({});
   const hadLooked = useRef(false);
@@ -111,6 +113,11 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   const alteredRef=useRef(false);
   alteredRef.current=altered;
   const checkSet=useRef(false);
+  const panelHeld=useRef(false);
+  const panelTime=useRef(0);
+  const panelUpdate=useRef(0);
+  const poweredRef=useRef(powered);
+  poweredRef.current=powered;
   const forward = useMemo(()=>new THREE.Vector3(),[]);
   const right = useMemo(()=>new THREE.Vector3(),[]);
   const movement = useMemo(()=>new THREE.Vector3(),[]);
@@ -120,7 +127,9 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     camera.position.set(0,1.7,checkpoint?8:17);
     vertical.current=0;velocityY.current=0;stepClock.current=0;
     crouchToggle.current=false;
-  },[respawnSignal,camera,checkpoint]);
+    panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
+    onPanelProgress(0);
+  },[respawnSignal,camera,checkpoint,onPanelProgress]);
   useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
@@ -147,7 +156,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
           endZ=clamp(camera.position.z+flat.z*range,-44,38);
           const obstacle=pillars.some(([x,z])=>Math.abs(endX-x)<1.3&&Math.abs(endZ-z)<1.3)
             || parkedCars.some(([x,z])=>Math.abs(endX-x)<1.85&&Math.abs(endZ-z)<2.85)
-            || (alteredRef.current&&Math.abs(endX)<4.2&&Math.abs(endZ+38)<1.05);
+            || gateBlocksPlayer(endX,endZ,poweredRef.current);
           if(!obstacle)break;
           range-=.5;
         }
@@ -163,7 +172,11 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);};
   },[camera]);
   useFrame((_,delta)=>{
-    if(!active){lastActive.current=false;return;}
+    if(!active){
+      lastActive.current=false;
+      if(panelHeld.current){panelHeld.current=false;panelTime.current=0;onPanelProgress(0);}
+      return;
+    }
     if(!lastActive.current){keys.current={};jumpQueued.current=false;lastActive.current=true;}
     camera.getWorldDirection(direction);
     forward.set(direction.x,0,direction.z).normalize();
@@ -192,7 +205,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
       let nx=clamp(camera.position.x+movement.x,-18.5,18.5);
       let nz=clamp(camera.position.z+movement.z,-46,39);
-      const blocked=(x,z)=>pillars.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15) || parkedCars.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7) || (altered&&Math.abs(x)<4.1&&Math.abs(z+38)<.95);
+      const blocked=(x,z)=>pillars.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15) || parkedCars.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7) || gateBlocksPlayer(x,z,poweredRef.current);
       if(!blocked(nx,camera.position.z))camera.position.x=nx;
       if(!blocked(camera.position.x,nz))camera.position.z=nz;
     }
@@ -203,6 +216,25 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     }
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
+    const nearPanel=canUsePanel(camera.position.x,camera.position.z);
+    onPuzzleProximity(nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':null);
+    // The panel makes a loud crackle at the START of a two-second hold.
+    // Distracting the nearby listening creature gives enough time to finish.
+    if(!poweredRef.current && nearPanel && keys.current.KeyE){
+      if(!panelHeld.current){panelHeld.current=true;panelTime.current=0;onPanelAttempt();}
+      panelTime.current+=dt;
+      panelUpdate.current+=dt;
+      if(panelUpdate.current>=.075){
+        panelUpdate.current=0;
+        onPanelProgress(Math.min(1,panelTime.current/POWER_HOLD_SECONDS));
+      }
+      if(panelTime.current>=POWER_HOLD_SECONDS){
+        panelHeld.current=false;panelTime.current=0;keys.current.KeyE=false;
+        onPanelProgress(1);onPowerRestored();
+      }
+    }else if(panelHeld.current){
+      panelHeld.current=false;panelTime.current=0;onPanelProgress(0);
+    }
     if(moving&&vertical.current===0){
       stepClock.current+=dt;
       bobClock.current+=dt*(sprinting?11:crouching?3.5:7);
@@ -227,11 +259,11 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
       else unseenTime.current=0;
       if(unseenTime.current>1.2){shiftedOnce.current=true;onWatcherShift();}
     }
-    if(altered&&camera.position.z<-30&&Math.abs(camera.position.x)<6)onFinish();
+    if(poweredRef.current&&camera.position.z<-43&&Math.abs(camera.position.x)<3)onFinish();
   });
   return null;
 }
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -249,11 +281,12 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <fog attach="fog" args={['#101719',9,49]}/>
     <ambientLight intensity={.43} color="#9cadad"/>
     <Garage altered={altered} flicker={flicker} canPosition={canPosition}/>
+    <EscapePuzzle powered={powered} active={active}/>
     <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
-    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
 }
@@ -271,6 +304,9 @@ export default function App(){
   const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
   const [checkpoint,setCheckpoint]=useState(false);
+  const [powered,setPowered]=useState(false);
+  const [panelProgress,setPanelProgress]=useState(0);
+  const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
   const [projectile,setProjectile]=useState(null);
   const projectileId=useRef(0);
@@ -280,6 +316,15 @@ export default function App(){
     setCanPosition(null);
   },[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
+  const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
+  const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
+  const onPanelAttempt=useCallback(()=>{
+    onNoiseRef.current?.({type:'switch',loudness:86,position:[POWER_PANEL[0],1.5,POWER_PANEL[1]]});
+  },[]);
+  const onPowerRestored=useCallback(()=>{
+    setPowered(true);
+    onNoiseRef.current?.({type:'power',loudness:92,position:[POWER_PANEL[0],1.5,POWER_PANEL[1]]});
+  },[]);
   const onThrowCan=useCallback(({start,end})=>{
     setCanCollected(false);
     setCanPosition(null);
@@ -326,7 +371,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -336,6 +381,8 @@ export default function App(){
     if(event.type==='throw')sound.throwCan();
     if(event.type==='land')sound.land();
     if(event.type==='electric')sound.flicker();
+    if(event.type==='switch')sound.switchStart();
+    if(event.type==='power')sound.powerRestore();
   },[]);
   onNoiseRef.current=onNoise;
   const onWatcherShift=useCallback(()=>setShifted(true),[]);
@@ -363,28 +410,43 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={powered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
     </Canvas>
     <div className="vignette"/>
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.7 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.8 / WORK IN PROGRESS</div>
       <div className="reticle"/>
       <div className="audio-toggle" title="청음자의 방향성 숨소리와 발소리는 헤드폰 사용을 권장합니다" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
       <div className="creature-indicator">{creatureInfo.mode==='investigate'?'청음자가 소리를 향해 다가온다':creatureInfo.mode==='search'?'무언가가 주변을 수색 중이다':creatureInfo.mode==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
       {started&&<NoiseHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} creature={creatureInfo}/>}
+      <div className="puzzle-goal">
+        <div className="puzzle-goal__label">OBJECTIVE 01 · EMERGENCY EXIT</div>
+        <div>{objectiveText(powered)}</div>
+        {puzzleProximity==='panel'&&!powered&&<div className="puzzle-goal__interact">
+          <strong>[E 누르기 유지] 배전반 재시동</strong>
+          <span>전기 소음 발생. 청음자를 먼저 유인하라.</span>
+          <div className="puzzle-goal__track"><div style={{width:(panelProgress*100)+'%'}}/></div>
+        </div>}
+        {puzzleProximity==='gate'&&!powered&&<div className="puzzle-goal__interact">
+          비상문 잠김 — 왼쪽 벽 적색 배전반에 전력이 필요하다.
+        </div>}
+        {puzzleProximity==='gate'&&powered&&<div className="puzzle-goal__interact puzzle-goal__interact--success">
+          비상문 열림 — 통로 안으로 들어가라.
+        </div>}
+      </div>
       <div className="item-indicator">{canCollected?'빈 캔 보유 · G 던지기':canPosition?'바닥에 떨어진 캔 · 가까이 가서 E로 줍기':'캔이 날아가는 중…'}{checkpoint?' · 체크포인트 확보':''}</div>
       <div className="torch-indicator">손전등 [F] {torch?'ON':'OFF'}</div>
       <div className="movement-indicator">{airborne?'점프 중 / 착지 소음 주의':moveMode==='idle'?'정지 / 무음':moveMode==='crouch-idle'?'앉아 있기 / 무음':moveMode==='crouch'?'앉아서 이동 / 저소음':moveMode==='sprint'?'달리기 / 큰 발소리':'걷기 / 보통 발소리'}</div>
       <div className="controls">WASD 이동 · Shift 달리기 · Ctrl 누르기 / C 앉기 전환 · Space 점프 · E 줍기 · G 던지기 · F 손전등 · ESC 일시정지</div>
-      {started&&locked&&!ending&&<div className="hint">{altered?'출구가 막혔다. 가까이 가서 확인하자.':shifted?'방금 전까지 저 기둥 뒤에 있지 않았나?':near?'기둥 뒤에 누군가 서 있다.':'출구를 찾아라. B2층 끝에 녹색 표시가 보인다.'}</div>}
+      {started&&locked&&!ending&&<div className="hint">{powered?'비상문이 열렸다. 이제 나갈 수 있을까?':altered?'EXIT 표지판이 바뀌었다. 비상 전원을 찾아라.':shifted?'방금 전까지 저 기둥 뒤에 있지 않았나?':near?'기둥 뒤에 누군가 서 있다.':'비상문이 잠겨 있다. 근처의 전력실을 찾아라.'}</div>}
     </div>
     {(!started||!locked||ending||caught)&&<div className="overlay"><section className="panel">
       <div className="eyebrow">B∞ / THE ENDLESS PARKING GARAGE</div>
-      <h1>{caught?'들켰다.':ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
-      <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
+      <h1>{caught?'들켰다.':ending?'다시 B2.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
+      <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>잠겨 있던 비상문이 열렸다.<br/>하지만 계단 끝에는 또다시 B2라고 적혀 있다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.7 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.8 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
