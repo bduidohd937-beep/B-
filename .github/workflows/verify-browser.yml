@@ -1,0 +1,25 @@
+name: Browser startup regression
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/smoke-browser.mjs'
+      - '.github/workflows/verify-browser.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+jobs:
+  chrome-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Chrome browser boot (detects black-screen React crashes)
+        run: |
+          npm install --no-save --no-package-lock playwright-core
+          node scripts/smoke-browser.mjs
