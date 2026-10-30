@@ -466,7 +466,26 @@ export default function App(){
   const floorRef=useRef(1);
   const [floorSignal,setFloorSignal]=useState(0);
   const [floorFlash,setFloorFlash]=useState(false);
-  const gatePowered=gateIsPowered(floor,powered,echoRestored);
+  const [vehicleState,setVehicleState]=useState(initialVehiclePuzzle);
+  const vehicleStateRef=useRef(vehicleState);
+  vehicleStateRef.current=vehicleState;
+  const [evidenceOpen,setEvidenceOpen]=useState(false);
+  const [carAlarm,setCarAlarm]=useState(null);
+  const lastCarAlarmRef=useRef(-Infinity);
+  useEffect(()=>{
+    if(!carAlarm)return;
+    const timer=setTimeout(()=>setCarAlarm(old=>old?.token===carAlarm.token?null:old),
+      CAR_ALARM_SECONDS*1000);
+    return ()=>clearTimeout(timer);
+  },[carAlarm]);
+  useEffect(()=>{
+    if(!evidenceOpen)return;
+    const timer=setTimeout(()=>setEvidenceOpen(false),12000);
+    return ()=>clearTimeout(timer);
+  },[evidenceOpen]);
+  // First loop = red power breaker. Second loop = a car RFID transponder;
+  // there is no mandatory second breaker or button for the escape.
+  const gatePowered=vehicleGateOpen(floor,powered,vehicleState);
   const [panelProgress,setPanelProgress]=useState(0);
   const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
@@ -567,6 +586,62 @@ export default function App(){
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
   const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
+  const onVehicleAction=useCallback((interaction,playerPosition)=>{
+    if(floorRef.current!==2||!interaction)return false;
+    const position=playerPosition||[0,1.7,17];
+    if(interaction.kind==='cctv'){
+      const next=reviewCctv(vehicleStateRef.current);
+      vehicleStateRef.current=next;
+      setVehicleState(next);
+      setEvidenceOpen(true);
+      onNoiseRef.current?.({type:'cctv',loudness:CCTV_READ_NOISE,position});
+      notify('CCTV 기록 확보 · J 기록 다시 보기 · 위험 중에도 화면을 닫을 수 있다');
+      return true;
+    }
+    if(interaction.kind!=='vehicle')return false;
+    const result=examineVehicle(vehicleStateRef.current,interaction.id);
+    if(result.outcome==='need-cctv'){
+      notify('아무 기록도 없다 · 먼저 경비용 CCTV를 확인하자');
+      return false;
+    }
+    if(result.outcome==='already-solved'){
+      notify('이미 317번 차량에서 출입 인증기를 확보했다');
+      return false;
+    }
+    if(result.outcome==='invalid')return false;
+    if(result.outcome==='alarm'){
+      if(performance.now()-lastCarAlarmRef.current<CAR_ALARM_SECONDS*1000){
+        notify('차량 도난 경보가 아직 울리고 있다!');
+        return false;
+      }
+      lastCarAlarmRef.current=performance.now();
+      const next=result.state;
+      vehicleStateRef.current=next;
+      setVehicleState(next);
+      const [x,z]=result.car.position;
+      setCarAlarm({id:result.car.id,token:Date.now()});
+      onNoiseRef.current?.({
+        type:'car-alarm',loudness:CAR_ALARM_NOISE,
+        position:[x,1.2,z+2.1]
+      });
+      setEvidenceOpen(false);
+      notify('틀렸다! 차량 도난 경보 발생 · 청음자가 소리를 듣는다!');
+      return true;
+    }
+    if(result.outcome==='transponder'){
+      vehicleStateRef.current=result.state;
+      setVehicleState(result.state);
+      setEvidenceOpen(false);
+      const [x,z]=result.car.position;
+      onNoiseRef.current?.({
+        type:'vehicle',loudness:CORRECT_TRUNK_NOISE,
+        position:[x,1.2,z+2.1]
+      });
+      notify('317번 차량 인증기 획득 · 중앙 서비스 셔터 자동 개방');
+      return true;
+    }
+    return false;
+  },[notify]);
   const onPanelAttempt=useCallback(()=>{
     const lubricated=silentRef.current===floorRef.current;
     const position=sirenPosition(floorRef.current);
@@ -663,6 +738,9 @@ export default function App(){
     soundRef.current?.updateCreature?.({active:false});
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
+    soundRef.current?.stopCarAlarm?.();
+    setCarAlarm(null);
+    setEvidenceOpen(false);
     setAlarmActive(false);
     soundRef.current?.death?.();
     setCaught(true);
@@ -674,6 +752,9 @@ export default function App(){
     alarmFiredRef.current=false;
     setAlarmActive(false);
     soundRef.current?.stopSiren?.();
+    soundRef.current?.stopCarAlarm?.();
+    setCarAlarm(null);
+    setEvidenceOpen(false);
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
@@ -722,6 +803,13 @@ export default function App(){
       soundRef.current?.updateCreature?.({active:false});
       soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.stopSiren?.();
+      soundRef.current?.stopCarAlarm?.();
+      setCarAlarm(null);
+      setEvidenceOpen(false);
+      const clean=initialVehiclePuzzle();
+      vehicleStateRef.current=clean;
+      setVehicleState(clean);
+      lastCarAlarmRef.current=-Infinity;
       setAlarmActive(false);
       alarmFiredRef.current=false;
       soundRef.current?.loopTransition?.();
@@ -749,6 +837,9 @@ export default function App(){
     soundRef.current?.updateCreature?.({active:false});
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
+    soundRef.current?.stopCarAlarm?.();
+    setCarAlarm(null);
+    setEvidenceOpen(false);
     setAlarmActive(false);
     setEnding(true);
   },[canCollected]);
