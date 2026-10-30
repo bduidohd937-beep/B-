@@ -4,13 +4,16 @@ import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
+import Observer from './Observer.jsx';
+import ItemsWorld from './ItemsWorld.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import SurvivalHUD from './SurvivalHUD.jsx';
 import EscapePuzzle from './EscapePuzzle.jsx';
 import DistortedB2 from './DistortedB2.jsx';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
-import { freshSurvival, tickSurvival } from './survival.js';
+import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
+import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const pillars = [];
@@ -65,14 +68,6 @@ const Garage = React.memo(function Garage({ altered, flicker, canPosition }) {
     <mesh position={[0,.05,-32]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshBasicMaterial color="#22272b" transparent opacity={.5}/></mesh>
   </group>;
 });
-const Watcher = React.memo(function Watcher({ shifted }) {
-  return <group position={shifted?[-8,0,-8]:[9,0,-16]}>
-    <mesh position={[0,1.35,0]}><capsuleGeometry args={[.27,1.25,5,8]}/><meshStandardMaterial color="#080b0b" roughness={1}/></mesh>
-    <mesh position={[0,2.38,.03]}><sphereGeometry args={[.26,12,12]}/><meshStandardMaterial color="#080b0b"/></mesh>
-    {[-.16,.16].map(x=><mesh key={x} position={[x,.47,0]}><boxGeometry args={[.18,.95,.19]}/><meshStandardMaterial color="#090b0c"/></mesh>)}
-    <mesh position={[0,2.32,.23]}><boxGeometry args={[.31,.04,.02]}/><meshBasicMaterial color="#3a4141"/></mesh>
-  </group>;
-});
 function Flashlight({ enabled }) {
   const { camera, scene } = useThree();
   const lamp=useRef();
@@ -92,13 +87,9 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals }) {
   const { camera } = useThree();
   const keys = useRef({});
-  const hadLooked = useRef(false);
-  const sawWatcher = useRef(false);
-  const unseenTime = useRef(0);
-  const shiftedOnce = useRef(false);
   const crouchToggle = useRef(false);
   const vertical = useRef(0);
   const velocityY = useRef(0);
@@ -309,20 +300,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     playerRef.current={x:camera.position.x,z:camera.position.z};
     if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
     if(camera.position.z < -10 && direction.z>0.45&&!hadLooked.current){hadLooked.current=true;onTurn();}
-    if(!shiftedOnce.current){
-      const toWatcher=new THREE.Vector3(9-camera.position.x,2-camera.position.y,-16-camera.position.z);
-      const distance=toWatcher.length();
-      const visible=direction.dot(toWatcher.normalize())>.67;
-      if(distance<20&&visible)sawWatcher.current=true;
-      if(sawWatcher.current&&!visible)unseenTime.current+=delta;
-      else unseenTime.current=0;
-      if(unseenTime.current>1.2){shiftedOnce.current=true;onWatcherShift();}
-    }
     if(canEnterNextArea(camera.position.x,camera.position.z,floorRef.current,poweredRef.current))onFinish();
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -343,10 +325,9 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
     <Flashlight enabled={torch}/>
-    <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -358,7 +339,6 @@ export default function App(){
   const [near,setNear]=useState(false);
   const [altered,setAltered]=useState(false);
   const [ending,setEnding]=useState(false);
-  const [shifted,setShifted]=useState(false);
   const [audioOn,setAudioOn]=useState(true);
   const [moveMode,setMoveMode]=useState('idle');
   const [airborne,setAirborne]=useState(false);
@@ -489,7 +469,6 @@ export default function App(){
     if(event.type==='power')sound.powerRestore();
   },[]);
   onNoiseRef.current=onNoise;
-  const onWatcherShift=useCallback(()=>setShifted(true),[]);
   const onFinish=useCallback(()=>{
     if(floorRef.current===1){
       floorRef.current=2; // Guard against repeated transitions during the same frame.
