@@ -1,17 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { motionExposure,sightBlocked,tickObservation,OBSERVER_VIEW_DISTANCE,OBSERVER_DOT_THRESHOLD,OBSERVER_LOSE_SIGHT_SECONDS,OBSERVER_PURSUIT_SPEED } from './observerRules.js';
-import { gateBlocksPlayer } from './puzzle.js';
+import { motionExposure,sightBlocked,tickObservation,OBSERVER_VIEW_DISTANCE,OBSERVER_DOT_THRESHOLD,OBSERVER_LOSE_SIGHT_SECONDS,OBSERVER_PURSUIT_SPEED,patrolWaypoint } from './observerRules.js';
+import { PILLARS,PARKED_CARS,terrainBlocked } from './garageLayout.js';
 
-const HOME=new THREE.Vector3(-14,0,-6);
-const PILLARS=Array.from({length:6},(_,i)=>-28+i*9).flatMap(z=>[-10,10].map(x=>[x,z]));
-const CARS=[[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
-function blocked(x,z,powered){
-  return PILLARS.some(([a,b])=>Math.abs(x-a)<1.2&&Math.abs(z-b)<1.2)
-    || CARS.some(([a,b])=>Math.abs(x-a)<1.85&&Math.abs(z-b)<2.8)
-    || gateBlocksPlayer(x,z,powered);
-}
+const HOME=new THREE.Vector3(...[14,0,-12]);
+const CARS=PARKED_CARS;
+const blocked=(x,z,powered)=>terrainBlocked(x,z,powered);
 function moveSafely(pos,target,speed,dt,powered){
   const dx=target.x-pos.x,dz=target.z-pos.z,range=Math.hypot(dx,dz);
   if(range<.35)return false;
@@ -26,14 +21,14 @@ function moveSafely(pos,target,speed,dt,powered){
 }
 function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
   const body=useRef(),head=useRef(),left=useRef(),right=useRef(),lens=useRef(),beam=useRef();
-  const mode=useRef('scan'),suspicion=useRef(0),lost=useRef(0),search=useRef(0);
+  const mode=useRef('scan'),suspicion=useRef(0),lost=useRef(0),search=useRef(0),patrolIndex=useRef(1);
   const target=useRef(HOME.clone()),clock=useRef(0),statusClock=useRef(0);
   const activeRef=useRef(active);
   activeRef.current=active;
   useEffect(()=>{
     if(body.current)body.current.position.copy(HOME);
     mode.current='scan';suspicion.current=0;lost.current=0;search.current=0;
-    target.current.copy(HOME);clock.current=0;
+    target.current.copy(HOME);clock.current=0;patrolIndex.current=1;
   },[floor]);
   useFrame((_,raw)=>{
     if(!body.current)return;
@@ -45,9 +40,16 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
     if(!player)return;
     const dx=player.x-pos.x,dz=player.z-pos.z;
     const distance=Math.hypot(dx,dz);
-    // In idle, a slow scanning beam provides a clear warning before a chase.
+    // Patrol the breaker lane instead of standing still as harmless scenery.
+    // Slower than walking player: observation, not contact, is its primary threat.
     if(mode.current==='scan'){
-      body.current.rotation.y=Math.sin(clock.current*.72)*.69;
+      const [px,pz]=patrolWaypoint(patrolIndex.current);
+      const patrolGoal={x:px,z:pz};
+      if(Math.hypot(px-pos.x,pz-pos.z)<1.1)patrolIndex.current++;
+      const moved=moveSafely(pos,patrolGoal,1.82,dt,powered);
+      const patrolFacing=Math.atan2(px-pos.x,pz-pos.z);
+      if(moved)body.current.rotation.y=THREE.MathUtils.damp(body.current.rotation.y,patrolFacing,3.4,dt);
+      body.current.rotation.y+=Math.sin(clock.current*1.35)*dt*.14;
     }
     const angle=body.current.rotation.y;
     const dot=(dx*Math.sin(angle)+dz*Math.cos(angle))/Math.max(.001,distance);
@@ -78,11 +80,12 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
     }else if(mode.current==='search'){
       search.current+=dt;
       body.current.rotation.y+=dt*.95;
-      if(search.current>=3.4){mode.current='return';}
+      if(search.current>=4.1){mode.current='return';}
     }else if(mode.current==='return'){
-      if(!moveSafely(pos,HOME,1.25,dt,powered)){mode.current='scan';}
-      body.current.rotation.y=Math.atan2(HOME.x-pos.x,HOME.z-pos.z);
-      if(Math.hypot(HOME.x-pos.x,HOME.z-pos.z)<.55){mode.current='scan';suspicion.current=0;}
+      const [px,pz]=patrolWaypoint(patrolIndex.current);
+      moveSafely(pos,{x:px,z:pz},1.65,dt,powered);
+      body.current.rotation.y=THREE.MathUtils.damp(body.current.rotation.y,Math.atan2(px-pos.x,pz-pos.z),3,dt);
+      if(Math.hypot(px-pos.x,pz-pos.z)<1.5){mode.current='scan';suspicion.current=0;}
     }else if(mode.current==='alert'){
       // Frozen while assessing the movement; don't teleport.
       body.current.rotation.y=THREE.MathUtils.damp(
@@ -106,7 +109,7 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
       lens.current.color.set(color);
     }
     if(beam.current){
-      beam.current.material.opacity=status==='chase'?.115:status==='alert'?.075:.027;
+      beam.current.material.opacity=status==='chase'?.16:status==='alert'?.11:.055;
     }
     statusClock.current-=dt;
     if(statusClock.current<=0){
@@ -114,7 +117,7 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
       statusClock.current=.16;
     }
   });
-  return <group ref={body} position={[-14,0,-6]}>
+  return <group ref={body} position={[14,0,-12]}>
     {/* An original industrial motion-observer silhouette, visually unlike the ear-headed Listener. */}
     <mesh position={[0,1.52,0]} rotation={[.17,0,0]} scale={[.36,.82,.3]}>
       <dodecahedronGeometry args={[1,0]}/>
