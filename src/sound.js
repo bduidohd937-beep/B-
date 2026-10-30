@@ -158,6 +158,60 @@ export function createSoundEngine() {
       tone(action==='use'?560:370,.08,.095);
     }
   }
+  let carAlarmNodes=null;
+  function stopCarAlarm(){
+    if(!carAlarmNodes)return;
+    const {source,gain}=carAlarmNodes;
+    carAlarmNodes=null;
+    if(ctx.state==='closed')return;
+    const now=ctx.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setTargetAtTime(.0001,now,.07);
+    try{source.stop(now+.28);}catch{}
+  }
+  function startCarAlarm(position=[0,.8,0],seconds=5.5){
+    stopCarAlarm();
+    if(!enabled||ctx.state==='closed')return;
+    const now=ctx.currentTime,end=now+Math.max(1,Math.min(8,seconds));
+    const panner=ctx.createPanner();
+    panner.panningModel='HRTF';
+    panner.distanceModel='inverse';panner.refDistance=11;
+    panner.maxDistance=80;panner.rolloffFactor=.7;
+    if(panner.positionX){
+      panner.positionX.value=position[0];panner.positionY.value=position[1]||.8;
+      panner.positionZ.value=position[2];
+    }else panner.setPosition(position[0],position[1]||.8,position[2]);
+    const source=ctx.createOscillator();
+    source.type='sawtooth';
+    const filter=ctx.createBiquadFilter();
+    filter.type='lowpass';filter.frequency.value=1450;
+    const gain=ctx.createGain();
+    gain.gain.setValueAtTime(.0001,now);
+    for(let t=now;t<end;t+=.58){
+      gain.gain.setValueAtTime(.001,Math.max(now,t));
+      gain.gain.linearRampToValueAtTime(.29,Math.min(end,t+.05));
+      gain.gain.setValueAtTime(.29,Math.min(end,t+.35));
+      gain.gain.linearRampToValueAtTime(.001,Math.min(end,t+.51));
+      source.frequency.setValueAtTime((Math.round((t-now)/.58)%2)?610:740,t);
+    }
+    gain.gain.setValueAtTime(.0001,end);
+    source.connect(filter);filter.connect(gain);gain.connect(panner);panner.connect(master);
+    source.start(now);source.stop(end+.02);
+    carAlarmNodes={source,gain};
+    source.onended=()=>{
+      try{source.disconnect();filter.disconnect();gain.disconnect();panner.disconnect();}catch{}
+      if(carAlarmNodes?.source===source)carAlarmNodes=null;
+    };
+  }
+  function cctvRead(){
+    tone(760,.12,.08,'square');
+    noise(1600,.17,.11);
+  }
+  function vehicleLatch(){
+    noise(1150,.30,.32);
+    tone(220,.26,.23,'triangle');
+    tone(510,.16,.09,'square');
+  }
   function switchStart(lubricated=false) {
     const scale=lubricated?.40:1;
     noise(1900,.38,.65*scale);
@@ -314,7 +368,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
+    step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, startCarAlarm, stopCarAlarm, cctvRead, vehicleLatch, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
     updateCreature: creatureAudio.update,
     updateVitals: playerVitalsAudio.update,
     resume() {
@@ -329,6 +383,7 @@ export function createSoundEngine() {
     },
     dispose() {
       stopSiren();
+      stopCarAlarm();
       emergencyAudio.dispose();
       creatureAudio.dispose();
       playerVitalsAudio.dispose();
