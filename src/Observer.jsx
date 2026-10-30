@@ -54,7 +54,7 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
     const angle=body.current.rotation.y;
     const dot=(dx*Math.sin(angle)+dz*Math.cos(angle))/Math.max(.001,distance);
     const inSight=distance<=OBSERVER_VIEW_DISTANCE && dot>OBSERVER_DOT_THRESHOLD &&
-      !sightBlocked(pos,player,PILLARS,CARS);
+      !sightBlocked(pos,player,PILLARS,CARS,powered);
     const rate=motionExposure({
       distance,dot,speed:player.speed||0,blocked:!inSight,crouched:Boolean(player.crouched)
     });
