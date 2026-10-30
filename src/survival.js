@@ -1,8 +1,10 @@
 // Balanced survival state machine; pure so frame-independent behavior is testable.
 // Values are intentionally generous: the existing Listener is already demanding.
 export const STAMINA_MAX = 100;
-export const SPRINT_DRAIN_PER_SECOND = 12.5;  // Eight seconds at full stamina.
+export const SPRINT_DRAIN_PER_SECOND = 16; // ~6.25 seconds of sustained escape sprint
 export const EXHAUSTION_SECONDS = 2.1;
+export const WALK_DRAIN_PER_SECOND = 1.4;
+export const CROUCH_MOVE_DRAIN_PER_SECOND = .35;
 export const RESUME_SPRINT_THRESHOLD = 18;
 
 export function clamp(value,min=0,max=100){
@@ -42,10 +44,13 @@ export function tickSurvival(previous, {dt=0, wantsSprint=false, moving=false, c
     stamina=clamp(stamina-(old.boost>0?0:SPRINT_DRAIN_PER_SECOND*seconds));
     recentlyRan=.62;
     if(stamina<=0){lockout=EXHAUSTION_SECONDS;}
+  } else if(moving){
+    // Walking also costs energy. Crouched movement is cheaper but still limited.
+    // Energy drink temporarily prevents sprint drain only.
+    stamina=clamp(stamina-(crouching?CROUCH_MOVE_DRAIN_PER_SECOND:WALK_DRAIN_PER_SECOND)*seconds);
   } else if(recentlyRan<=0){
-    // Recover while walking: 10/s; stationary: 21/s; crouching still: 25/s.
-    const recovery=crouching ? (moving?16:25) : (moving?10:21);
-    stamina=clamp(stamina+recovery*seconds);
+    // Resting becomes a tactical choice: standing +18/s; crouch-rest +23/s.
+    stamina=clamp(stamina+(crouching?23:18)*seconds);
   }
   const next={stamina,lockout,recentlyRan,running:canSprint,boost};
   return {

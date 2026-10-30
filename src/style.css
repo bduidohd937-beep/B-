@@ -207,3 +207,15 @@
  .survival-panel__gauge.noise-danger .survival-panel__caption strong{animation:none!important}
  .game-clock,.inventory-slot{transition:none}
 }
+
+/* V0.11: emergency circuit alarm, readable and restrained for photosensitivity. */
+.siren-indicator{position:fixed;top:73px;left:50%;transform:translateX(-50%);z-index:8;
+ min-width:235px;max-width:calc(100vw - 28px);padding:10px 18px;text-align:center;
+ background:linear-gradient(180deg,#46141ceb,#220a13eb);border:1px solid #e15a63a3;
+ border-left:4px solid #f26065;box-shadow:0 8px 38px #0a000bc4;
+ color:#ffe4dd;pointer-events:none;font-variant-numeric:tabular-nums}
+.siren-indicator strong{display:block;font-size:13px;letter-spacing:.15em;font-weight:850}
+.siren-indicator span{display:block;margin-top:4px;font-size:11px;color:#efaaa4;line-height:1.5}
+@media(max-width:760px){.siren-indicator{top:52px;padding:7px 11px}
+ .siren-indicator strong{font-size:11px}.siren-indicator span{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.siren-indicator{animation:none!important}}

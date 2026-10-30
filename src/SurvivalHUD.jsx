@@ -4,7 +4,7 @@ import { noiseSeverity, staminaSeverity, observerCue } from './uiRules.js';
 const ACTIONS={idle:'정지','crouch-idle':'몸 낮춤',crouch:'은신 이동',walk:'걷기',sprint:'질주',jump:'공중'};
 const MESSAGES={
   jump:'점프 소음 발생',land:'착지 충격! 크게 들린다',throw:'캔 충돌 · 유인 소음',
-  switch:'배전반 작동 · 큰 소음',power:'전력 복구 · 경보음',breath:'거친 숨소리 · 가까이서 감지 위험',decoy:'유인 장치 작동 · 청음자가 듣는다',gear:'장비 사용 · 소음 발생'
+  switch:'배전반 작동 · 큰 소음',power:'전력 복구 · 경보음',breath:'거친 숨소리 · 가까이서 감지 위험',decoy:'유인 장치 작동 · 청음자가 듣는다',gear:'장비 사용 · 소음 발생',siren:'비상 경보! 청음자가 전력 질주 중'
 };
 
 export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vitals,creature,observer,secondFloor=false,reducedEffects=false,active=true}){

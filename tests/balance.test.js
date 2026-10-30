@@ -31,7 +31,7 @@ test('Breaking sight by hiding behind a parked car lets suspicion recover',()=>{
   assert.equal(hidden,0);
 });
 test('Observer has finite reach and chase memory, still a threat',()=>{
-  assert.ok(OBSERVER_VIEW_DISTANCE>=16&&OBSERVER_VIEW_DISTANCE<=20);
-  assert.ok(OBSERVER_LOSE_SIGHT_SECONDS>0&&OBSERVER_LOSE_SIGHT_SECONDS<=1.2);
-  assert.ok(OBSERVER_PURSUIT_SPEED>=3&&OBSERVER_PURSUIT_SPEED<=3.5);
+  assert.ok(OBSERVER_VIEW_DISTANCE>=22&&OBSERVER_VIEW_DISTANCE<=25);
+  assert.ok(OBSERVER_LOSE_SIGHT_SECONDS>0&&OBSERVER_LOSE_SIGHT_SECONDS<=1.5);
+  assert.ok(OBSERVER_PURSUIT_SPEED>=4.4&&OBSERVER_PURSUIT_SPEED<=5);
 });
