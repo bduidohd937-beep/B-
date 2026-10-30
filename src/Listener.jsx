@@ -5,14 +5,14 @@ import { gateBlocksPlayer } from './puzzle.js';
 import { crouchReaction } from './stealth.js';
 import { breathHearingRadius } from './survival.js';
 import ListenerModel from './ListenerModel.jsx';
+import { PILLARS,PARKED_CARS,WALK_BOUNDS,terrainBlocked } from './garageLayout.js';
+import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
 
-const BASE = new THREE.Vector3(-13, 0, -25);
-const LOOP_BASE = new THREE.Vector3(9, 0, -24);
-const PILLARS = Array.from({length:6},(_,i)=>-28+i*9).flatMap(z=>[-10,10].map(x=>[x,z]));
-const CARS = [[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
-const obstructed=(x,z,powered=false)=>PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
- || CARS.some(([cx,cz])=>Math.abs(x-cx)<1.8&&Math.abs(z-cz)<2.8)
- || gateBlocksPlayer(x,z,powered);
+// Alarm rush starts far enough from each circuit to leave a genuine escape window.
+const BASE = new THREE.Vector3(14,0,-8);
+const LOOP_BASE = new THREE.Vector3(-14,0,-7);
+const CARS=PARKED_CARS;
+const obstructed=(x,z,powered=false)=>terrainBlocked(x,z,powered);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 
 // Approximate sound obstruction by columns and cars, without a physics dependency.
@@ -40,10 +40,14 @@ function blockedToListener(creature,viewer){
     || CARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,1.45,2.4));
 }
 
-const STEP=2;
-const cols=18,rows=42;
-const toGrid=(x,z)=>[Math.max(0,Math.min(cols-1,Math.round((x+17)/STEP))),Math.max(0,Math.min(rows-1,Math.round((z+44)/STEP)))];
-const toWorld=(gx,gz)=>[-17+gx*STEP,-44+gz*STEP];
+const STEP=2.5;
+const cols=Math.floor((WALK_BOUNDS.maxX-WALK_BOUNDS.minX)/STEP)+1;
+const rows=Math.floor((WALK_BOUNDS.maxZ-WALK_BOUNDS.minZ)/STEP)+1;
+const toGrid=(x,z)=>[
+ Math.max(0,Math.min(cols-1,Math.round((x-WALK_BOUNDS.minX)/STEP))),
+ Math.max(0,Math.min(rows-1,Math.round((z-WALK_BOUNDS.minZ)/STEP)))
+];
+const toWorld=(gx,gz)=>[WALK_BOUNDS.minX+gx*STEP,WALK_BOUNDS.minZ+gz*STEP];
 const key=(x,z)=>x+z*cols;
 function buildRoute(from,to,powered){
   const [sx,sz]=toGrid(from.x,from.z),[tx,tz]=toGrid(to.x,to.z);
@@ -89,6 +93,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
   const route=useRef([]);
   const routeTime=useRef(0);
   const soundClock=useRef(0);
+  const rushTime=useRef(0);
   const listenerLocation=useRef(new THREE.Vector3());
   const listenerDirection=useRef(new THREE.Vector3());
   const modelMotion=useRef({state:'idle',speed:0,excitement:0});
@@ -100,6 +105,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     cooldown.current=0;
     excitement.current=0;
     currentSpeed.current=1.2;
+    rushTime.current=0;
     route.current=[];
     routeTime.current=0;
     modelMotion.current={state:'idle',speed:0,excitement:0};
@@ -120,7 +126,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         return;
       }
       state.current='idle';pos.copy(home);route.current=[];routeTime.current=0;
-      excitement.current=0;currentSpeed.current=1.2;
+      excitement.current=0;currentSpeed.current=1.2;rushTime.current=0;
       modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
       soundClock.current-=dt;
@@ -132,17 +138,20 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
     let heardSomething=false;
     for(const event of recent){
-      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear'].includes(event.type))continue;
+      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
       const distanceToSound=dist(pos,point);
-      const reaction=event.type==='breath'
-        ? (distanceToSound<=breathHearingRadius(event.loudness)
-          ? (distanceToSound<=1.7?'investigate':'listen')
-          : 'none')
-        : softStep ? crouchReaction(distanceToSound, excitement.current, event.loudness)
-          : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
+      const reaction=event.type==='siren'
+        ? (distanceToSound<=SIREN_HEARING_RADIUS?'investigate':'none')
+        : event.type==='breath'
+          ? (distanceToSound<=breathHearingRadius(event.loudness)
+            ? (distanceToSound<=1.7?'investigate':'listen')
+            : 'none')
+          : softStep ? crouchReaction(distanceToSound, excitement.current, event.loudness)
+            : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
       if(reaction!=='none'){
+        if(event.type==='siren')rushTime.current=RUSH_SECONDS;
         target.current.copy(point); // Only sound-event position, never player tracking.
         state.current=reaction==='listen'?'listen':'investigate';
         searchTime.current=0;
@@ -157,11 +166,12 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(!heardSomething){
       excitement.current=Math.max(0,excitement.current-dt*(state.current==='investigate'?9:14));
     }
+    rushTime.current=Math.max(0,rushTime.current-dt);
     const targetSpeed=state.current==='investigate'
-      ?1.2+4.5*excitement.current/100
+      ?rushSpeed(rushTime.current,excitement.current)
       :state.current==='return'?1.45:state.current==='search'?.6:0;
     currentSpeed.current=THREE.MathUtils.damp(currentSpeed.current,targetSpeed,
-      state.current==='investigate'?2.8:1.25,dt);
+      state.current==='investigate'&&rushTime.current>0?9:state.current==='investigate'?2.8:1.25,dt);
     const destination=(state.current==='idle'||state.current==='return')?home:target.current;
     routeTime.current-=dt;
     if(routeTime.current<=0){
@@ -239,7 +249,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       onState(state.current,Math.round(excitement.current),Math.round(currentSpeed.current*10)/10, playerRef.current ? dist(pos,playerRef.current):Infinity);
     }
   });
-  return <group ref={group} position={[-13,0,-25]}>
+  return <group ref={group} position={BASE.toArray()}>
     <ListenerModel motionRef={modelMotion}/>
   </group>;
 }
