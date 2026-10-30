@@ -22,7 +22,7 @@ test('starting breaker hold requires gaze, continued E hold allows looking behin
  assert.equal(canHoldPanel(eye[0],POWER_PANEL[1]-.8,1),false);
  assert.equal(canHoldPanel(eye[0],POWER_PANEL[1]+2.6,1),false);
  assert.match(app,/panelHeld\.current&&keys\.current\.KeyE\s*\?canHoldPanel/);
- assert.match(app,/!poweredRef\.current && nearPanel && keys\.current\.KeyE/);
+ assert.match(app,/!firstPowerRef\.current && nearPanel && keys\.current\.KeyE/);
  assert.match(app,/else if\(panelHeld\.current\)\{\s*panelHeld\.current=false/);
 });
 
