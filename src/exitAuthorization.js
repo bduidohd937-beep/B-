@@ -71,6 +71,13 @@ export function gatePassable(state){
  return Boolean(state&&(state.phase==='open'||
    state.phase==='opening'&&state.elapsed>=SHUTTER_PASS_SECONDS));
 }
+// A 3.9m ear-headed Listener should not physically clip a shutter merely
+// because the 1.7m human has enough clearance to slip underneath it.
+// Use the same visible lift ratio as EscapePuzzle, with actor height limits.
+export const SHUTTER_FULL_LIFT=6.8;
+export function gatePassableForActor(state,height=2.05){
+ return gatePassable(state)&&gateLiftRatio(state)*SHUTTER_FULL_LIFT>=height+.18;
+}
 export function gateLiftRatio(state){
  if(!state)return 0;
  if(state.phase==='open')return 1;
