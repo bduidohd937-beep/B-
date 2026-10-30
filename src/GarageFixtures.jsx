@@ -33,7 +33,7 @@ function fillMatrices(mesh,items,mapper){
  mesh.instanceMatrix.needsUpdate=true;
  mesh.computeBoundingSphere();
 }
-function InstancedFixtures(){
+function InstancedFixtures({flicker=false}){
  const bright=useRef(),dead=useRef(),diffusers=useRef();
  useEffect(()=>{
   const map=(p)=>({position:[p[0],GARAGE_HEIGHT-.18,p[1]]});
@@ -59,7 +59,7 @@ function InstancedFixtures(){
   {/* Keep existing five true local fluorescent lights; save draw calls for
       housings without globally darkening the navigable garage. */}
   {TUBES.map(([x,z],i)=>i%9===0?
-   <pointLight key={i} position={[x,GARAGE_HEIGHT-.68,z]} intensity={1.67}
+   <pointLight key={i} position={[x,GARAGE_HEIGHT-.68,z]} intensity={flicker&&i===18?.18:1.67}
     distance={22} color="#cbd9cb" decay={2}/>:null)}
  </>;
 }
@@ -86,9 +86,9 @@ function InstancedPaint(){
   </instancedMesh>
  </>;
 }
-export default React.memo(function GarageFixtures(){
+export default React.memo(function GarageFixtures({flicker=false}){
  return <>
-  <InstancedFixtures/>
+  <InstancedFixtures flicker={flicker}/>
   <InstancedPaint/>
  </>;
 });
