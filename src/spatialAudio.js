@@ -164,7 +164,7 @@ export function createSpatialCreatureAudio(ctx, master, sharedNoise) {
       rushCarScrape(t,speed);
       nextScrape=t+SCRAPE_COOLDOWN_SECONDS;
     }
-    const walking = speed > 0.62 && (state === 'investigate' || state === 'return');
+    const walking = speed > 0.62 && (state === 'investigate' || state === 'return' || state === 'patrol');
     if (!walking) {
       nextStep = t + 0.14;
     } else if (audible && t >= nextStep) {
