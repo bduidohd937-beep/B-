@@ -322,7 +322,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -346,7 +346,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -362,6 +362,8 @@ export default function App(){
   const [audioOn,setAudioOn]=useState(true);
   const [moveMode,setMoveMode]=useState('idle');
   const [airborne,setAirborne]=useState(false);
+  const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
+  const [reducedEffects,setReducedEffects]=useState(false);
   const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
   const [checkpoint,setCheckpoint]=useState(false);
@@ -421,10 +423,22 @@ export default function App(){
     deathPhaseRef.current='dead';
     setDeathPhase('dead');
   },[]);
-  const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0});
-  const onCreatureState=useCallback((mode,excitement,speed)=>{
-    setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed
-      ?old:{mode,excitement,speed});
+  const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0,distance:Infinity});
+  const creatureDistanceRef=useRef(Infinity);
+  const onVitals=useCallback(next=>{
+    const data={stamina:Math.max(0,Math.min(100,Math.round(next.stamina??100))),
+      breath:next.breath||0,exhausted:Boolean(next.exhausted)};
+    setVitals(previous=>previous.stamina===data.stamina&&previous.breath===data.breath&&previous.exhausted===data.exhausted
+      ?previous:data);
+    soundRef.current?.updateVitals?.({
+      active:true,breathLevel:data.breath,creatureDistance:creatureDistanceRef.current
+    });
+  },[]);
+  const onCreatureState=useCallback((mode,excitement,speed,distance=Infinity)=>{
+    creatureDistanceRef.current=distance;
+    const displayDistance=Number.isFinite(distance)?Math.round(distance*2)/2:Infinity;
+    setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed&&old.distance===displayDistance
+      ?old:{mode,excitement,speed,distance:displayDistance});
   },[]);
   const onSpatial=useCallback(data=>{
     soundRef.current?.updateCreature?.(data);
@@ -433,6 +447,7 @@ export default function App(){
     if(deathPhaseRef.current!=='alive')return;
     deathPhaseRef.current='dying';
     soundRef.current?.updateCreature?.({active:false});
+    soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.death?.();
     setCaught(true);
     setDeathPhase('dying');
@@ -446,7 +461,9 @@ export default function App(){
     setCaught(false);
     setAirborne(false);
     setMoveMode('idle');
-    setCreatureInfo({mode:'idle',excitement:0,speed:0});
+    setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
+    creatureDistanceRef.current=Infinity;
+    setVitals({stamina:100,breath:0,exhausted:false});
     soundRef.current?.resume();
     const canvas=document.querySelector('canvas');
     canvas?.requestPointerLock?.();
@@ -457,7 +474,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -476,6 +493,7 @@ export default function App(){
     if(floorRef.current===1){
       floorRef.current=2; // Guard against repeated transitions during the same frame.
       soundRef.current?.updateCreature?.({active:false});
+      soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.loopTransition?.();
       noiseLog.current=[];
       setFloor(2);
@@ -489,6 +507,7 @@ export default function App(){
       return;
     }
     soundRef.current?.updateCreature?.({active:false});
+    soundRef.current?.updateVitals?.({active:false});
     setEnding(true);
   },[canCollected]);
   useEffect(()=>{
@@ -516,7 +535,7 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}/>
     </Canvas>
     <div className="vignette"/>
     {floorFlash&&<div className="floor-loop-flash" aria-live="polite">
