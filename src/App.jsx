@@ -16,6 +16,7 @@ import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import ThrowGuide from './ThrowGuide.jsx';
+import PerformanceSampler from './PerformanceSampler.jsx';
 import {isThrowable,planThrow} from './throwRules.js';
 import SurvivalHUD from './SurvivalHUD.jsx';
 import GameClock from './GameClock.jsx';
@@ -63,7 +64,7 @@ function Flashlight({enabled,charge=100,reducedEffects=false}){
     decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent,throwAimRef,perfVisible,onPerformance }) {
   const { camera } = useThree();
   const keys = useRef({});
   const aimClock=useRef(0);
@@ -469,6 +470,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <ThrowGuide aimRef={throwAimRef}/>
+    <PerformanceSampler enabled={perfVisible} onSample={onPerformance}/>
     <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
@@ -498,6 +500,9 @@ export default function App(){
   const [airborne,setAirborne]=useState(false);
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
   const [reducedEffects,setReducedEffects]=useState(false);
+  const [perfVisible,setPerfVisible]=useState(false);
+  const [perfSample,setPerfSample]=useState(null);
+  const onPerformance=useCallback(value=>setPerfSample(value),[]);
   const [showControls,setShowControls]=useState(false);
   const [alarmActive,setAlarmActive]=useState(false);
   const alarmFiredRef=useRef(false);
@@ -992,6 +997,11 @@ export default function App(){
   useEffect(()=>{
     const key=e=>{
       if(e.repeat)return;
+      if(e.code==='F3'){
+        e.preventDefault();
+        setPerfVisible(v=>!v);
+        return;
+      }
       if(e.code==='KeyH')setShowControls(v=>!v);
       if(e.code==='KeyJ'&&started&&locked&&!caught&&!ending&&floorRef.current===2){
         if(vehicleStateRef.current.reviewed){
@@ -1031,12 +1041,21 @@ export default function App(){
     canvas?.requestPointerLock?.();
   };
   return <>
-    <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
+    <Canvas dpr={[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} throwAimRef={throwAimRef} perfVisible={perfVisible} onPerformance={onPerformance}/>
     </Canvas>
+    {perfVisible&&<aside className="performance-debug" aria-label="실시간 렌더링 성능 진단">
+      <strong>PERFORMANCE · F3</strong>
+      <span>FPS <b>{perfSample?.fps??'—'}</b></span>
+      <span>느린 프레임 <b>{perfSample?.worstMs??'—'} ms</b></span>
+      <span>Draw calls <b>{perfSample?.drawCalls??'—'}</b></span>
+      <span>Triangles <b>{perfSample?.triangles?.toLocaleString?.()??'—'}</b></span>
+      <span>DPR <b>{perfSample?.pixelRatio??'—'}</b></span>
+      <small>F3 종료 · 0.8초 단위 표본 · 실제 기기 측정</small>
+    </aside>}
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
       <span>STAIR B2</span><strong>YOU ARE STILL HERE</strong><small>03:17 — AGAIN</small>
