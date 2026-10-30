@@ -779,7 +779,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -795,6 +795,9 @@ export default function App(){
     if(event.type==='gear')sound.gearClick?.(event.device);
     if(event.type==='item')sound.itemAction?.(event.item,event.action);
     if(event.type==='flashlight')sound.flashlightClick?.(event.enabled);
+    if(event.type==='car-alarm')sound.startCarAlarm?.(event.position,CAR_ALARM_SECONDS);
+    if(event.type==='cctv')sound.cctvRead?.();
+    if(event.type==='vehicle')sound.vehicleLatch?.();
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -888,7 +891,7 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
@@ -914,15 +917,18 @@ export default function App(){
       </header>
       <div className="reticle" aria-hidden="true"/>
       <section className="mission-card" aria-label="현재 탈출 목표">
-        <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'BROADCAST':'EMERGENCY EXIT'}</span></div>
-        <div className="mission-card__text">{objectiveText(gatePowered,floor)}</div>
-        {floor===2&&<div className="mission-card__rule">귀 달린 놈 = 소리 · 관조자 = 움직임</div>}
+        <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'MISSING VEHICLE':'EMERGENCY EXIT'}</span></div>
+        <div className="mission-card__text">{floor===2?carObjective(vehicleState):objectiveText(gatePowered,1)}</div>
+        {floor===2&&<div className="mission-card__rule">
+          {vehicleState.reviewed?<span>CAM-C · C-17 · 번호 끝 17 · <kbd>J</kbd> 기록</span>:
+          <span>귀 달린 놈 = 소리 · 관조자 = 움직임 · CCTV 기록 조사</span>}
+        </div>}
       </section>
       {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
-      {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
+      {started&&locked&&floor===1&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
-          <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
+          <strong><kbd>E</kbd> 누르고 있기 · 배전반 재시동</strong>
           <span>{silentFloor===floor?'윤활 완료 · 금속음 감소, 사이렌은 작동!':'작동 시 붉은 비상등 · 청음자 긴급 추적'}</span>
           <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
             <div style={{width:(panelProgress*100)+'%'}}/>
@@ -930,8 +936,18 @@ export default function App(){
         </div>}
       {started&&locked&&puzzleProximity==='gate'&&
         <div className={'interaction-callout '+(gatePowered?'interaction-callout--ready':'')} role="status">
-          <strong>{gatePowered?'비상문 개방 · 통로로 이동':'비상문 잠김 · 전원 복구 필요'}</strong>
-          {!gatePowered&&<span>{floor===2?'오른쪽 벽의 비상방송 제어반을 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
+          <strong>{gatePowered?'서비스 셔터 개방 · 통로로 이동':'셔터 잠김 · '+(floor===2?'차량 인증 필요':'전원 복구 필요')}</strong>
+          {!gatePowered&&<span>{floor===2?'CCTV 기록을 찾아 317 차량의 인증기를 회수하라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
+        </div>}
+      {started&&locked&&floor===2&&puzzleProximity==='cctv'&&
+        <div className="interaction-callout interaction-callout--evidence" role="status">
+          <strong><kbd>E</kbd> 경비용 CCTV 기록 열람</strong>
+          <span>기록은 <kbd>J</kbd> 로 다시 확인 · 주변 소음과 움직임 주의</span>
+        </div>}
+      {started&&locked&&floor===2&&puzzleProximity?.startsWith('vehicle:')&&
+        <div className="interaction-callout interaction-callout--evidence" role="status">
+          <strong><kbd>E</kbd> 차량 번호판 / 트렁크 조사</strong>
+          <span>{vehicleState.reviewed?'틀린 차량을 조작하면 도난 경보 발생':'먼저 경비용 CCTV 기록을 확보하라'}</span>
         </div>}
       {started&&locked&&puzzleProximity==='can'&&<div className="interaction-callout" role="status">
         <strong><kbd>E</kbd> 빈 캔 줍기</strong><span>회수한 캔은 다시 던질 수 있다</span>
@@ -982,14 +998,14 @@ export default function App(){
         <span>F 손전등 딸깍 · 배터리 7분 · 예비 건전지 선택 후 G 충전</span>
         <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
         <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
-        <span>F 손전등 · ESC 일시정지 · H 조작법</span>
-        {floor===2&&<span>청음자: 소리 감지 · 관조자: 움직임 감지</span>}
+        <span>F 손전등 · ESC 일시정지 · H 조작법 · J CCTV 기록</span>
+        {floor===2&&<span>2층: CCTV → 차량 번호 추리 → 출입 인증기 → 서비스 셔터</span>}
       </div>}
     </div>
     {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel" role="dialog" aria-modal="true">
       <div className="eyebrow">B∞ / THE ENDLESS PARKING GARAGE</div>
       <h1>{caught?'소리가 끊겼다.':ending?'다시 B2.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
-      <p>{caught?'귓가를 찢는 비명, 바닥에 떨어진 손전등. 마지막으로 들린 것은 그놈의 거친 숨소리였다.':ending?<>잠겨 있던 비상문이 열렸다.<br/>하지만 계단 끝에는 또다시 B2라고 적혀 있다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
+      <p>{caught?'귓가를 찢는 비명, 바닥에 떨어진 손전등. 마지막으로 들린 것은 그놈의 거친 숨소리였다.':ending?<>317번 차량의 인증기는 셔터를 열었다.<br/>그러나 계단에는 또다시 B2가 적혀 있었다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
