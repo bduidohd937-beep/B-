@@ -513,6 +513,7 @@ export default function App(){
     return ()=>clearTimeout(id);
   },[alarmActive]);
   const [latestNoise,setLatestNoise]=useState(null);
+  const lastFootstepHudTick=useRef(0);
   const [canCollected,setCanCollected]=useState(false);
   const canHeldRef=useRef(false);
   canHeldRef.current=canCollected;
@@ -861,8 +862,11 @@ export default function App(){
   },[]);
   const creatureDistanceRef=useRef(Infinity);
   const onVitals=useCallback(next=>{
+    // Audio continues to receive continuous breathing from the player;
+    // React HUD receives integer values, avoiding wasteful UI reconciliation.
     const data={stamina:Math.max(0,Math.min(100,Math.round(next.stamina??100))),
-      breath:next.breath||0,exhausted:Boolean(next.exhausted)};
+      breath:Math.max(0,Math.round(next.breath||0)),
+      exhausted:Boolean(next.exhausted)};
     setVitals(previous=>previous.stamina===data.stamina&&previous.breath===data.breath&&previous.exhausted===data.exhausted
       ?previous:data);
     soundRef.current?.updateVitals?.({
@@ -933,7 +937,16 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))setLatestNoise(emitted);
+    // Keep EVERY event for the AI and audio. Only step HUD refreshes are
+    // coalesced: repeated footsteps previously rerendered the entire app.
+    if(event.type==='step'){
+      if(emitted.time-lastFootstepHudTick.current>=260){
+        lastFootstepHudTick.current=emitted.time;
+        setLatestNoise(emitted);
+      }
+    }else if(['jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type)){
+      setLatestNoise(emitted);
+    }
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -1074,11 +1087,13 @@ export default function App(){
     {perfVisible&&<aside className="performance-debug" aria-label="실시간 렌더링 성능 진단">
       <strong>PERFORMANCE · F3</strong>
       <span>FPS <b>{perfSample?.fps??'—'}</b></span>
-      <span>느린 프레임 <b>{perfSample?.worstMs??'—'} ms</b></span>
+      <span>p95 프레임 <b>{perfSample?.p95Ms??'—'} ms</b></span>
+      <span>최장 프레임 <b>{perfSample?.worstMs??'—'} ms</b></span>
+      <span>34ms 초과 <b>{perfSample?.hitches??'—'}회</b></span>
       <span>Draw calls <b>{perfSample?.drawCalls??'—'}</b></span>
       <span>Triangles <b>{perfSample?.triangles?.toLocaleString?.()??'—'}</b></span>
       <span>DPR <b>{perfSample?.pixelRatio??'—'}</b></span>
-      <small>F3 종료 · 0.8초 단위 표본 · 실제 기기 측정</small>
+      <small>F3 종료 · 실제 1초 표본 · 프레임 간격(낮을수록 쾌적)</small>
     </aside>}
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
