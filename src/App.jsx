@@ -7,6 +7,7 @@ import Listener from './Listener.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import NoiseHUD from './NoiseHUD.jsx';
 import EscapePuzzle from './EscapePuzzle.jsx';
+import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { POWER_PANEL, POWER_HOLD_SECONDS, canUsePanel, isNearGate, gateBlocksPlayer, objectiveText } from './puzzle.js';
 
@@ -126,6 +127,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
   useEffect(()=>{
     if(respawnSignal===0)return;
     camera.position.set(0,1.7,checkpoint?8:17);
+    camera.rotation.set(0,0,0);
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
     crouchToggle.current=false;
@@ -272,7 +274,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
   });
   return null;
 }
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -295,7 +297,8 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete}/>
+    <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
 }
@@ -350,6 +353,13 @@ export default function App(){
   const playerRef=useRef({x:0,z:17});
   const [respawnSignal,setRespawnSignal]=useState(0);
   const [caught,setCaught]=useState(false);
+  const [deathPhase,setDeathPhase]=useState('alive');
+  const deathPhaseRef=useRef('alive');
+  const onDeathComplete=useCallback(()=>{
+    if(deathPhaseRef.current!=='dying')return;
+    deathPhaseRef.current='dead';
+    setDeathPhase('dead');
+  },[]);
   const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0});
   const onCreatureState=useCallback((mode,excitement,speed)=>{
     setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed
@@ -359,12 +369,18 @@ export default function App(){
     soundRef.current?.updateCreature?.(data);
   },[]);
   const onCaught=useCallback(()=>{
+    if(deathPhaseRef.current!=='alive')return;
+    deathPhaseRef.current='dying';
     soundRef.current?.updateCreature?.({active:false});
+    soundRef.current?.death?.();
     setCaught(true);
+    setDeathPhase('dying');
     document.exitPointerLock?.();
   },[]);
   const respawn=useCallback(()=>{
     noiseLog.current=[];
+    deathPhaseRef.current='alive';
+    setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
     setCaught(false);
     setAirborne(false);
@@ -422,12 +438,16 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={powered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
     </Canvas>
     <div className="vignette"/>
+    {deathPhase!=='alive'&&<div className={'death-fx death-fx--'+deathPhase} aria-hidden="true">
+      <div className="death-fx__blood"/>
+      <div className="death-fx__blackout"/>
+    </div>}
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.8 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.8.1 / WORK IN PROGRESS</div>
       <div className="reticle"/>
       <div className="audio-toggle" title="청음자의 방향성 숨소리와 발소리는 헤드폰 사용을 권장합니다" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
-      <div className="creature-indicator">{creatureInfo.mode==='investigate'?'청음자가 소리를 향해 다가온다':creatureInfo.mode==='search'?'무언가가 주변을 수색 중이다':creatureInfo.mode==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
+      <div className="creature-indicator">{creatureInfo.mode==='investigate'?'청음자가 소리를 향해 다가온다':creatureInfo.mode==='listen'?'청음자가 작은 소리에 귀를 기울인다':creatureInfo.mode==='search'?'무언가가 주변을 수색 중이다':creatureInfo.mode==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
       {started&&<NoiseHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} creature={creatureInfo}/>}
       <div className="puzzle-goal">
         <div className="puzzle-goal__label">OBJECTIVE 01 · EMERGENCY EXIT</div>
@@ -450,12 +470,12 @@ export default function App(){
       <div className="controls">WASD 이동 · Shift 달리기 · Ctrl 누르기 / C 앉기 전환 · Space 점프 · E 줍기 · G 던지기 · F 손전등 · ESC 일시정지</div>
       {started&&locked&&!ending&&<div className="hint">{powered?'비상문이 열렸다. 이제 나갈 수 있을까?':altered?'EXIT 표지판이 바뀌었다. 비상 전원을 찾아라.':shifted?'방금 전까지 저 기둥 뒤에 있지 않았나?':near?'기둥 뒤에 누군가 서 있다.':'비상문이 잠겨 있다. 근처의 전력실을 찾아라.'}</div>}
     </div>
-    {(!started||!locked||ending||caught)&&<div className="overlay"><section className="panel">
+    {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel">
       <div className="eyebrow">B∞ / THE ENDLESS PARKING GARAGE</div>
-      <h1>{caught?'들켰다.':ending?'다시 B2.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
-      <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>잠겨 있던 비상문이 열렸다.<br/>하지만 계단 끝에는 또다시 B2라고 적혀 있다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
+      <h1>{caught?'소리가 끊겼다.':ending?'다시 B2.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
+      <p>{caught?'귓가를 찢는 비명, 바닥에 떨어진 손전등. 마지막으로 들린 것은 그놈의 거친 숨소리였다.':ending?<>잠겨 있던 비상문이 열렸다.<br/>하지만 계단 끝에는 또다시 B2라고 적혀 있다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.8 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.8.1 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
