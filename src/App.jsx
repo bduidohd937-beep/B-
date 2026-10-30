@@ -4,6 +4,7 @@ import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
+import ThrownCan from './ThrownCan.jsx';
 
 const pillars = [];
 for (let z = -28; z <= 18; z += 9) for (const x of [-10, 10]) pillars.push([x, z]);
@@ -114,7 +115,13 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
       if(e.code==='KeyE'&&!e.repeat&&!canUsedRef.current&&!canRef.current&&Math.hypot(camera.position.x-2,camera.position.z-12)<2.6){canRef.current=true;onPickCan();}
       if(e.code==='KeyG'&&!e.repeat&&canRef.current){
         canRef.current=false;const look=new THREE.Vector3();camera.getWorldDirection(look);
-        onThrowCan([clamp(camera.position.x+look.x*9,-18,18),0,clamp(camera.position.z+look.z*9,-45,38)]);
+        const flat = new THREE.Vector3(look.x, 0, look.z);
+        if (flat.lengthSq()<.001) flat.set(0,0,-1);
+        flat.normalize();
+        const range=clamp(8-look.y*4,4,11);
+        const end=[clamp(camera.position.x+flat.x*range,-18,18),.18,clamp(camera.position.z+flat.z*range,-44,38)];
+        const origin=camera.position.clone().addScaledVector(look,.6);
+        onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
       }
       keys.current[e.code]=true;
       if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
@@ -187,7 +194,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   });
   return null;
 }
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, canCollected, canUsed, onPickCan, onThrowCan, onCheckpoint, checkpoint }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, canCollected, canUsed, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -208,6 +215,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState}/>
+    <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canUsed={canUsed} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -225,10 +233,19 @@ export default function App(){
   const [canCollected,setCanCollected]=useState(false);
   const [checkpoint,setCheckpoint]=useState(false);
   const [canUsed,setCanUsed]=useState(false);
+  const [projectile,setProjectile]=useState(null);
+  const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
   const onPickCan=useCallback(()=>setCanCollected(true),[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
-  const onThrowCan=useCallback(point=>{setCanCollected(false);setCanUsed(true);onNoiseRef.current?.({type:'throw',loudness:100,position:point});},[]);
+  const onThrowCan=useCallback(({start,end})=>{
+    setCanCollected(false);
+    setCanUsed(true);
+    setProjectile({id:++projectileId.current,start,end});
+  },[]);
+  const onProjectileImpact=useCallback(end=>{
+    onNoiseRef.current?.({type:'throw',loudness:100,position:end});
+  },[]);
   const soundRef=useRef(null);
   const noiseLog=useRef([]);
   const noiseId=useRef(0);
@@ -285,12 +302,12 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} checkpoint={checkpoint} canCollected={canCollected} canUsed={canUsed} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} checkpoint={checkpoint} canCollected={canCollected} canUsed={canUsed} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact}/>
     </Canvas>
     <div className="vignette"/>
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.5 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.5.1 / WORK IN PROGRESS</div>
       <div className="reticle"/>
       <div className="audio-toggle" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
       <div className="creature-indicator">{creatureState==='investigate'?'어딘가에서 긁는 소리가 들린다':creatureState==='search'?'무언가가 주변을 수색 중이다':creatureState==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
@@ -305,7 +322,7 @@ export default function App(){
       <h1>{caught?'들켰다.':ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
       <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.5 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.5.1 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
