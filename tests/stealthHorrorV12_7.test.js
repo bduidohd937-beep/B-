@@ -28,7 +28,7 @@ test('same front+gaze test controls E prompt, starting and HOLDING the breaker',
  assert.match(app,/panelHeld\.current&&keys\.current\.KeyE/);
  assert.match(app,/canHoldPanel\(camera\.position\.x,camera\.position\.z,1\)/);
  assert.match(app,/canOperatePanel\(camera\.position\.toArray\(\),direction\.toArray\(\),1\)/);
- assert.match(app,/!poweredRef\.current && nearPanel && keys\.current\.KeyE/);
+ assert.match(app,/!firstPowerRef\.current && nearPanel && keys\.current\.KeyE/);
  assert.match(app,/panelHeld\.current=false;panelTime\.current=0;onPanelProgress\(0\)/);
 });
 test('blocked path sidesteps and a stalled Listener triggers replan, never phase through walls',()=>{
