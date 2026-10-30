@@ -12,64 +12,17 @@ import GameClock from './GameClock.jsx';
 import { inventoryControls } from './uiRules.js';
 import EscapePuzzle from './EscapePuzzle.jsx';
 import DistortedB2 from './DistortedB2.jsx';
+import GarageWorld from './GarageWorld.jsx';
+import EmergencyAlarm from './EmergencyAlarm.jsx';
+import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FOG_NEAR,FOG_FAR,terrainBlocked,clampWalkPosition,surfaceAt,WALK_BOUNDS } from './garageLayout.js';
+import { SIREN_LOUDNESS,SIREN_SECONDS,canTriggerSiren,sirenPosition } from './alarmRules.js';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
 import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect,gearMakesNoise } from './items.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
-const pillars = [];
-for (let z = -28; z <= 18; z += 9) for (const x of [-10, 10]) pillars.push([x, z]);
-const parkedCars = [[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
 const clamp = THREE.MathUtils.clamp;
-
-const Car = React.memo(function Car({ x, z, color = '#303b3e' }) {
-  return <group position={[x,0,z]}>
-    <mesh position={[0,.58,0]} castShadow><boxGeometry args={[2.45,.95,4.5]}/><meshStandardMaterial color={color} roughness={.47} metalness={.33}/></mesh>
-    <mesh position={[0,1.22,-.22]}><boxGeometry args={[2.16,.55,2.5]}/><meshStandardMaterial color="#18282d" metalness={.3} roughness={.23}/></mesh>
-    {[-1,1].flatMap(s=>[-1.5,1.5].map(t=><mesh key={s+':'+t} position={[s*1.23,.38,t]} rotation={[0,0,Math.PI/2]}><cylinderGeometry args={[.35,.35,.16,12]}/><meshStandardMaterial color="#101417"/></mesh>))}
-    {[-.8,.8].map(x=><mesh key={x} position={[x,.64,2.26]}><boxGeometry args={[.45,.2,.04]}/><meshBasicMaterial color="#842d2b"/></mesh>)}
-  </group>;
-});
-const Garage = React.memo(function Garage({ altered, flicker, canPosition }) {
-  return <group>
-    <mesh rotation={[-Math.PI/2,0,0]} receiveShadow><planeGeometry args={[42,92]}/><meshStandardMaterial color="#32383a" roughness={.97}/></mesh>
-    <mesh position={[0,4.7,-4]} receiveShadow><boxGeometry args={[42,.45,92]}/><meshStandardMaterial color="#3a4042" roughness={1}/></mesh>
-    {[-20,20].map(x=><mesh key={x} position={[x,2,-4]}><boxGeometry args={[.6,4.5,92]}/><meshStandardMaterial color="#535a5a"/></mesh>)}
-    <mesh position={[0,2,-49]}><boxGeometry args={[42,4.5,.6]}/><meshStandardMaterial color="#50585a"/></mesh>
-    {pillars.map(([x,z],i)=><group key={i} position={[x,0,z]}>
-      <mesh position={[0,2.15,0]} castShadow receiveShadow><boxGeometry args={[1.6,4.3,1.6]}/><meshStandardMaterial color="#687073" roughness={.98}/></mesh>
-      <mesh position={[0,1.35,.81]}><boxGeometry args={[1.62,.57,.035]}/><meshStandardMaterial color={i%3===0?'#b59f53':'#5c6765'}/></mesh>
-      <Text position={[0,2,.83]} fontSize={.3} color="#111c1e">B2</Text>
-    </group>)}
-    {parkedCars.map(([x,z],i)=><Car key={i} x={x} z={z} color={['#354149','#4b4942','#2e4541'][i%3]}/>)}
-    {Array.from({length:10},(_,i)=><group key={i} position={[0,4.39,-42+i*8.2]}>
-      <mesh><boxGeometry args={[1.1,.08,3.7]}/><meshBasicMaterial color={i===3 || i===7 || (flicker&&i===5)?'#3b4242':'#b2bcaf'} toneMapped={false}/></mesh>
-      {(i===3||i===7)?null:<pointLight position={[0,-.65,0]} intensity={flicker&&i===5?.4:3.5} distance={17} decay={2} color="#dce8d5"/>}
-    </group>)}
-    {Array.from({length:12},(_,i)=><mesh key={i} rotation={[-Math.PI/2,0,0]} position={[0,.016,-41+i*7]}>
-      <planeGeometry args={[.12,2.4]}/><meshBasicMaterial color="#858b77" transparent opacity={.65}/></mesh>)}
-    <group position={[0,2.6,-34]}>
-      <mesh><boxGeometry args={[4.3,1.15,.3]}/><meshStandardMaterial color={altered?'#662e30':'#24654e'} emissive={altered?'#681d20':'#176c46'} emissiveIntensity={1.5}/></mesh>
-      <Text position={[0,0,.18]} fontSize={.56} color="#e6e8dd">{altered?'B ∞':'EXIT ↑'}</Text>
-    </group>
-
-    {Array.from({length:10},(_,i)=><mesh key={'bay'+i} position={[i%2===0?-13.7:13.7,.018,-35+i*6]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[.11,4.8]}/><meshBasicMaterial color="#9c9b76" transparent opacity={.48}/></mesh>)}
-    <mesh position={[0,.023,-6]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshStandardMaterial color="#657176" metalness={.72}/></mesh>
-    <mesh position={[2,.028,-14]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,3]}/><meshStandardMaterial color="#273f46" metalness={.62}/></mesh>
-    {canPosition&&<group position={canPosition} rotation={[0,0,-.12]}>
-      <mesh rotation={[Math.PI/2,0,0]}>
-        <cylinderGeometry args={[.16,.16,.38,16]}/>
-        <meshStandardMaterial color="#c6d0cd" roughness={.3} metalness={.7}/>
-      </mesh>
-      <mesh position={[0,0,.012]} rotation={[Math.PI/2,0,0]}>
-        <cylinderGeometry args={[.163,.163,.12,16]}/>
-        <meshStandardMaterial color="#b44e42" roughness={.5}/>
-      </mesh>
-    </group>}
-    <mesh position={[0,.05,-32]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshBasicMaterial color="#22272b" transparent opacity={.5}/></mesh>
-  </group>;
-});
 function Flashlight({ enabled }) {
   const { camera, scene } = useThree();
   const lamp=useRef();
@@ -198,11 +151,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         let range=clamp(8-look.y*4,4,11);
         let endX,endZ;
         while(range>2.5){
-          endX=clamp(camera.position.x+flat.x*range,-18,18);
-          endZ=clamp(camera.position.z+flat.z*range,-44,38);
-          const obstacle=pillars.some(([x,z])=>Math.abs(endX-x)<1.3&&Math.abs(endZ-z)<1.3)
-            || parkedCars.some(([x,z])=>Math.abs(endX-x)<1.85&&Math.abs(endZ-z)<2.85)
-            || gateBlocksPlayer(endX,endZ,poweredRef.current);
+          endX=clamp(camera.position.x+flat.x*range,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
+          endZ=clamp(camera.position.z+flat.z*range,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
+          const obstacle=terrainBlocked(endX,endZ,poweredRef.current);
           if(!obstacle)break;
           range-=.5;
         }
@@ -224,8 +175,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         const type=selectedTypeRef.current;
         if(type&&type!=='can'){
           const look=new THREE.Vector3();camera.getWorldDirection(look);
-          const xx=clamp(camera.position.x+look.x*.8,-18,18);
-          const zz=clamp(camera.position.z+look.z*.8,-43,37);
+          const xx=clamp(camera.position.x+look.x*.8,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
+          const zz=clamp(camera.position.z+look.z*.8,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
           onDropGear(type,[xx,.24,zz]);
         }
       }
@@ -286,9 +237,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     if(moving){
       const beforeX=camera.position.x,beforeZ=camera.position.z;
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
-      let nx=clamp(camera.position.x+movement.x,-18.5,18.5);
-      let nz=clamp(camera.position.z+movement.z,-46,39);
-      const blocked=(x,z)=>pillars.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15) || parkedCars.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7) || gateBlocksPlayer(x,z,poweredRef.current);
+      let nx=clamp(camera.position.x+movement.x,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
+      let nz=clamp(camera.position.z+movement.z,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
+      const blocked=(x,z)=>terrainBlocked(x,z,poweredRef.current);
       if(!blocked(nx,camera.position.z))camera.position.x=nx;
       if(!blocked(camera.position.x,nz))camera.position.z=nz;
       movedDistance=Math.hypot(camera.position.x-beforeX,camera.position.z-beforeZ);
@@ -338,8 +289,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       bobClock.current+=dt*(sprinting?11:crouching?3.5:7);
     }
     if(footstep.steps){
-      const surface=Math.abs(camera.position.x)<2.5&&camera.position.z>-8.5&&camera.position.z<-3.5?'metal':
-        Math.abs(camera.position.x-2)<2.5&&camera.position.z>-15.5&&camera.position.z<-12.5?'water':'concrete';
+      const surface=surfaceAt(camera.position.x,camera.position.z);
       onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
     }
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
@@ -365,9 +315,9 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
   const {camera}=useThree();
   return <>
     <color attach="background" args={[floor===2?'#121017':'#101719']}/>
-    <fog attach="fog" args={[floor===2?'#1b1018':'#101719',floor===2?6:9,floor===2?34:49]}/>
+    <fog attach="fog" args={[floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
     <ambientLight intensity={floor===2?.27:.43} color={floor===2?'#ae8e98':'#9cadad'}/>
-    <Garage altered={altered} flicker={flicker} canPosition={canPosition}/>
+    <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
     <Flashlight enabled={torch}/>
