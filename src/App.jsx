@@ -501,6 +501,7 @@ export default function App(){
   const [airborne,setAirborne]=useState(false);
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
   const [reducedEffects,setReducedEffects]=useState(false);
+  const [performanceMode,setPerformanceMode]=useState(false);
   const [perfVisible,setPerfVisible]=useState(false);
   const [perfSample,setPerfSample]=useState(null);
   const onPerformance=useCallback(value=>setPerfSample(value),[]);
@@ -513,6 +514,7 @@ export default function App(){
     return ()=>clearTimeout(id);
   },[alarmActive]);
   const [latestNoise,setLatestNoise]=useState(null);
+  const lastFootstepHudTick=useRef(0);
   const [canCollected,setCanCollected]=useState(false);
   const canHeldRef=useRef(false);
   canHeldRef.current=canCollected;
@@ -861,8 +863,11 @@ export default function App(){
   },[]);
   const creatureDistanceRef=useRef(Infinity);
   const onVitals=useCallback(next=>{
+    // Audio continues to receive continuous breathing from the player;
+    // React HUD receives integer values, avoiding wasteful UI reconciliation.
     const data={stamina:Math.max(0,Math.min(100,Math.round(next.stamina??100))),
-      breath:next.breath||0,exhausted:Boolean(next.exhausted)};
+      breath:Math.max(0,Math.round(next.breath||0)),
+      exhausted:Boolean(next.exhausted)};
     setVitals(previous=>previous.stamina===data.stamina&&previous.breath===data.breath&&previous.exhausted===data.exhausted
       ?previous:data);
     soundRef.current?.updateVitals?.({
@@ -933,7 +938,16 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))setLatestNoise(emitted);
+    // Keep EVERY event for the AI and audio. Only step HUD refreshes are
+    // coalesced: repeated footsteps previously rerendered the entire app.
+    if(event.type==='step'){
+      if(emitted.time-lastFootstepHudTick.current>=260){
+        lastFootstepHudTick.current=emitted.time;
+        setLatestNoise(emitted);
+      }
+    }else if(['jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type)){
+      setLatestNoise(emitted);
+    }
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -1065,7 +1079,7 @@ export default function App(){
     canvas?.requestPointerLock?.();
   };
   return <>
-    <Canvas dpr={[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
+    <Canvas dpr={performanceMode?1:[1,1.5]} shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
@@ -1074,11 +1088,13 @@ export default function App(){
     {perfVisible&&<aside className="performance-debug" aria-label="실시간 렌더링 성능 진단">
       <strong>PERFORMANCE · F3</strong>
       <span>FPS <b>{perfSample?.fps??'—'}</b></span>
-      <span>느린 프레임 <b>{perfSample?.worstMs??'—'} ms</b></span>
+      <span>p95 프레임 <b>{perfSample?.p95Ms??'—'} ms</b></span>
+      <span>최장 프레임 <b>{perfSample?.worstMs??'—'} ms</b></span>
+      <span>34ms 초과 <b>{perfSample?.hitches??'—'}회</b></span>
       <span>Draw calls <b>{perfSample?.drawCalls??'—'}</b></span>
       <span>Triangles <b>{perfSample?.triangles?.toLocaleString?.()??'—'}</b></span>
       <span>DPR <b>{perfSample?.pixelRatio??'—'}</b></span>
-      <small>F3 종료 · 0.8초 단위 표본 · 실제 기기 측정</small>
+      <small>F3 종료 · 실제 1초 표본 · 프레임 간격(낮을수록 쾌적)</small>
     </aside>}
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
@@ -1250,6 +1266,10 @@ export default function App(){
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
+        <button type="button" aria-pressed={performanceMode}
+          onClick={()=>setPerformanceMode(v=>!v)}>
+          {performanceMode?'저사양 모드 ON · DPR 1.0':'저사양 모드 OFF · 고화질'}
+        </button>
         <label className="camera-shake-control" htmlFor="camera-shake">
           <span>달리기 카메라 흔들림 · {Math.round(cameraShake*100)}%</span>
           <input id="camera-shake" type="range" min="0" max="100" step="5"
@@ -1266,7 +1286,7 @@ export default function App(){
         </label>
         <p>처음은 낮은 음량으로 테스트 권장 · 헤드폰 사용자 주의 · ESC 일시정지</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.11.2 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.12.4 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }

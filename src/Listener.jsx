@@ -9,6 +9,7 @@ import { PILLARS,PARKED_CARS,WALK_BOUNDS,terrainBlocked } from './garageLayout.j
 import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 import {buildRoute} from './navigationGrid.js';
+import {passesParkedCar} from './chaseAudioRules.js';
 
 // Alarm rush starts far enough from each circuit to leave a genuine escape window.
 const BASE = new THREE.Vector3(14,0,-8);
@@ -20,22 +21,27 @@ const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 // Approximate sound obstruction by columns and cars, without a physics dependency.
 // This affects only how the human PLAYER hears the creature, not the AI hearing logic.
 function lineCrossesBox(from,to,cx,cz,halfX,halfZ){
-  const dx=to.x-from.x,dz=to.z-from.z;
-  let enter=0,exit=1;
-  for(const [p,d,min,max] of [
-    [from.x,dx,cx-halfX,cx+halfX],
-    [from.z,dz,cz-halfZ,cz+halfZ]
-  ]){
-    if(Math.abs(d)<1e-6){
-      if(p<min||p>max)return false;
-    }else{
-      const t1=(min-p)/d,t2=(max-p)/d;
-      enter=Math.max(enter,Math.min(t1,t2));
-      exit=Math.min(exit,Math.max(t1,t2));
-      if(enter>exit)return false;
-    }
-  }
-  return exit>.03 && enter<.97;
+ // Axis-aligned segment clipping without creating the old temporary 2D
+ // slab arrays 20 times/sec for every car and concrete column.
+ const dx=to.x-from.x,dz=to.z-from.z;
+ let enter=0,exit=1;
+ if(Math.abs(dx)<1e-6){
+   if(from.x<cx-halfX||from.x>cx+halfX)return false;
+ }else{
+   const tx1=(cx-halfX-from.x)/dx,tx2=(cx+halfX-from.x)/dx;
+   enter=Math.max(enter,Math.min(tx1,tx2));
+   exit=Math.min(exit,Math.max(tx1,tx2));
+   if(enter>exit)return false;
+ }
+ if(Math.abs(dz)<1e-6){
+   if(from.z<cz-halfZ||from.z>cz+halfZ)return false;
+ }else{
+   const tz1=(cz-halfZ-from.z)/dz,tz2=(cz+halfZ-from.z)/dz;
+   enter=Math.max(enter,Math.min(tz1,tz2));
+   exit=Math.min(exit,Math.max(tz1,tz2));
+   if(enter>exit)return false;
+ }
+ return exit>.03&&enter<.97;
 }
 function blockedToListener(creature,viewer){
   return PILLARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,.85,.85))
@@ -100,11 +106,15 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       return;
     }
     cooldown.current=Math.max(0,cooldown.current-dt);
-    const recent=events.current.filter(e=>e.id>lastEvent.current);
-    if(recent.length)lastEvent.current=recent[recent.length-1].id;
+    // The log is capped at 32 entries. Iterate it in-place to avoid creating
+    // a new filtered array every single renderer frame.
+    const log=events.current;
+    let newest=lastEvent.current;
     let heardSomething=false;
-    for(const event of recent){
-      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert'].includes(event.type))continue;
+    for(let i=0;i<log.length;i++){
+      const event=log[i];
+      if(event.id<=newest)continue;
+      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
       const distanceToSound=dist(pos,point);
@@ -128,6 +138,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         heardSomething=true;
       }
     }
+    if(log.length)lastEvent.current=log[log.length-1].id;
     // Loud noises produce fast investigations. The excitement fades gradually in silence,
     // even if the creature reaches the location it last heard.
     if(!heardSomething){
@@ -209,6 +220,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         forward:listenerDirection.current.toArray(),
         creaturePosition:[pos.x,1.3,pos.z],
         occluded:blockedToListener(pos,viewer),
+        nearCar:passesParkedCar(pos.x,pos.z,CARS),
         state:state.current,
         speed:currentSpeed.current,
         excitement:excitement.current

@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FLOOR_SIZE,LEAK,SERVICE_GRATE } from './garageLayout.js';
 import { VEHICLES } from './vehiclePuzzle.js';
 import InstancedCars from './InstancedCars.jsx';
+import GarageFixtures from './GarageFixtures.jsx';
 
 const COLORS=['#36444a','#494d4b','#394842','#4b4b46'];
 const Car=React.memo(function Car({x,z,index,identified=null,solved=false}){
@@ -17,9 +18,19 @@ const Car=React.memo(function Car({x,z,index,identified=null,solved=false}){
    {[-.75,.75].map(offset=><mesh key={offset} position={[offset,.72,2.23]}>
      <boxGeometry args={[.38,.19,.04]}/><meshBasicMaterial color="#6b302e"/>
    </mesh>)}
-   {identified&&<group position={[0,.79,2.285]}>
-      <mesh><boxGeometry args={[.81,.27,.035]}/><meshStandardMaterial color="#c0c5bd" roughness={.62}/></mesh>
-      <Text position={[0,0,.025]} fontSize={.205} color="#252d2f" anchorX="center" anchorY="middle">{identified.plate}</Text>
+   {identified&&<group position={[0,.82,2.285]}>
+      {/* Matching physical rear bumper plate; high contrast, no emission. */}
+      <mesh><boxGeometry args={[1.03,.36,.04]}/><meshStandardMaterial color="#d5dad3" roughness={.78} metalness={.06}/></mesh>
+      <Text position={[0,0,.03]} fontSize={.285} fontWeight={700} color="#19262d"
+        anchorX="center" anchorY="middle" outlineWidth={.008} outlineColor="#d5dad3">
+        {identified.plate}
+      </Text>
+   </group>}
+   {identified&&<group position={[0,.80,-2.29]} rotation={[0,Math.PI,0]}>
+      {/* Front license plate, too: the player can investigate from either lane. */}
+      <mesh><boxGeometry args={[1.03,.36,.04]}/><meshStandardMaterial color="#d5dad3" roughness={.78}/></mesh>
+      <Text position={[0,0,.03]} fontSize={.285} fontWeight={700} color="#19262d"
+        anchorX="center" anchorY="middle">{identified.plate}</Text>
    </group>}
    {identified?.correct&&solved&&<group>
      <mesh position={[0,1.34,2.31]} rotation={[-.45,0,0]}>
@@ -54,16 +65,6 @@ function RepeatedColumns(){
      <Text position={[0,2.05,.84]} color="#171f20" fontSize={.34} maxWidth={1.4} anchorX="center">B2</Text>
    </group>)}
  </>;
-}
-function CeilingFixtures({flicker=false}){
- const positions=useMemo(()=>[-62,-46,-30,-14,2,18,34,50,66].flatMap(z=>[-37,-19,0,19,37].map(x=>[x,z])),[]);
- return <group>
-   {positions.map(([x,z],i)=><group key={i} position={[x,GARAGE_HEIGHT-.18,z]}>
-     <mesh><boxGeometry args={[.78,.11,3.6]}/><meshBasicMaterial color={i%11===0?'#353d3b':'#a8b7ad'} toneMapped={false}/></mesh>
-     {i%7===0&&<mesh position={[0,-.09,0]}><boxGeometry args={[.82,.018,3.68]}/><meshBasicMaterial color="#d7dfd1" transparent opacity={.33}/></mesh>}
-     {i%9===0&&<pointLight position={[0,-.5,0]} intensity={flicker&&i===18?.18:1.67} distance={22} color="#cbd9cb" decay={2}/>}
-   </group>)}
- </group>;
 }
 function MaintenanceSurfaces(){
  const drip=useRef(),timer=useRef(0);
@@ -120,18 +121,24 @@ function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehic
    <InstancedCars floor={floor}/>
    {floor===2&&VEHICLES.map(v=>{
      const index=PARKED_CARS.findIndex(([x,z])=>x===v.position[0]&&z===v.position[1]);
-     return <Car key={v.id} x={v.position[0]} z={v.position[1]}
-       index={index} identified={v} solved={vehicleSolved}/>;
+     return <group key={v.id}>
+       <Car x={v.position[0]} z={v.position[1]}
+         index={index} identified={v} solved={vehicleSolved}/>
+       {/* Actual weathered bay stencil on concrete. Compare it to CAM-C
+           footage; no floating marker or remotely highlighted target. */}
+       <group position={[v.position[0],.032,v.position[1]+3.7]} rotation={[-Math.PI/2,0,0]}>
+         <Text fontSize={.57} fontWeight={700} color="#969b93"
+           anchorX="center" anchorY="middle" outlineWidth={.018}
+           outlineColor="#363c3b">{v.bay}</Text>
+       </group>
+       <mesh position={[v.position[0]+1.48,.027,v.position[1]+3.65]}
+             rotation={[-Math.PI/2,0,0]}>
+         <planeGeometry args={[.12,1.9]}/>
+         <meshBasicMaterial color="#8b8c7b" transparent opacity={.55} depthWrite={false}/>
+       </mesh>
+     </group>;
    })}
-   <CeilingFixtures flicker={flicker}/>
-   {Array.from({length:36},(_,i)=><mesh key={i} position={[i%2===0?-19:19,.017,-66+i*3.8]} rotation={[-Math.PI/2,0,0]}>
-     <planeGeometry args={[.095,2.7]}/><meshBasicMaterial color="#8b8b71" transparent opacity={.54}/>
-   </mesh>)}
-   {[-56,-40,-24,-8,8,24,40,56,72].map((z,i)=><group key={z}>
-      {[-15,15,-47,47].map((x,j)=><mesh key={x} position={[x,.015,z+(i%2)*2]} rotation={[-Math.PI/2,0,0]}>
-         <planeGeometry args={[3.5,.11]}/><meshBasicMaterial color={j%2===0?'#777c70':'#a9a17b'} transparent opacity={.44}/>
-      </mesh>)}
-   </group>)}
+   <GarageFixtures flicker={flicker}/>
    <MaintenanceSurfaces/>
    <group position={[0,4.93,-32.3]}>
      <mesh><boxGeometry args={[4.25,1.04,.26]}/><meshStandardMaterial color={altered?'#5e272f':'#225a47'} emissive={altered?'#63212b':'#185b43'} emissiveIntensity={1.15}/></mesh>
