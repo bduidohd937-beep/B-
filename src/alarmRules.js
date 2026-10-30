@@ -7,8 +7,9 @@ export const SIREN_SECONDS=9;
 export const RUSH_SECONDS=8.5;
 export const RUSH_SPEED=8.25;
 
-export function canTriggerSiren({silent=false,powered=false,alreadyTriggered=false}={}){
-  return !silent&&!powered&&!alreadyTriggered;
+export function canTriggerSiren({powered=false,alreadyTriggered=false}={}){
+  // Lubricating mechanical parts cannot disconnect an electronic alarm circuit.
+  return !powered&&!alreadyTriggered;
 }
 export function sirenPosition(floor=1){
   const [x,z]=panelPosition(floor);
