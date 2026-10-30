@@ -107,11 +107,11 @@ export default function ListenerModel({ motionRef }) {
     if(head.current){
       const aim=listening?Math.sin(t*2.8)*.86:alert?Math.sin(gait*.32)*.18:Math.sin(t*.72)*.17;
       head.current.rotation.y=THREE.MathUtils.damp(head.current.rotation.y,aim,listening?6:2,dt);
-      head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,listening?.28*Math.sin(t*1.7):-.12+Math.sin(t*.8)*.08,3.2,dt);
+      head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,listening ? .28*Math.sin(t*1.7) : -.12+Math.sin(t*.8)*.08,3.2,dt);
       head.current.rotation.x=THREE.MathUtils.damp(head.current.rotation.x,alert?-.31:.22,2.8,dt);
     }
     if(mouth.current){
-      const opening=alert?.45+Math.abs(Math.sin(t*7.3))*.42:.14+Math.abs(Math.sin(t*2.0))*.22;
+      const opening=alert ? .45+Math.abs(Math.sin(t*7.3))*.42 : .14+Math.abs(Math.sin(t*2.0))*.22;
       mouth.current.scale.y=THREE.MathUtils.damp(mouth.current.scale.y,opening,8,dt);
     }
     if(leftArm.current)leftArm.current.rotation.x=.12+Math.sin(gait)*.62*swing;
