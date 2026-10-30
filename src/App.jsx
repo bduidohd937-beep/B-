@@ -4,6 +4,8 @@ import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
+import { tickFlashlight,rechargeFlashlight,clampCharge,lowBatteryBrightness,FLASHLIGHT_CLICK_NOISE } from './flashlightRules.js';
+import { cameraMotion } from './cameraMotion.js';
 import Listener from './Listener.jsx';
 import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
@@ -25,26 +27,31 @@ import { itemActionNoise,mechanicalNoise,nearestLookedAtPickup } from './interac
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const clamp = THREE.MathUtils.clamp;
-function Flashlight({ enabled }) {
-  const { camera, scene } = useThree();
+function Flashlight({enabled,charge=100,reducedEffects=false}){
+  const {camera,scene}=useThree();
   const lamp=useRef();
   const target=useMemo(()=>new THREE.Object3D(),[]);
   const origin=useMemo(()=>new THREE.Vector3(),[]);
   const aim=useMemo(()=>new THREE.Vector3(),[]);
   useEffect(()=>{scene.add(target);return ()=>scene.remove(target)},[scene,target]);
-  useFrame(()=>{
+  useFrame(({clock})=>{
     if(!lamp.current)return;
     camera.getWorldPosition(origin);
     camera.getWorldDirection(aim);
-    lamp.current.position.copy(origin).addScaledVector(aim,.22).add(new THREE.Vector3(0,-.12,0));
+    lamp.current.position.copy(origin).addScaledVector(aim,.22);
+    lamp.current.position.y-=.12;
     target.position.copy(origin).addScaledVector(aim,14);
     target.updateMatrixWorld();
+    // Low charge causes a gentle warm pulse, never disorienting 0/100 strobing.
+    lamp.current.intensity=enabled&&charge>0
+      ?108*lowBatteryBrightness(charge,clock.elapsedTime,reducedEffects):0;
   });
-  return <spotLight ref={lamp} target={target} intensity={enabled?100:0}
-    angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
+  return <spotLight ref={lamp} target={target} intensity={0}
+    angle={Math.PI/6.5} penumbra={.72} distance={33}
+    decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects }) {
   const { camera } = useThree();
   const keys = useRef({});
   const groundPickupsRef=useRef(pickupItems);
@@ -59,7 +66,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   const survival=useRef(freshSurvival());
   const breathClock=useRef(0);
   const vitalsClock=useRef(0);
-  const bobClock = useRef(0);
+  const bobClock=useRef(0);
+  const flashlightCharge=useRef(100);
+  const batteryReportClock=useRef(0);
+  const tiltSmooth=useRef(0);
+  const bobSmooth=useRef(0);
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
   const lastMode = useRef('walk');
@@ -93,13 +104,17 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
     survival.current=freshSurvival();
+    flashlightCharge.current=100;
+    batteryReportClock.current=0;
+    onBatteryReport(100);
+    camera.rotation.z=0;tiltSmooth.current=0;bobSmooth.current=0;
     breathClock.current=0;vitalsClock.current=0;
     onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     proximityReported.current=null;
     onPanelProgress(0);
-  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals]);
+  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals,onBatteryReport]);
   useEffect(()=>{
     if(!floorSignal)return;
     camera.position.set(...SECOND_FLOOR_START);
@@ -121,6 +136,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     survival.current=applyEnergyDrink(survival.current);
     onVitals({stamina:survival.current.stamina,exhausted:false,breath:0});
   },[boostSignal,onVitals]);
+  useEffect(()=>{
+    if(!rechargeSignal)return;
+    flashlightCharge.current=rechargeFlashlight(flashlightCharge.current);
+    onBatteryReport(flashlightCharge.current);
+  },[rechargeSignal,onBatteryReport]);
   useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
@@ -208,6 +228,15 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     if(keys.current.KeyD||keys.current.ArrowRight)movement.add(right);
     if(keys.current.KeyA||keys.current.ArrowLeft)movement.sub(right);
     const dt=Math.min(delta,.05);
+    const battery=tickFlashlight(flashlightCharge.current,{
+      active,enabled:torch,dt
+    });
+    flashlightCharge.current=battery.charge;
+    batteryReportClock.current-=dt;
+    if(batteryReportClock.current<=0||battery.empty&&torch){
+      onBatteryReport(battery.charge);
+      batteryReportClock.current=.24;
+    }
     const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
     const sprintIntent=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
     const moving=movement.lengthSq()>0;
@@ -289,14 +318,22 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       mode,dt
     });
     stepMeter.current=footstep.state;
-    if(moving&&vertical.current===0){
-      bobClock.current+=dt*(sprinting?11:crouching?3.5:7);
-    }
+    // Visual motion derives from the same stride progress used for audible
+    // footsteps, rather than a free-running random shake timer.
+    const cameraOffsets=cameraMotion({
+      mode,distanceIntoStep:footstep.state.meters,
+      moving:movedDistance>.0001,
+      grounded:vertical.current===0&&velocityY.current===0,
+      intensity:cameraShake,reducedEffects
+    });
+    bobSmooth.current=THREE.MathUtils.damp(bobSmooth.current,cameraOffsets.rise,12,dt);
+    tiltSmooth.current=THREE.MathUtils.damp(tiltSmooth.current,cameraOffsets.roll,10,dt);
     if(footstep.steps){
       const surface=surfaceAt(camera.position.x,camera.position.z);
       onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
     }
-    camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
+    camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+bobSmooth.current;
+    camera.rotation.z=tiltSmooth.current;
     playerRef.current={x:camera.position.x,z:camera.position.z,speed:movedDistance/Math.max(dt,.001),crouched:crouching};
     if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
     if(camera.position.z < -10 && direction.z>0.45&&!turnedOnce.current){turnedOnce.current=true;onTurn();}
@@ -304,7 +341,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -320,17 +357,17 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
   return <>
     <color attach="background" args={[floor===2?'#121017':'#101719']}/>
     <fog attach="fog" args={[alarmActive?'#2a0f18':floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
-    <ambientLight intensity={floor===2?.27:.43} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
+    <ambientLight intensity={floor===2?.245:.37} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}/>
     <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
-    <Flashlight enabled={torch}/>
+    <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
     {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -339,6 +376,17 @@ export default function App(){
   const [started,setStarted]=useState(false);
   const [locked,setLocked]=useState(false);
   const [torch,setTorch]=useState(true);
+  const torchRef=useRef(true);
+  torchRef.current=torch;
+  const [flashlightCharge,setFlashlightCharge]=useState(100);
+  const flashlightChargeRef=useRef(100);
+  const onBatteryReport=useCallback(value=>{
+    const next=clampCharge(value);
+    flashlightChargeRef.current=next;
+    setFlashlightCharge(old=>Math.ceil(old)===Math.ceil(next)?old:next);
+    if(next<=0)setTorch(false);
+  },[]);
+  const [cameraShake,setCameraShake]=useState(.45);
   const [near,setNear]=useState(false);
   const [altered,setAltered]=useState(false);
   const [ending,setEnding]=useState(false);
@@ -373,6 +421,7 @@ export default function App(){
   const selectedIndex=Math.min(selectedSlot,Math.max(0,bag.length-1));
   const selectedType=bag[selectedIndex]||null;
   const [boostSignal,setBoostSignal]=useState(0);
+  const [rechargeSignal,setRechargeSignal]=useState(0);
   const [silentFloor,setSilentFloor]=useState(0);
   const silentRef=useRef(0);
   silentRef.current=silentFloor;
@@ -460,6 +509,10 @@ export default function App(){
       notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
       return false;
     }
+    if(effect==='recharge'&&flashlightChargeRef.current>=100){
+      notify('배터리가 이미 가득 차 있다 · 나중에 사용하자');
+      return false;
+    }
     const updated=gearRef.current.filter((_,i)=>i!==index);
     gearRef.current=updated;
     setGear(updated);
@@ -472,6 +525,10 @@ export default function App(){
     }else if(effect==='boost'){
       setBoostSignal(v=>v+1);
       notify('스태미나 +48 · 5초 동안 질주 강화 · 개봉 소음 발생');
+    }else if(effect==='recharge'){
+      // The Player owns precise charge; rechargeSignal applies it once.
+      setRechargeSignal(v=>v+1);
+      notify('예비 건전지 교체 · 손전등 +45% · 교체음 발생');
     }else if(effect==='deploy'){
       setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
       notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
@@ -593,6 +650,8 @@ export default function App(){
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
+    setTorch(true);
+    torchRef.current=true;
     setCaught(false);
     setAirborne(false);
     setMoveMode('idle');
@@ -612,7 +671,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -627,6 +686,7 @@ export default function App(){
     if(event.type==='decoy')sound.devicePulse?.(event.device,event.position);
     if(event.type==='gear')sound.gearClick?.(event.device);
     if(event.type==='item')sound.itemAction?.(event.item,event.action);
+    if(event.type==='flashlight')sound.flashlightClick?.(event.enabled);
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -673,11 +733,26 @@ export default function App(){
   const onNear=useCallback(()=>setNear(true),[]);
   const onTurn=useCallback(()=>setAltered(true),[]);
   useEffect(()=>{
-    const key=e=>{if(e.repeat)return;if(e.code==='KeyF')setTorch(v=>!v);if(e.code==='KeyH')setShowControls(v=>!v);};
+    const key=e=>{
+      if(e.repeat)return;
+      if(e.code==='KeyH')setShowControls(v=>!v);
+      if(e.code!=='KeyF'||!started||!locked||caught||ending)return;
+      if(!torchRef.current&&flashlightChargeRef.current<=0){
+        notify('손전등 배터리 방전 · 예비 건전지를 찾아야 한다');
+        return;
+      }
+      const next=!torchRef.current;
+      torchRef.current=next;
+      setTorch(next);
+      // The tactile switch is audible to nearby Listener, not omniscient.
+      onNoiseRef.current?.({type:'flashlight',enabled:next,
+        loudness:FLASHLIGHT_CLICK_NOISE,
+        position:[playerRef.current.x,1.5,playerRef.current.z]});
+    };
     const lock=()=>setLocked(document.pointerLockElement!==null);
     window.addEventListener('keydown',key);document.addEventListener('pointerlockchange',lock);
     return ()=>{window.removeEventListener('keydown',key);document.removeEventListener('pointerlockchange',lock);};
-  },[]);
+  },[started,locked,caught,ending,notify]);
   useEffect(()=>()=>soundRef.current?.dispose(),[]);
   useEffect(()=>{soundRef.current?.setEnabled(audioOn);},[audioOn]);
   useEffect(()=>{soundRef.current?.setSirenVolume?.(sirenVolume);},[sirenVolume]);
@@ -695,7 +770,7 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
@@ -765,7 +840,13 @@ export default function App(){
         <div className="inventory-guide">
           {inventoryControls(selectedType).use&&<span><kbd>G</kbd> {selectedType==='can'?'캔 던지기':'장비 사용'}</span>}
           {inventoryControls(selectedType).drop&&<span><kbd>Q</kbd> 장비 내려놓기</span>}
-          <span><kbd>F</kbd> 손전등 {torch?'ON':'OFF'}</span>
+          <span className={'flashlight-status'+(flashlightCharge<=18?' is-low':'')}>
+            <kbd>F</kbd> 손전등 {torch?'ON':'OFF'}
+            <strong>{Math.ceil(flashlightCharge)}%</strong>
+            <i className="flashlight-status__track" aria-hidden="true">
+              <i style={{width:Math.ceil(flashlightCharge)+'%'}}/>
+            </i>
+          </span>
           {checkpoint&&<span className="equipment-strip__checkpoint">SAVE ✓</span>}
         </div>
       </div>
@@ -780,6 +861,7 @@ export default function App(){
       {showControls&&<div className="controls-sheet">
         <strong>CONTROLS · H로 닫기</strong>
         <span>WASD 이동 · SHIFT 질주(스태미나 소모) · Ctrl/C 은신</span>
+        <span>F 손전등 딸깍 · 배터리 7분 · 예비 건전지 선택 후 G 충전</span>
         <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
         <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
         <span>F 손전등 · ESC 일시정지 · H 조작법</span>
@@ -794,6 +876,13 @@ export default function App(){
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
+        <label className="camera-shake-control" htmlFor="camera-shake">
+          <span>달리기 카메라 흔들림 · {Math.round(cameraShake*100)}%</span>
+          <input id="camera-shake" type="range" min="0" max="100" step="5"
+            value={Math.round(cameraShake*100)}
+            onChange={e=>setCameraShake(Number(e.target.value)/100)}
+            aria-label="달리기 화면 흔들림 강도"/>
+        </label>
         <label className="siren-volume-control" htmlFor="siren-volume">
           <span>비상 사이렌 음량 · {Math.round(sirenVolume*100)}%</span>
           <input id="siren-volume" type="range" min="0" max="100" step="5"
@@ -803,7 +892,7 @@ export default function App(){
         </label>
         <p>처음은 낮은 음량으로 테스트 권장 · 헤드폰 사용자 주의 · ESC 일시정지</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.11.1 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.11.2 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }

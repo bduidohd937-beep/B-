@@ -8,7 +8,8 @@ export const DEFAULT_ITEM_SOUNDS = Object.freeze({
   radio:{pickup:14,drop:28,use:40},
   glow:{pickup:11,drop:15,use:12},
   energy:{pickup:14,drop:26,use:42},
-  lube:{pickup:12,drop:22,use:23}
+  lube:{pickup:12,drop:22,use:23},
+  battery:{pickup:13,drop:24,use:29}
 });
 export function itemActionNoise(type,action,{crouching=false}={}){
   const matrix=DEFAULT_ITEM_SOUNDS[type]||DEFAULT_ITEM_SOUNDS.can;

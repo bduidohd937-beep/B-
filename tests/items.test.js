@@ -4,14 +4,14 @@ import { startingPickups,slots,selectSlot,canAddToInventory,pickupRadius,itemEff
 test('rare, staged item placement makes loot an earned tactical choice',()=>{
  for(const floor of [1,2]){
   const list=startingPickups(floor);
-  assert.equal(list.length,3);
-  assert.equal(new Set(list.map(x=>x.type)).size,3);
+  assert.equal(list.length,floor===1?4:3);
+  assert.equal(new Set(list.map(x=>x.type)).size,floor===1?4:3);
   assert.ok(list.every(x=>x.position.length===3));
  }
 });
 test('loot across two loops still provides all five tactical types',()=>{
  const union=new Set([...startingPickups(1),...startingPickups(2)].map(x=>x.type));
- assert.equal(union.size,5);
+ assert.equal(union.size,6);
 });
 test('can occupies one slot and backpack capacity is three',()=>{
  assert.deepEqual(slots(true,['alarm','glow']),['can','alarm','glow']);
@@ -28,6 +28,7 @@ test('lube needs panel, gadgets have distinct timing',()=>{
  assert.equal(itemEffect('lube',false),'requires-panel');
  assert.equal(itemEffect('lube',true),'attenuate');
  assert.equal(itemEffect('energy',false),'boost');
+ assert.equal(itemEffect('battery',false),'recharge');
  assert.equal(itemEffect('radio',false),'deploy');
  assert.equal(gadgetTiming('alarm',3.9).active,false);
  assert.equal(gadgetTiming('alarm',4.1).active,true);
@@ -43,4 +44,5 @@ test('every gear use makes physical handling sound',()=>{
  assert.equal(gearMakesNoise('energy'),true);
  assert.equal(gearMakesNoise('radio'),true);
  assert.equal(gearMakesNoise('alarm'),true);
+ assert.equal(gearMakesNoise('battery'),true);
 });

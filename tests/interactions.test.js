@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {itemActionNoise,mechanicalNoise,gazeFocus,nearestLookedAtPickup,LUBRICATED_MECHANICAL_MULTIPLIER} from '../src/interactions.js';
 test('every item pickup, use and drop makes some real AI sound',()=>{
- for(const item of ['can','alarm','radio','glow','energy','lube']){
+ for(const item of ['can','alarm','radio','glow','energy','lube','battery']){
    for(const action of ['pickup','use','drop'])assert.ok(itemActionNoise(item,action)>0,`${item}:${action}`);
  }
 });

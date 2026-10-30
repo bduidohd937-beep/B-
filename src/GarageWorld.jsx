@@ -48,7 +48,7 @@ function CeilingFixtures({flicker=false}){
    {positions.map(([x,z],i)=><group key={i} position={[x,GARAGE_HEIGHT-.18,z]}>
      <mesh><boxGeometry args={[.78,.11,3.6]}/><meshBasicMaterial color={i%11===0?'#353d3b':'#a8b7ad'} toneMapped={false}/></mesh>
      {i%7===0&&<mesh position={[0,-.09,0]}><boxGeometry args={[.82,.018,3.68]}/><meshBasicMaterial color="#d7dfd1" transparent opacity={.33}/></mesh>}
-     {i%9===0&&<pointLight position={[0,-.5,0]} intensity={flicker&&i===18?.18:1.85} distance={22} color="#cbd9cb" decay={2}/>}
+     {i%9===0&&<pointLight position={[0,-.5,0]} intensity={flicker&&i===18?.18:1.67} distance={22} color="#cbd9cb" decay={2}/>}
    </group>)}
  </group>;
 }
