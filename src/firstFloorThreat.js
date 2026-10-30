@@ -42,7 +42,7 @@ export function chooseClearStep(x,z,dx,dz,isBlocked){
  ];
  for(const [xx,zz] of options){
    if(Math.hypot(xx,zz)<.00001)continue;
-   if(!isBlocked(x+xx,z+zz))return [xx,zz];
+   if(!isBlocked(x+xx,z+zz))return [xx===0?0:xx,zz===0?0:zz];
  }
  return [0,0];
 }
