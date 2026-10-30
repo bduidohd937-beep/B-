@@ -693,17 +693,17 @@ export default function App(){
       setVehicleState(next);
       setEvidenceOpen(true);
       onNoiseRef.current?.({type:'cctv',loudness:CCTV_READ_NOISE,position});
-      notify('CCTV 확보 · 컴퓨터에서 멀어지면 화면 종료 · J는 간략 메모');
+      // The CRT itself displays the evidence; no remote memo/toast walkthrough.
       return true;
     }
     if(interaction.kind!=='vehicle')return false;
     const result=examineVehicle(vehicleStateRef.current,interaction.id);
     if(result.outcome==='need-cctv'){
-      notify('아무 기록도 없다 · 먼저 경비용 CCTV를 확인하자');
+      notify('기록 없음');
       return false;
     }
     if(result.outcome==='already-solved'){
-      notify('이미 317번 차량에서 출입 인증기를 확보했다');
+      notify('비어 있다');
       return false;
     }
     if(result.outcome==='invalid')return false;
@@ -723,7 +723,7 @@ export default function App(){
         position:[...result.car.inspect]
       });
       setEvidenceOpen(false);
-      notify('틀렸다! 차량 도난 경보 발생 · 청음자가 소리를 듣는다!');
+      // The actual siren and hazard lamps, not a hint toast, signal danger.
       return true;
     }
     if(result.outcome==='transponder'){
@@ -734,7 +734,7 @@ export default function App(){
         type:'vehicle',loudness:CORRECT_TRUNK_NOISE,
         position:[...result.car.inspect]
       });
-      notify('317번 차량 출입키 획득 · 중앙 셔터 오른쪽 보안 단말기로 이동');
+      notify('낡은 출입키');
       return true;
     }
     return false;
@@ -748,7 +748,7 @@ export default function App(){
       onNoiseRef.current?.({type:'key-insert',loudness:27,
         position:[...SECURITY_KEY_READER]});
     }else if(event==='cancel'){
-      notify('인증 중단 · 경보는 계속 울린다! 키를 다시 돌려라');
+      notify('인증 중단');
     }else if(event==='alarm'){
       // The first physical key turn starts the siren BEFORE authentication.
       // Letting go cannot un-ring this bell; the Listener targets the gate.
@@ -758,16 +758,16 @@ export default function App(){
       setAlarmActive(true);
       soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
       onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
-      notify('키를 꽂자마자 비상 경보! E를 유지해 인증해야 셔터가 열린다');
+      // Let the siren and the real reader communicate this irreversible event.
     }else if(event==='motor'){
       soundRef.current?.startShutterMotor?.(
         [0,1.3,SECURITY_KEY_READER[2]-2.25],SHUTTER_RAISE_SECONDS
       );
       onNoiseRef.current?.({type:'gate-motor',loudness:73,
         position:[0,1.3,SECURITY_KEY_READER[2]-2.25]});
-      notify('인증 완료! 셔터 개방 중 · 숨었다가 통과하라');
+      // The grinding shutter is itself the feedback, no escape instructions.
     }else if(event==='open'){
-      notify('서비스 셔터 완전 개방 · 탈출 통로로 이동');
+      // Do not narrate the solution while the player is hiding.
     }
   },[notify]);
   const onPanelAttempt=useCallback(()=>{
@@ -1098,12 +1098,11 @@ export default function App(){
     </div>}
     {carAlarm&&floor===2&&<div className="car-theft-alarm" role="status" aria-live="assertive">
       <strong>VEHICLE ANTI-THEFT ALARM</strong>
-      <span>도난 경보 발동 · 소리를 따라오는 놈을 조심하라</span>
+      <span>SECURITY BREACH · B2</span>
     </div>}
     {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
       <strong>EMERGENCY PROTOCOL · B2</strong>
-      <span>위이이잉— · 비상 경보 작동 · 청음자가 소리 난 지점으로 질주</span>
-      <small>비상 방송 신호 왜곡 · 즉시 이동 또는 은폐</small>
+      <span>UNAUTHORIZED ACCESS</span>
     </div>}
     <div className="hud hud--v092">
       <header className="game-header">
@@ -1114,10 +1113,7 @@ export default function App(){
       <section className="mission-card" aria-label="현재 탈출 목표">
         <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'MISSING VEHICLE':'EMERGENCY EXIT'}</span></div>
         <div className="mission-card__text">{floor===2?carObjective(vehicleState,gateAuth):objectiveText(gatePowered,1)}</div>
-        {floor===2&&<div className="mission-card__rule">
-          {vehicleState.solved?<span>317 인증키 획득 · 우측 출입 단말기 · <kbd>J</kbd> 메모</span>:vehicleState.reviewed?<span>CAM-C · C-17 · 번호 끝 17 · <kbd>J</kbd> 메모</span>:
-          <span>귀 달린 놈 = 소리 · 관조자 = 움직임 · CCTV 기록 조사</span>}
-        </div>}
+
       </section>
       {floor===2&&evidenceOpen&&started&&!caught&&!ending&&
         <aside className="cctv-evidence" aria-label="확보한 CCTV 영상 기록">
@@ -1132,57 +1128,42 @@ export default function App(){
           </div>
           <p>{CAMERA_LOG.detail}</p>
           <p>{CAMERA_LOG.discrepancy}</p>
-          <footer>컴퓨터에서 3.2m 이상 떨어지면 자동 종료 · <kbd>J</kbd> 휴대 메모</footer>
+          <footer>RECORD ENDS · 03:17:17</footer>
         </aside>}
       {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&floor===1&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
-          <strong><kbd>E</kbd> 누르고 있기 · 배전반 재시동</strong>
-          <span>{silentFloor===floor?'윤활 완료 · 금속음 감소, 사이렌은 작동!':'작동 시 붉은 비상등 · 청음자 긴급 추적'}</span>
+          <strong><kbd>E</kbd> 길게 누르기</strong>
           <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
         </div>}
       {started&&locked&&floor===2&&puzzleProximity==='key-reader'&&
         <div className={'interaction-callout'+(gatePowered?' interaction-callout--ready':'')} role="status">
-          <strong>{!vehicleState.solved?'SERVICE AUTH · 출입키가 필요하다':
-            gateAuth.phase==='opening'?'비상경보! 셔터 개방 중':
-            gateAuth.phase==='open'?'서비스 셔터 개방 · 도망쳐라':
-            <><kbd>E</kbd> 누르고 있기 · 인증키 삽입·회전</>}</strong>
-          <span>{!vehicleState.solved?'317번 차량에서 키를 찾아라':
-            gateAuth.phase==='opening'?'청음자가 출입구로 달려온다 · 타이밍을 노려라':
-            gateAuth.phase==='open'?'통과하기 전 시야와 발소리를 확인하라':
-            '키를 꽂는 순간 사이렌 · E를 유지해야 셔터 개방'}</span>
+          <strong>{!vehicleState.solved?'열쇠가 필요하다':
+            gateAuth.phase==='opening'?'작동 중':
+            gateAuth.phase==='open'?'해제':
+            <><kbd>E</kbd> 길게 누르기</>}</strong>
           {vehicleState.solved&&gateAuth.phase==='authenticating'&&
             <div className="interaction-callout__progress" role="progressbar"
               aria-label="키 인증 진행률" aria-valuemin={0} aria-valuemax={100}
               aria-valuenow={Math.round(keyHoldProgress(gateAuth)*100)}>
               <div style={{width:(keyHoldProgress(gateAuth)*100)+'%'}}/>
             </div>}
-          {gateAuth.phase==='opening'&&
-            <div className="interaction-callout__progress" role="progressbar"
-              aria-label="셔터 개방 진행률" aria-valuemin={0} aria-valuemax={100}
-              aria-valuenow={Math.round(gateLiftRatio(gateAuth)*100)}>
-              <div style={{width:(gateLiftRatio(gateAuth)*100)+'%'}}/>
-            </div>}
+
         </div>}
       {started&&locked&&puzzleProximity==='gate'&&
         <div className={'interaction-callout '+(gatePowered?'interaction-callout--ready':'')} role="status">
-          <strong>{gatePowered?'서비스 셔터 개방 · 통로로 이동':
-            floor===2&&gateAuth.phase==='opening'?'서비스 셔터 상승 중 · 조금만 더 기다려라':
-            '셔터 잠김 · '+(floor===2?'출입키 인증 필요':'전원 복구 필요')}</strong>
-          {!gatePowered&&<span>{floor===2?vehicleState.solved?'우측 보안 단말기에 가서 키를 돌려라':'CCTV 기록과 317번 차량의 출입키를 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
+          <strong>{gatePowered?'열림':'잠김'}</strong>
         </div>}
       {started&&locked&&floor===2&&puzzleProximity==='cctv'&&
         <div className="interaction-callout interaction-callout--evidence" role="status">
-          <strong><kbd>E</kbd> 경비용 CCTV 기록 열람</strong>
-          <span>컴퓨터에서 3.2m 벗어나면 화면 종료 · <kbd>J</kbd> 간단 메모</span>
+          <strong><kbd>E</kbd> 기록 조사</strong>
         </div>}
       {started&&locked&&floor===2&&puzzleProximity?.startsWith('vehicle:')&&
         <div className="interaction-callout interaction-callout--evidence" role="status">
-          <strong><kbd>E</kbd> 차량 번호판 / 트렁크 조사</strong>
-          <span>{vehicleState.solved?'출입키 회수 완료 · 중앙 셔터 단말기로 이동':vehicleState.reviewed?'틀린 차량을 조작하면 도난 경보 발생':'먼저 경비용 CCTV 기록을 확보하라'}</span>
+          <strong><kbd>E</kbd> 조사</strong>
         </div>}
       {started&&locked&&puzzleProximity==='can'&&<div className="interaction-callout" role="status">
         <strong><kbd>E</kbd> 빈 캔 줍기</strong><span>회수한 캔은 다시 던질 수 있다</span>
@@ -1220,11 +1201,7 @@ export default function App(){
         </div>
       </div>
       <div className="helper-bar" aria-label="키보드 도움말">
-        <span>{observerInfo.mode==='chase'&&floor===2?'관조자 포착! 움직임을 멈추고 시야를 끊어라':
-          vitals.exhausted?'숨이 차 달릴 수 없다':
-          vitals.breath>=14?'쉿… 숨소리가 새어 나온다':
-          creatureInfo.mode==='listen'?'청음자가 듣고 있다':
-          floor===2?'소리와 움직임을 모두 조심하라':'작은 소리도 위험하다'}</span>
+        <span>{vitals.exhausted?'숨이 차오른다':vitals.breath>=14?'거친 숨소리':floor===2?'B2 · 기록 없음':'B2 · 전력 이상'}</span>
         <span><kbd>H</kbd> {showControls?'조작법 닫기':'조작법'}</span>
       </div>
       {showControls&&<div className="controls-sheet">
@@ -1234,8 +1211,8 @@ export default function App(){
         <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
         <span>G 길게 눌러 궤적 확인 후 놓아 던지기 · 짧게 누르면 유인 장비 가까이 놓기</span>
         <span>F3 성능 진단 FPS / 프레임 시간 · Q 장비 내려놓기</span>
-        <span>F 손전등 · ESC 일시정지 · H 조작법 · J 확보한 단서 메모</span>
-        {floor===2&&<span>2층: CCTV → 317번 차량 출입키 → 셔터 우측 단말기(E 유지) → 사이렌 도주</span>}
+        <span>F 손전등 · ESC 일시정지 · H 조작법</span>
+
       </div>}
     </div>
     {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel" role="dialog" aria-modal="true">
