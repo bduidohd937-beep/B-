@@ -138,7 +138,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
     let heardSomething=false;
     for(const event of recent){
-      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren'].includes(event.type))continue;
+      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
       const distanceToSound=dist(pos,point);
