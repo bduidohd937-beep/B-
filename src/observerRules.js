@@ -24,7 +24,7 @@ export function sightBlocked(from,to,pillars,cars,gatePowered=false){
     }
   }
   const boxes=[...pillars.map(([x,z])=>[x,z,.87,.87]),...cars.map(([x,z])=>[x,z,1.5,2.5])];
-  const dx=to.x-from.x,dz=to.z-from.z;
+  const dx=to.x-from.x;
   return boxes.some(([x,z,halfX,halfZ])=>{
     let enter=0,exit=1;
     for(const [p,d,min,max] of [[from.x,dx,x-halfX,x+halfX],[from.z,dz,z-halfZ,z+halfZ]]){
