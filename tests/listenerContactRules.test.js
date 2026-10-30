@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {terrainBlocked} from '../src/garageLayout.js';
 import {POWER_PANEL} from '../src/puzzle.js';
+import {buildRoute} from '../src/navigationGrid.js';
+import {FIRST_GUARD_HOME} from '../src/firstFloorThreat.js';
 import {BREAKER_APPROACH,canListenerCatch,reachableSoundTarget,
  shouldReplanOnStall,LISTENER_CONTACT_RADIUS} from '../src/listenerContactRules.js';
 
@@ -29,4 +31,15 @@ test('stalled goal tracking forces replan without changing the auditory target',
  assert.equal(shouldReplanOnStall(8.0,8.01,.95),true);
  assert.equal(shouldReplanOnStall(8.0,6.8,.95),false);
  assert.equal(shouldReplanOnStall(8.0,8.01,.4),false);
+});
+
+test('first-floor guard navigation reaches the real front-side switch without entering the cabinet',()=>{
+ const from={x:FIRST_GUARD_HOME[0],z:FIRST_GUARD_HOME[1]};
+ const target={x:BREAKER_APPROACH[0],z:BREAKER_APPROACH[1]};
+ const path=buildRoute(from,target,false);
+ assert.ok(path.length>0,'AI must be able to walk from its patrol to the switch');
+ for(const waypoint of path)assert.equal(terrainBlocked(waypoint.x,waypoint.z,false),false);
+ const end=path.at(-1);
+ assert.ok(Math.hypot(end.x-target.x,end.z-target.z)<2.25,
+  'final navigational cell must be close enough to capture a stationary operator');
 });
