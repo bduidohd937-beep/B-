@@ -3,11 +3,12 @@ import { Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FLOOR_SIZE,LEAK,SERVICE_GRATE } from './garageLayout.js';
+import { VEHICLES } from './vehiclePuzzle.js';
 
 const COLORS=['#36444a','#494d4b','#394842','#4b4b46'];
-const Car=React.memo(function Car({x,z,index}){
+const Car=React.memo(function Car({x,z,index,identified=null,solved=false}){
  return <group position={[x,0,z]} rotation={[0,index%3===0?.06:index%3===1?-.04:0,0]}>
-   <mesh position={[0,.6,0]}><boxGeometry args={[2.45,.95,4.45]}/><meshStandardMaterial color={COLORS[index%COLORS.length]} roughness={.65} metalness={.17}/></mesh>
+   <mesh position={[0,.6,0]}><boxGeometry args={[2.45,.95,4.45]}/><meshStandardMaterial color={identified?.correct?"#344b5b":identified?.id==="d09"?"#7b7f80":identified?.id==="c13"?"#343939":COLORS[index%COLORS.length]} roughness={.65} metalness={.17}/></mesh>
    <mesh position={[0,1.22,-.15]}><boxGeometry args={[2.14,.57,2.48]}/><meshStandardMaterial color="#1c292e" roughness={.32} metalness={.17}/></mesh>
    {[-1,1].flatMap(side=>[-1.48,1.48].map(v=><mesh key={side+':'+v} position={[side*1.23,.34,v]} rotation={[0,0,Math.PI/2]}>
      <cylinderGeometry args={[.33,.33,.16,9]}/><meshStandardMaterial color="#111719" roughness={.99}/>
@@ -15,6 +16,17 @@ const Car=React.memo(function Car({x,z,index}){
    {[-.75,.75].map(offset=><mesh key={offset} position={[offset,.72,2.23]}>
      <boxGeometry args={[.38,.19,.04]}/><meshBasicMaterial color="#6b302e"/>
    </mesh>)}
+   {identified&&<group position={[0,.79,2.285]}>
+      <mesh><boxGeometry args={[.81,.27,.035]}/><meshStandardMaterial color="#c0c5bd" roughness={.62}/></mesh>
+      <Text position={[0,0,.025]} fontSize={.205} color="#252d2f" anchorX="center" anchorY="middle">{identified.plate}</Text>
+   </group>}
+   {identified?.correct&&solved&&<group>
+     <mesh position={[0,1.34,2.31]} rotation={[-.45,0,0]}>
+       <boxGeometry args={[2.2,.095,1.03]}/><meshStandardMaterial color="#344b5b" metalness={.17} roughness={.6}/>
+     </mesh>
+     <mesh position={[0,1.03,2.34]}><boxGeometry args={[1.65,.18,.045]}/><meshStandardMaterial color="#111a1e" roughness={.93}/></mesh>
+     <Text position={[0,1.04,2.375]} fontSize={.115} color="#e1d4a8">SERVICE AUTH · 317</Text>
+   </group>}
  </group>;
 });
 function RepeatedColumns(){
@@ -91,7 +103,7 @@ function MaintenanceSurfaces(){
  </group>;
 }
 
-function GarageWorld({altered=false,flicker=false,canPosition=null}){
+function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehicleSolved=false}){
  return <group>
    <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
      <planeGeometry args={FLOOR_SIZE}/><meshStandardMaterial color="#303738" roughness={.98}/>
@@ -102,7 +114,10 @@ function GarageWorld({altered=false,flicker=false,canPosition=null}){
    </mesh>
    {/* The basement has NO visible perimeter walls. Fog hides edges; repeated rows imply continuation. */}
    <RepeatedColumns/>
-   {PARKED_CARS.map(([x,z],i)=><Car key={i} x={x} z={z} index={i}/>)}
+   {PARKED_CARS.map(([x,z],i)=>{
+     const identified=floor===2?VEHICLES.find(v=>v.position[0]===x&&v.position[1]===z):null;
+     return <Car key={i} x={x} z={z} index={i} identified={identified} solved={vehicleSolved}/>;
+   })}
    <CeilingFixtures flicker={flicker}/>
    {Array.from({length:36},(_,i)=><mesh key={i} position={[i%2===0?-19:19,.017,-66+i*3.8]} rotation={[-Math.PI/2,0,0]}>
      <planeGeometry args={[.095,2.7]}/><meshBasicMaterial color="#8b8b71" transparent opacity={.54}/>
