@@ -219,3 +219,41 @@
 @media(max-width:760px){.siren-indicator{top:52px;padding:7px 11px}
  .siren-indicator strong{font-size:11px}.siren-indicator span{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.siren-indicator{animation:none!important}}
+
+/* B∞ V0.11.1 — industrial alarm atmosphere without rapid brightness strobing. */
+.emergency-dread{position:fixed;inset:0;z-index:2;overflow:hidden;pointer-events:none}
+.emergency-dread__blackout{position:absolute;inset:0;background:#030307;opacity:0;
+  animation:breaker-blackout .85s ease-out 1 both}
+.emergency-dread__red{position:absolute;inset:0;background:
+  radial-gradient(ellipse at center,rgba(127,18,23,.04) 18%,rgba(156,13,36,.26) 70%,rgba(89,4,15,.54) 100%);
+  animation:alarm-red-breath 2.5s ease-in-out infinite;opacity:.65}
+@keyframes breaker-blackout{
+  0%{opacity:.02}17%{opacity:.92}42%{opacity:.85}100%{opacity:0}
+}
+@keyframes alarm-red-breath{
+  0%,100%{opacity:.42}50%{opacity:.89}
+}
+.emergency-dread--reduced .emergency-dread__blackout{display:none}
+.emergency-dread--reduced .emergency-dread__red{animation:none;opacity:.34}
+.siren-indicator{min-width:min(340px,88vw);top:70px;padding:12px 18px;
+  border-left-width:5px;background:linear-gradient(155deg,#390a16fa,#160a12ee);
+  box-shadow:0 10px 46px #000c,0 0 23px #d63c4844;line-height:1.5}
+.siren-indicator strong{font-size:14px;letter-spacing:.145em}
+.siren-indicator small{display:block;margin-top:3px;font-size:10px;color:#d08d89;letter-spacing:.035em}
+.siren-volume-control{flex-basis:100%;display:flex;align-items:center;gap:11px;
+  margin:8px 0 0;padding:8px 4px;font-size:12px;color:#dbe2d9;justify-content:space-between}
+.siren-volume-control>span{min-width:153px;text-align:left}
+.siren-volume-control input{flex:1;min-width:90px;accent-color:#b9615d;cursor:pointer}
+@media(max-width:760px){
+ .siren-indicator{top:55px;padding:8px 12px}
+ .siren-indicator strong{font-size:12px}
+ .siren-indicator small{font-size:9px}
+}
+@media(max-width:465px){
+ .siren-volume-control{flex-wrap:wrap;gap:6px}
+ .siren-volume-control input{width:100%;flex-basis:100%}
+}
+@media(prefers-reduced-motion:reduce){
+ .emergency-dread__blackout{display:none!important}
+ .emergency-dread__red{animation:none!important;opacity:.34!important}
+}
