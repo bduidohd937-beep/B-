@@ -4,7 +4,7 @@ import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { panelPosition, GATE_Z, GATE_HALF_OPENING, POWER_PANEL } from './puzzle.js';
 import { GARAGE_HEIGHT } from './garageLayout.js';
-import { SECURITY_KEY_READER,gateLiftRatio } from './exitAuthorization.js';
+import { SECURITY_KEY_READER,gateLiftRatio,SHUTTER_FULL_LIFT } from './exitAuthorization.js';
 
 // The security partition is an IN-LEVEL maintenance divider, not an outer boundary.
 // Its collision agrees with the shared world rule even across the wide foggy garage.
@@ -16,8 +16,8 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
   useFrame((_, dt) => {
     if (!shutter.current) return;
     const target=second
-      ?gateLiftRatio(authentication)*(GARAGE_HEIGHT+.65)
-      :(powered?GARAGE_HEIGHT+.65:0);
+      ?gateLiftRatio(authentication)*SHUTTER_FULL_LIFT
+      :(powered?SHUTTER_FULL_LIFT:0);
     openHeight.current = THREE.MathUtils.damp(openHeight.current, target, second?11:2.4, Math.min(dt, .06));
     shutter.current.position.y = openHeight.current;
   });
