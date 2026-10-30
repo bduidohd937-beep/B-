@@ -7,11 +7,11 @@ import {CCTV_STATION,reviewCctv,initialVehiclePuzzle,examineVehicle,vehicleGateO
 const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8');
 const escape=readFileSync(new URL('../src/EscapePuzzle.jsx',import.meta.url),'utf8');
 const audio=readFileSync(new URL('../src/sound.js',import.meta.url),'utf8');
-test('UI: full CCTV is limited to console proximity, while J accesses only note',()=>{
+test('UI: physical CCTV auto closes at distance, J remote note removed',()=>{
  assert.match(app,/!canReadCctv\(camera\.position\.x,camera\.position\.z,CCTV_STATION\)/);
  assert.match(app,/onCctvOutOfRange\(\)/);
- assert.match(app,/setMemoOpen\(v=>!v\)/);
- assert.match(app,/<aside className="cctv-pocket-note"/);
+ assert.doesNotMatch(app,/setMemoOpen|KeyJ/);
+ assert.doesNotMatch(app,/cctv-pocket-note/);
  assert.equal(canReadCctv(-18,15,CCTV_STATION),false);
 });
 test('UI: second-stage access uses a real key reader with sustained hold',()=>{

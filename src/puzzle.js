@@ -20,6 +20,26 @@ export function canUsePanel(x, z, floor = 1) {
   return distance2D(x, z, position[0], position[1]) <= 2.25;
 }
 
+// Real front-facing breaker interaction. The physical switches face +Z
+// (see EscapePuzzle meshes at z+.57). Distance ALONE is not enough:
+// behind the panel, looking sideways or looking away must never show E.
+export const PANEL_FRONT_OFFSET=.6;
+export const PANEL_FACING_DOT=.73;
+export function canOperatePanel(eye,looking,floor=1){
+  if(!eye||!looking||eye.length<3||looking.length<3)return false;
+  const [x,y,z]=eye;
+  const [px,pz]=panelPosition(floor);
+  if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z))return false;
+  if(!canUsePanel(x,z,floor)||z<pz+.64||Math.abs(x-px)>1.65)return false;
+  const tx=px,ty=1.1,tz=pz+PANEL_FRONT_OFFSET;
+  const dx=tx-x,dy=ty-y,dz=tz-z;
+  const len=Math.hypot(dx,dy,dz);
+  const lookLen=Math.hypot(looking[0],looking[1],looking[2]);
+  if(len<.01||lookLen<.01||!Number.isFinite(lookLen))return false;
+  const dot=(dx*looking[0]+dy*looking[1]+dz*looking[2])/(len*lookLen);
+  return dot>=PANEL_FACING_DOT;
+}
+
 export function gateIsPowered(floor, firstPowered, secondPowered) {
   return floor === SECOND_FLOOR ? Boolean(secondPowered) : Boolean(firstPowered);
 }
@@ -39,13 +59,8 @@ export function gateBlocksPlayer(x, z, powered) {
   return Math.abs(x) >= GATE_HALF_OPENING || !powered;
 }
 
-export function objectiveText(powered, floor = 1) {
-  if (floor === SECOND_FLOOR) {
-    return powered
-      ? '방송 복구 완료. 그러나 같은 B2가 반복된다. 열린 셔터 뒤를 확인하라.'
-      : 'B2층으로 돌아왔다. 오른쪽 벽의 비상방송 재설정 장치를 찾아라.';
-  }
-  return powered
-    ? '전력 복구. 중앙 비상문이 열렸다. 통로 끝으로 이동하라.'
-    : '비상문 전력 차단. 좌측 벽의 적색 비상 배전반을 찾아 전원을 복구하라.';
+export function objectiveText(powered,floor=1){
+  if(floor===SECOND_FLOOR)return powered
+    ?'출입 통제 해제.' : '보안 기록이 손상되었다.';
+  return powered?'전력 신호 복구.' : '비상 전력 차단.';
 }

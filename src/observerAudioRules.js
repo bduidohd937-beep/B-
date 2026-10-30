@@ -1,8 +1,8 @@
 // B∞ Observer (motion-only entity): audio feedback for PLAYER, not AI noise.
 // The Listener should never investigate a UI/monster sound effect.
 export const OBSERVER_AUDIO_RANGE=49;
-export const OBSERVER_AUDIO_MAX_GAIN=.25;
-export const OBSERVER_STEP_INTERVAL=.44;
+export const OBSERVER_AUDIO_MAX_GAIN=.23;
+export const OBSERVER_STEP_INTERVAL=.52;
 
 export function observerSoundCue(previous,next,active=true){
  if(!active)return null;
@@ -22,7 +22,8 @@ export function observerSoundProfile(mode,distance,suspicion=0){
  return {
    gain:Math.min(OBSERVER_AUDIO_MAX_GAIN,Math.max(0,target)),
    steps:chasing&&d<OBSERVER_AUDIO_RANGE,
-   lowpass:chasing?680+1100*close:420+680*close,
+   // Low motor resonance, not mosquito-like 1kHz+ buzzing.
+   lowpass:chasing?290+400*close:190+230*close,
    stepInterval:OBSERVER_STEP_INTERVAL
  };
 }

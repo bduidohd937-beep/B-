@@ -51,13 +51,13 @@ test('correct 317 car supplies KEY but cannot open second-floor gate automatical
  assert.equal(vehicleGateOpen(2,false,success.state,{phase:'opening',elapsed:3}),true);
  assert.equal(vehicleGateOpen(1,false,success.state),false);
  assert.equal(vehicleGateOpen(1,true,initialVehiclePuzzle()),true);
- assert.match(carObjective(success.state),/보안 단말기/);
+ assert.match(carObjective(success.state),/출입 통제 중/);
  assert.equal(examineVehicle(success.state,'c13').outcome,'already-solved');
 });
-test('objective leads to CCTV, then vehicle, then escape',()=>{
+test('minimal objective never reveals car identity or route',()=>{
  const initial=initialVehiclePuzzle();
- assert.match(carObjective(initial),/CCTV/);
+ assert.match(carObjective(initial),/경비 기록 오류/);
  const read=reviewCctv(initial);
- assert.match(carObjective(read),/번호/);
+ assert.match(carObjective(read),/미등록 차량/);
  assert.equal(examineVehicle(read,'not-a-real-car').outcome,'invalid');
 });

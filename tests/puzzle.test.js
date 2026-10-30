@@ -44,5 +44,5 @@ test('gate proximity only appears close to the door', () => {
 
 test('objective changes only after the power is online', () => {
   assert.match(objectiveText(false), /전력 차단/);
-  assert.match(objectiveText(true), /전력 복구/);
+  assert.match(objectiveText(true), /전력 신호 복구/);
 });

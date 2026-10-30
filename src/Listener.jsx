@@ -12,7 +12,8 @@ import {buildRoute} from './navigationGrid.js';
 import {passesParkedCar} from './chaseAudioRules.js';
 import {
   FIRST_GUARD_HOME,FIRST_GUARD_PATROL,FIRST_GUARD_WALK_SPEED,
-  FIRST_GUARD_ROUTE_REPLAN_SECONDS,nextFirstGuardWaypoint
+  FIRST_GUARD_ROUTE_REPLAN_SECONDS,FIRST_GUARD_LISTEN_SECONDS,
+  FIRST_GUARD_STUCK_SECONDS,nextFirstGuardWaypoint,chooseClearStep
 } from './firstFloorThreat.js';
 
 // Loop 01 actively guards the breaker instead of standing 34m across the map.
@@ -71,6 +72,8 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
   const route=useRef([]);
   const routeTime=useRef(0);
   const patrolIndex=useRef(1);
+  const watchTime=useRef(0);
+  const stuckTime=useRef(0);
   const soundClock=useRef(0);
   const rushTime=useRef(0);
   const listenerLocation=useRef(new THREE.Vector3());
@@ -81,6 +84,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     state.current=floor===1?'patrol':'idle';
     target.current.copy(home);
     patrolIndex.current=1;
+    watchTime.current=0;stuckTime.current=0;
     searchTime.current=0;
     cooldown.current=0;
     excitement.current=0;
@@ -107,6 +111,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       }
       state.current='idle';pos.copy(home);route.current=[];routeTime.current=0;
       patrolIndex.current=1;
+      watchTime.current=0;stuckTime.current=0;
       excitement.current=0;currentSpeed.current=1.2;rushTime.current=0;
       modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
@@ -117,6 +122,13 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     cooldown.current=Math.max(0,cooldown.current-dt);
     if(floor===1&&state.current==='idle'){
       state.current='patrol';routeTime.current=0;
+    }
+    if(state.current==='watch'){
+      watchTime.current=Math.max(0,watchTime.current-dt);
+      if(watchTime.current===0){
+        state.current='patrol';
+        routeTime.current=0;
+      }
     }
     // The log is capped at 32 entries. Iterate it in-place to avoid creating
     // a new filtered array every single renderer frame.
@@ -186,16 +198,18 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       const speed=currentSpeed.current;
       const dx=(waypoint.x-pos.x)/range*dt*speed;
       const dz=(waypoint.z-pos.z)/range*dt*speed;
-      if(!obstructed(pos.x+dx,pos.z+dz,powered)){pos.x+=dx;pos.z+=dz;}
-      else {
-        // Steer around parked cars and columns without passing through them.
-        const side=state.current==='investigate'?-1:1;
-        const sx=-dz*side,sz=dx*side;
-        if(!obstructed(pos.x+sx,pos.z+sz,powered)){pos.x+=sx;pos.z+=sz;}
-        else if(!obstructed(pos.x+dx,pos.z,powered)){pos.x+=dx;}
-        else if(!obstructed(pos.x,pos.z+dz,powered)){pos.z+=dz;}
-      }
-      group.current.rotation.y=Math.atan2(destination.x-pos.x,destination.z-pos.z);
+      const [stepX,stepZ]=chooseClearStep(pos.x,pos.z,dx,dz,
+        (x,z)=>obstructed(x,z,powered));
+      pos.x+=stepX;pos.z+=stepZ;
+      // If the obstacle-grid path is stale, recalculate to a FREE cell
+      // instead of endlessly leaning into a car, column or breaker cabinet.
+      if(Math.hypot(stepX,stepZ)<.0002){
+        stuckTime.current+=dt;
+        if(stuckTime.current>=FIRST_GUARD_STUCK_SECONDS){
+          route.current=[];routeTime.current=0;stuckTime.current=0;
+        }
+      }else stuckTime.current=0;
+      group.current.rotation.y=Math.atan2(waypoint.x-pos.x,waypoint.z-pos.z);
     }
     if(goalRange<1.15&&state.current==='investigate'){state.current='search';searchTime.current=0;}
     else if(goalRange<1.15&&state.current==='return'){
@@ -207,6 +221,12 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       if(next!==patrolIndex.current){
         patrolIndex.current=next;
         route.current=[];routeTime.current=0;
+        // The guard listens instead of endlessly circling the only switch.
+        // Noise still interrupts this pause and initiates a real investigation.
+        if(floor===1){
+          watchTime.current=FIRST_GUARD_LISTEN_SECONDS;
+          state.current='watch';
+        }
       }
     }
     if(state.current==='search'){

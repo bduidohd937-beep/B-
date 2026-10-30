@@ -75,12 +75,13 @@ export function reviewCctv(state){
  return {...(state||initialVehiclePuzzle()),reviewed:true};
 }
 export function carObjective(state,authentication){
- if(!state?.reviewed)return '이번 B2의 방송 배전반은 반응하지 않는다. 경비용 CCTV 관제대를 찾아 기록을 확인하라.';
- if(!state?.solved)return 'CCTV 기록: C-17 / 파란 세단 / 번호 끝자리 17. 주차 차량의 번호판을 살펴라.';
- if(!authentication||authentication?.phase==='locked')return '317번 차량에서 출입키를 찾았다. 중앙 서비스 셔터 옆 보안 단말기에 키를 삽입하라.';
- if(authentication?.phase==='authenticating')return '키를 돌려 인증하는 중이다. E를 계속 누르고 있어야 한다.';
- if(authentication?.phase==='opening')return '비상 사이렌 작동! 셔터가 올라간다. 숨었다가 통과하라.';
- return '출입구가 열렸다. 청음자와 관조자를 피해 셔터를 통과하라.';
+ // Do not provide a GPS-like walkthrough of the CCTV -> car -> gate puzzle.
+ // Players must investigate the actual recording, plates and physical reader.
+ if(authentication?.phase==='open')return '출입 보안 해제.';
+ if(authentication?.phase==='opening')return '보안 회로 작동 중.';
+ if(!state?.reviewed)return '경비 기록 오류.';
+ if(!state?.solved)return '미등록 차량.';
+ return '출입 통제 중.';
 }
 export function vehicleGateOpen(floor,firstPowered,state,authentication){
  return floor===2?Boolean(state?.solved)&&gatePassable(authentication):Boolean(firstPowered);

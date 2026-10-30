@@ -1,3 +1,4 @@
+import {shoeFootstep} from './footstepFoley.js';
 import { createSpatialCreatureAudio } from './spatialAudio.js';
 import { createSpatialObserverAudio } from './observerSpatialAudio.js';
 import { createVitalsAudio } from './vitalsAudio.js';
@@ -91,15 +92,36 @@ export function createSoundEngine() {
     source.onended = () => { source.disconnect(); gain.disconnect(); };
   }
 
-  function step(mode = 'walk') {
-    const crouching = mode === 'crouch';
-    const running = mode === 'sprint';
-    // Mid-frequency concrete scrape + low shoe impact: audible without metal or water.
-    noise(crouching ? 620 : running ? 1020 : 830,
-      running ? .17 : crouching ? .095 : .135,
-      running ? .68 : crouching ? .12 : .42);
-    tone(running ? 125 : 96, running ? .15 : .12,
-      running ? .40 : crouching ? .075 : .25);
+  let shoeFootIndex=0;
+  function step(mode='walk',surface='concrete'){
+    if(!enabled||ctx.state==='closed')return;
+    const f=shoeFootstep(mode,surface,shoeFootIndex++);
+    const t=ctx.currentTime;
+    // Two physical phases: sole landing, then short dry skid/release.
+    // Neither phase uses an oscillator: remove the 96/125Hz "puk-puk"
+    // sine-like low tone that made footsteps resemble repeated impacts.
+    const contact=(freq,type,length,volume,delay)=>{
+      const source=ctx.createBufferSource();
+      source.buffer=noiseBuffer;
+      const filter=ctx.createBiquadFilter();
+      filter.type=type;
+      filter.frequency.value=freq;
+      filter.Q.value=type==='bandpass'?.78:.56;
+      const gain=ctx.createGain();
+      const start=t+delay;
+      const peak=Math.max(.0002,volume);
+      gain.gain.setValueAtTime(.0001,start);
+      gain.gain.exponentialRampToValueAtTime(peak,start+.011);
+      gain.gain.exponentialRampToValueAtTime(.0001,start+length);
+      source.connect(filter);filter.connect(gain);gain.connect(master);
+      source.start(start,Math.random()*.65);
+      source.stop(start+length+.012);
+      source.onended=()=>{
+        try{source.disconnect();filter.disconnect();gain.disconnect();}catch{}
+      };
+    };
+    contact(f.heelHz,f.heelType,f.heelDuration,f.heelVolume,0);
+    contact(f.dragHz,f.dragType,f.dragDuration,f.dragVolume,f.dragDelay);
   }
 
   function jump() {
