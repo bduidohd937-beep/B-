@@ -85,6 +85,7 @@ export default function ListenerModel({ motionRef }) {
   const leftLeg=useRef();
   const rightLeg=useRef();
   const last=useRef(0);
+  const attackTime=useRef(0);
   const offset=useMemo(()=>Math.random()*6.28,[]);
 
   useFrame((state,rawDt)=>{
@@ -98,24 +99,34 @@ export default function ListenerModel({ motionRef }) {
     const swing=movement?Math.min(1,speed/4):.11;
     const alert=motion.state==='investigate';
     const listening=motion.state==='listen'||motion.state==='search';
+    const attacking=motion.state==='attack';
+    attackTime.current=attacking?Math.min(1.6,attackTime.current+dt):0;
+    const lunge=attacking?THREE.MathUtils.smoothstep(attackTime.current,0,.32):0;
 
     if(torso.current){
-      torso.current.rotation.x=.24 + Math.sin(t*2.4+offset)*.042 + (alert?.07:0);
-      torso.current.rotation.z=Math.sin(t*1.9)*.055 + (alert?Math.sin(gait)*.058:0);
-      torso.current.position.y=1.79 + Math.sin(t*2.7)*.025 + Math.abs(Math.sin(gait))*.055*swing;
+      torso.current.rotation.x=.24 + Math.sin(t*2.4+offset)*.042 + (alert?.07:0) + lunge*.36;
+      torso.current.rotation.z=Math.sin(t*1.9)*.055 + (alert?Math.sin(gait)*.058:0) + (attacking?Math.sin(attackTime.current*22)*.08:0);
+      torso.current.position.y=1.79 + Math.sin(t*2.7)*.025 + Math.abs(Math.sin(gait))*.055*swing - lunge*.24;
+      torso.current.position.z=lunge*.38;
     }
     if(head.current){
-      const aim=listening?Math.sin(t*2.8)*.86:alert?Math.sin(gait*.32)*.18:Math.sin(t*.72)*.17;
+      const aim=attacking?Math.sin(attackTime.current*17)*.08:listening?Math.sin(t*2.8)*.86:alert?Math.sin(gait*.32)*.18:Math.sin(t*.72)*.17;
       head.current.rotation.y=THREE.MathUtils.damp(head.current.rotation.y,aim,listening?6:2,dt);
-      head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,listening ? .28*Math.sin(t*1.7) : -.12+Math.sin(t*.8)*.08,3.2,dt);
-      head.current.rotation.x=THREE.MathUtils.damp(head.current.rotation.x,alert?-.31:.22,2.8,dt);
+      head.current.rotation.z=THREE.MathUtils.damp(head.current.rotation.z,attacking?.11*Math.sin(attackTime.current*24):listening?.28*Math.sin(t*1.7):-.12+Math.sin(t*.8)*.08,3.2,dt);
+      head.current.rotation.x=THREE.MathUtils.damp(head.current.rotation.x,attacking?-.55:alert?-.31:.22,4.6,dt);
     }
     if(mouth.current){
-      const opening=alert ? .45+Math.abs(Math.sin(t*7.3))*.42 : .14+Math.abs(Math.sin(t*2.0))*.22;
+      const opening=attacking?1.5+Math.sin(attackTime.current*22)*.15:alert ? .45+Math.abs(Math.sin(t*7.3))*.42 : .14+Math.abs(Math.sin(t*2.0))*.22;
       mouth.current.scale.y=THREE.MathUtils.damp(mouth.current.scale.y,opening,8,dt);
     }
-    if(leftArm.current)leftArm.current.rotation.x=.12+Math.sin(gait)*.62*swing;
-    if(rightArm.current)rightArm.current.rotation.x=.12-Math.sin(gait)*.62*swing;
+    if(leftArm.current){
+      leftArm.current.rotation.x=.12+Math.sin(gait)*.62*swing-lunge*1.47;
+      leftArm.current.rotation.z=-.18+lunge*.46;
+    }
+    if(rightArm.current){
+      rightArm.current.rotation.x=.12-Math.sin(gait)*.62*swing-lunge*1.51;
+      rightArm.current.rotation.z=.18-lunge*.46;
+    }
     if(leftLeg.current)leftLeg.current.rotation.x=-Math.sin(gait)*.43*swing;
     if(rightLeg.current)rightLeg.current.rotation.x=Math.sin(gait)*.43*swing;
   });
