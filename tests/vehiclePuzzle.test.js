@@ -42,15 +42,16 @@ test('wrong vehicle after CCTV raises a real alarm, cannot unlock gate',()=>{
  assert.equal(vehicleGateOpen(2,true,wrong.state),false);
  assert.ok(CAR_ALARM_NOISE>90);
 });
-test('correct 317 car opens new second-floor route without using power breaker',()=>{
+test('correct 317 car supplies KEY but cannot open second-floor gate automatically',()=>{
  const reviewed=reviewCctv(initialVehiclePuzzle());
  const success=examineVehicle(reviewed,'c17');
  assert.equal(success.outcome,'transponder');
  assert.equal(success.state.solved,true);
- assert.equal(vehicleGateOpen(2,false,success.state),true);
+ assert.equal(vehicleGateOpen(2,false,success.state),false);
+ assert.equal(vehicleGateOpen(2,false,success.state,{phase:'opening',elapsed:3}),true);
  assert.equal(vehicleGateOpen(1,false,success.state),false);
  assert.equal(vehicleGateOpen(1,true,initialVehiclePuzzle()),true);
- assert.match(carObjective(success.state),/셔터/);
+ assert.match(carObjective(success.state),/보안 단말기/);
  assert.equal(examineVehicle(success.state,'c13').outcome,'already-solved');
 });
 test('objective leads to CCTV, then vehicle, then escape',()=>{

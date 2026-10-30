@@ -3,6 +3,7 @@ import {useFrame} from '@react-three/fiber';
 import {panelPosition,GATE_Z} from './puzzle.js';
 import {GARAGE_HEIGHT} from './garageLayout.js';
 import {sirenPulse} from './alarmRules.js';
+import {SECURITY_KEY_READER} from './exitAuthorization.js';
 
 const locations=[[0,-14],[-15,-25],[15,-25],[0,GATE_Z+.9],[-26,-9],[26,-9]];
 function Beacon({x,z,refIndex,lights,reducedEffects}){
@@ -14,7 +15,7 @@ function Beacon({x,z,refIndex,lights,reducedEffects}){
 }
 export default React.memo(function EmergencyAlarm({active=false,floor=1,reducedEffects=false}){
  const lights=useRef([]),clock=useRef(0),flash=useRef();
- const panel=panelPosition(floor);
+ const panel=floor===2?[SECURITY_KEY_READER[0],SECURITY_KEY_READER[2]]:panelPosition(floor);
  useFrame((_,dt)=>{
    if(!active){clock.current=0;return;}
    clock.current+=Math.min(.06,dt);

@@ -3,6 +3,11 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import {
+ canReadCctv,canUseKeyReader,freshGateAuthentication,
+ advanceGateAuthentication,gateLiftRatio,keyHoldProgress,
+ SECURITY_KEY_READER,EXIT_ALARM_SECONDS,EXIT_ALARM_LOUDNESS,SHUTTER_RAISE_SECONDS
+} from './exitAuthorization.js';
 import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
 import { tickFlashlight,rechargeFlashlight,clampCharge,lowBatteryBrightness,FLASHLIGHT_CLICK_NOISE } from './flashlightRules.js';
 import { cameraMotion } from './cameraMotion.js';
@@ -18,7 +23,7 @@ import DistortedB2 from './DistortedB2.jsx';
 import GarageWorld from './GarageWorld.jsx';
 import VehicleMysteryWorld from './VehicleMysteryWorld.jsx';
 import { initialVehiclePuzzle,reviewCctv,examineVehicle,carObjective,
-  findMysteryInteraction,vehicleGateOpen,CAMERA_LOG,VEHICLES,
+  findMysteryInteraction,vehicleGateOpen,CAMERA_LOG,CCTV_STATION,VEHICLES,
   CAR_ALARM_NOISE,CAR_ALARM_SECONDS,CCTV_READ_NOISE,CORRECT_TRUNK_NOISE
 } from './vehiclePuzzle.js';
 import EmergencyAlarm from './EmergencyAlarm.jsx';
@@ -56,7 +61,7 @@ function Flashlight({enabled,charge=100,reducedEffects=false}){
     decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
   const { camera } = useThree();
   const keys = useRef({});
   const groundPickupsRef=useRef(pickupItems);
@@ -90,6 +95,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   const nearReported=useRef(false);
   const proximityReported=useRef(null);
   const panelHeld=useRef(false);
+  const gateAuthRef=useRef(freshGateAuthentication());
+  const authClock=useRef(0);
+  const screenOpenRef=useRef(cctvScreenOpen);
+  screenOpenRef.current=cctvScreenOpen;
+  const cctvRangeReported=useRef(false);
   const panelTime=useRef(0);
   const panelUpdate=useRef(0);
   const poweredRef=useRef(powered);
@@ -120,9 +130,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
+    gateAuthRef.current=freshGateAuthentication();authClock.current=0;
+    onGateProgress(gateAuthRef.current);
     proximityReported.current=null;
     onPanelProgress(0);
-  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals,onBatteryReport]);
+  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals,onBatteryReport,onGateProgress]);
   useEffect(()=>{
     if(!floorSignal)return;
     camera.position.set(...SECOND_FLOOR_START);
@@ -138,8 +150,10 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     proximityReported.current=null;
     keys.current={};
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
+    gateAuthRef.current=freshGateAuthentication();authClock.current=0;
+    onGateProgress(gateAuthRef.current);
     onPanelProgress(0);
-  },[floorSignal,camera,onPanelProgress,onVitals]);
+  },[floorSignal,camera,onPanelProgress,onVitals,onGateProgress]);
   useEffect(()=>{
     if(!boostSignal)return;
     survival.current=applyEnergyDrink(survival.current);
@@ -163,10 +177,14 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         const eye=camera.position.toArray(),looking=look.toArray();
         const nearBreaker=floorRef.current===1&&
           canUsePanel(camera.position.x,camera.position.z,1);
+        const nearKeyReader=floorRef.current===2&&
+          canUseKeyReader(camera.position.x,camera.position.z);
         const mystery=floorRef.current===2
           ?findMysteryInteraction(eye,looking,{floor:2,solved:vehicleSolvedRef.current})
           :null;
-        if(mystery){
+        if(nearKeyReader){
+          // Hold E; the authentication state machine operates in useFrame.
+        }else if(mystery){
           vehicleActionRef.current?.(mystery,eye);
         }else if(!nearBreaker){
           const focused=nearestLookedAtPickup(eye,looking,
@@ -302,6 +320,14 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=floorRef.current===1&&canUsePanel(camera.position.x,camera.position.z,1);
+    const nearKeyReader=floorRef.current===2&&canUseKeyReader(camera.position.x,camera.position.z);
+    if(floorRef.current===2&&screenOpenRef.current&&
+       !canReadCctv(camera.position.x,camera.position.z,CCTV_STATION)&&!cctvRangeReported.current){
+       cctvRangeReported.current=true;
+       onCctvOutOfRange();
+    }else if(!screenOpenRef.current){
+       cctvRangeReported.current=false;
+    }
     const mystery=floorRef.current===2?findMysteryInteraction(
       camera.position.toArray(),direction.toArray(),
       {floor:2,solved:vehicleSolvedRef.current}
@@ -310,7 +336,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       camera.position.toArray(),direction.toArray(),groundPickupsRef.current,
       canRef.current?null:groundCanRef.current
     );
-    const nextProximity=mystery?.kind==='cctv'?'cctv':
+    const nextProximity=nearKeyReader?'key-reader':
+      mystery?.kind==='cctv'?'cctv':
       mystery?.kind==='vehicle'?'vehicle:'+mystery.id:
       nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':
       focused?.kind==='can'?'can':focused?.kind==='item'?'item:'+focused.type:null;
@@ -334,6 +361,22 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       }
     }else if(panelHeld.current){
       panelHeld.current=false;panelTime.current=0;onPanelProgress(0);
+    }
+    // Keyed interlock runs during active gameplay only. Releasing E during
+    // insertion cancels that attempt; once the siren starts the shutter
+    // continues raising even after the player hides or flees.
+    if(floorRef.current===2){
+      const {state,event}=advanceGateAuthentication(gateAuthRef.current,{
+        dt,active,hasKey:vehicleSolvedRef.current,near:nearKeyReader,
+        holding:Boolean(keys.current.KeyE)
+      });
+      gateAuthRef.current=state;
+      authClock.current+=dt;
+      if(event)onGateEvent(event);
+      if(event||authClock.current>=.12){
+        authClock.current=0;
+        if(event||state.phase!=='locked')onGateProgress(state);
+      }
     }
     const footstep=tickFootsteps(stepMeter.current,{
       distance:movedDistance,
@@ -366,7 +409,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction }) {
+function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals, pickupItems, deployed, onPickupGear, onUseGear, onDropGear, selectedType, onSelectSlot, onGadgetExpired, onObserverState, boostSignal, alarmActive, reducedEffects, flashlightCharge, onBatteryReport, cameraShake, rechargeSignal,vehicleState,carAlarm,onVehicleAction,gateAuth,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -389,13 +432,13 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
       alarmId={carAlarm?.id||null} reducedEffects={reducedEffects}/>
     <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
-    <EscapePuzzle key={floor} powered={powered} floor={floor}/>
+    <EscapePuzzle key={floor} powered={powered} floor={floor} hasKey={vehicleState.solved} authentication={gateAuth}/>
     <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
     {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals} pickupItems={pickupItems} onPickupGear={onPickupGear} selectedType={selectedType} onSelectSlot={onSelectSlot} onUseGear={onUseGear} onDropGear={onDropGear} boostSignal={boostSignal} rechargeSignal={rechargeSignal} onVehicleAction={onVehicleAction} vehicleSolved={vehicleState.solved} cctvScreenOpen={cctvScreenOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent} onBatteryReport={onBatteryReport} cameraShake={cameraShake} reducedEffects={reducedEffects}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -471,6 +514,13 @@ export default function App(){
   const vehicleStateRef=useRef(vehicleState);
   vehicleStateRef.current=vehicleState;
   const [evidenceOpen,setEvidenceOpen]=useState(false);
+  const [memoOpen,setMemoOpen]=useState(false);
+  const onCctvOutOfRange=useCallback(()=>setEvidenceOpen(false),[]);
+  const [gateAuth,setGateAuth]=useState(freshGateAuthentication);
+  const onGateProgress=useCallback(state=>setGateAuth(old=>
+    old.phase===state.phase&&Math.abs(old.hold-state.hold)<.01&&
+    Math.abs(old.elapsed-state.elapsed)<.01?old:{...state}
+  ),[]);
   const [carAlarm,setCarAlarm]=useState(null);
   const lastCarAlarmRef=useRef(-Infinity);
   useEffect(()=>{
@@ -480,13 +530,13 @@ export default function App(){
     return ()=>clearTimeout(timer);
   },[carAlarm]);
   useEffect(()=>{
-    if(!evidenceOpen)return;
-    const timer=setTimeout(()=>setEvidenceOpen(false),12000);
+    if(!memoOpen)return;
+    const timer=setTimeout(()=>setMemoOpen(false),9000);
     return ()=>clearTimeout(timer);
-  },[evidenceOpen]);
-  // First loop = red power breaker. Second loop = a car RFID transponder;
-  // there is no mandatory second breaker or button for the escape.
-  const gatePowered=vehicleGateOpen(floor,powered,vehicleState);
+  },[memoOpen]);
+  // The recovered vehicle key is NOT a remote door opener.
+  // The second gate only becomes passable once the physical shutter rises.
+  const gatePowered=vehicleGateOpen(floor,powered,vehicleState,gateAuth);
   const [panelProgress,setPanelProgress]=useState(0);
   const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
@@ -595,8 +645,9 @@ export default function App(){
       vehicleStateRef.current=next;
       setVehicleState(next);
       setEvidenceOpen(true);
+      setMemoOpen(false);
       onNoiseRef.current?.({type:'cctv',loudness:CCTV_READ_NOISE,position});
-      notify('CCTV 기록 확보 · J 기록 다시 보기 · 위험 중에도 화면을 닫을 수 있다');
+      notify('CCTV 확보 · 컴퓨터에서 멀어지면 화면 종료 · J는 간략 메모');
       return true;
     }
     if(interaction.kind!=='vehicle')return false;
@@ -637,10 +688,33 @@ export default function App(){
         type:'vehicle',loudness:CORRECT_TRUNK_NOISE,
         position:[...result.car.inspect]
       });
-      notify('317번 차량 인증기 획득 · 중앙 서비스 셔터 자동 개방');
+      notify('317번 차량 출입키 획득 · 중앙 셔터 오른쪽 보안 단말기로 이동');
       return true;
     }
     return false;
+  },[notify]);
+  const onGateEvent=useCallback(event=>{
+    if(floorRef.current!==2)return;
+    const position=[0,1.7,SECURITY_KEY_READER[2]-1.15];
+    if(event==='insert'){
+      // Tactile key insertion sound, audible only to a close Listener.
+      onNoiseRef.current?.({type:'key-insert',loudness:27,
+        position:[...SECURITY_KEY_READER]});
+    }else if(event==='cancel'){
+      notify('인증 중단 · 키를 다시 삽입하고 E를 유지하라');
+    }else if(event==='alarm'){
+      setEvidenceOpen(false);
+      setMemoOpen(false);
+      setAlarmActive(true);
+      soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
+      soundRef.current?.startShutterMotor?.(
+        [0,1.3,SECURITY_KEY_READER[2]-2.25],SHUTTER_RAISE_SECONDS
+      );
+      onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
+      notify('비상 경보 발동! 셔터가 서서히 열린다 · 숨어서 타이밍을 노려라');
+    }else if(event==='open'){
+      notify('서비스 셔터 완전 개방 · 탈출 통로로 이동');
+    }
   },[notify]);
   const onPanelAttempt=useCallback(()=>{
     const lubricated=silentRef.current===floorRef.current;
@@ -739,8 +813,10 @@ export default function App(){
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
+    setMemoOpen(false);
     setAlarmActive(false);
     soundRef.current?.death?.();
     setCaught(true);
@@ -753,8 +829,11 @@ export default function App(){
     setAlarmActive(false);
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
+    setMemoOpen(false);
+    setGateAuth(freshGateAuthentication());
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
@@ -779,7 +858,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -798,6 +877,7 @@ export default function App(){
     if(event.type==='car-alarm')sound.startCarAlarm?.(event.position,CAR_ALARM_SECONDS);
     if(event.type==='cctv')sound.cctvRead?.();
     if(event.type==='vehicle')sound.vehicleLatch?.();
+    if(event.type==='key-insert')sound.securityKeyClick?.();
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -807,8 +887,11 @@ export default function App(){
       soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.stopSiren?.();
       soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
       setCarAlarm(null);
       setEvidenceOpen(false);
+    setMemoOpen(false);
+    setGateAuth(freshGateAuthentication());
       const clean=initialVehiclePuzzle();
       vehicleStateRef.current=clean;
       setVehicleState(clean);
@@ -841,8 +924,10 @@ export default function App(){
     soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.stopSiren?.();
     soundRef.current?.stopCarAlarm?.();
+    soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
+    setMemoOpen(false);
     setAlarmActive(false);
     setEnding(true);
   },[canCollected]);
@@ -858,7 +943,10 @@ export default function App(){
       if(e.repeat)return;
       if(e.code==='KeyH')setShowControls(v=>!v);
       if(e.code==='KeyJ'&&started&&locked&&!caught&&!ending&&floorRef.current===2){
-        if(vehicleStateRef.current.reviewed)setEvidenceOpen(v=>!v);
+        if(vehicleStateRef.current.reviewed){
+          setEvidenceOpen(false);
+          setMemoOpen(v=>!v);
+        }
         else notify('아직 확보한 CCTV 기록이 없다 · 경비 콘솔을 먼저 찾아라');
         return;
       }
@@ -896,7 +984,7 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} altered={altered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}
       pickupItems={pickupItems} deployed={deployed} onPickupGear={onPickupGear} onUseGear={onUseGear} onDropGear={onDropGear}
       selectedType={selectedType} onSelectSlot={onSelectSlot} onGadgetExpired={onGadgetExpired}
-      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction}/>
+      onObserverState={onObserverState} boostSignal={boostSignal} alarmActive={alarmActive} reducedEffects={reducedEffects} flashlightCharge={flashlightCharge} onBatteryReport={onBatteryReport} cameraShake={cameraShake} rechargeSignal={rechargeSignal} vehicleState={vehicleState} carAlarm={carAlarm} onVehicleAction={onVehicleAction} gateAuth={gateAuth} cctvScreenOpen={evidenceOpen} onCctvOutOfRange={onCctvOutOfRange} onGateProgress={onGateProgress} onGateEvent={onGateEvent}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
     {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
@@ -927,9 +1015,9 @@ export default function App(){
       <div className="reticle" aria-hidden="true"/>
       <section className="mission-card" aria-label="현재 탈출 목표">
         <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'MISSING VEHICLE':'EMERGENCY EXIT'}</span></div>
-        <div className="mission-card__text">{floor===2?carObjective(vehicleState):objectiveText(gatePowered,1)}</div>
+        <div className="mission-card__text">{floor===2?carObjective(vehicleState,gateAuth):objectiveText(gatePowered,1)}</div>
         {floor===2&&<div className="mission-card__rule">
-          {vehicleState.reviewed?<span>CAM-C · C-17 · 번호 끝 17 · <kbd>J</kbd> 기록</span>:
+          {vehicleState.solved?<span>317 인증키 획득 · 우측 출입 단말기 · <kbd>J</kbd> 메모</span>:vehicleState.reviewed?<span>CAM-C · C-17 · 번호 끝 17 · <kbd>J</kbd> 메모</span>:
           <span>귀 달린 놈 = 소리 · 관조자 = 움직임 · CCTV 기록 조사</span>}
         </div>}
       </section>
@@ -946,7 +1034,15 @@ export default function App(){
           </div>
           <p>{CAMERA_LOG.detail}</p>
           <p>{CAMERA_LOG.discrepancy}</p>
-          <footer>번호판을 직접 확인해야 한다 · <kbd>J</kbd> 닫기</footer>
+          <footer>컴퓨터에서 3.2m 이상 떨어지면 자동 종료 · <kbd>J</kbd> 휴대 메모</footer>
+        </aside>}
+      {floor===2&&memoOpen&&vehicleState.reviewed&&started&&!caught&&!ending&&
+        <aside className="cctv-pocket-note" aria-label="CCTV 기록에서 적어 둔 휴대 메모">
+          <strong>개인 메모 · B2</strong>
+          <p>CAM-C / 03:17:17</p>
+          <p>C-17 구역 · 푸른색 세단</p>
+          <p>번호 끝: 17 · 미등록 차량</p>
+          <small><kbd>J</kbd> 닫기 · 9초 후 자동 접힘</small>
         </aside>}
       {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
@@ -958,20 +1054,45 @@ export default function App(){
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
         </div>}
+      {started&&locked&&floor===2&&puzzleProximity==='key-reader'&&
+        <div className={'interaction-callout'+(gatePowered?' interaction-callout--ready':'')} role="status">
+          <strong>{!vehicleState.solved?'SERVICE AUTH · 출입키가 필요하다':
+            gateAuth.phase==='opening'?'비상경보! 셔터 개방 중':
+            gateAuth.phase==='open'?'서비스 셔터 개방 · 도망쳐라':
+            <><kbd>E</kbd> 누르고 있기 · 인증키 삽입·회전</>}</strong>
+          <span>{!vehicleState.solved?'317번 차량에서 키를 찾아라':
+            gateAuth.phase==='opening'?'청음자가 출입구로 달려온다 · 타이밍을 노려라':
+            gateAuth.phase==='open'?'통과하기 전 시야와 발소리를 확인하라':
+            '키를 약 3초 유지하면 비상 사이렌이 작동한다'}</span>
+          {vehicleState.solved&&gateAuth.phase==='authenticating'&&
+            <div className="interaction-callout__progress" role="progressbar"
+              aria-label="키 인증 진행률" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={Math.round(keyHoldProgress(gateAuth)*100)}>
+              <div style={{width:(keyHoldProgress(gateAuth)*100)+'%'}}/>
+            </div>}
+          {gateAuth.phase==='opening'&&
+            <div className="interaction-callout__progress" role="progressbar"
+              aria-label="셔터 개방 진행률" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={Math.round(gateLiftRatio(gateAuth)*100)}>
+              <div style={{width:(gateLiftRatio(gateAuth)*100)+'%'}}/>
+            </div>}
+        </div>}
       {started&&locked&&puzzleProximity==='gate'&&
         <div className={'interaction-callout '+(gatePowered?'interaction-callout--ready':'')} role="status">
-          <strong>{gatePowered?'서비스 셔터 개방 · 통로로 이동':'셔터 잠김 · '+(floor===2?'차량 인증 필요':'전원 복구 필요')}</strong>
-          {!gatePowered&&<span>{floor===2?'CCTV 기록을 찾아 317 차량의 인증기를 회수하라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
+          <strong>{gatePowered?'서비스 셔터 개방 · 통로로 이동':
+            floor===2&&gateAuth.phase==='opening'?'서비스 셔터 상승 중 · 조금만 더 기다려라':
+            '셔터 잠김 · '+(floor===2?'출입키 인증 필요':'전원 복구 필요')}</strong>
+          {!gatePowered&&<span>{floor===2?vehicleState.solved?'우측 보안 단말기에 가서 키를 돌려라':'CCTV 기록과 317번 차량의 출입키를 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
         </div>}
       {started&&locked&&floor===2&&puzzleProximity==='cctv'&&
         <div className="interaction-callout interaction-callout--evidence" role="status">
           <strong><kbd>E</kbd> 경비용 CCTV 기록 열람</strong>
-          <span>기록은 <kbd>J</kbd> 로 다시 확인 · 주변 소음과 움직임 주의</span>
+          <span>컴퓨터에서 3.2m 벗어나면 화면 종료 · <kbd>J</kbd> 간단 메모</span>
         </div>}
       {started&&locked&&floor===2&&puzzleProximity?.startsWith('vehicle:')&&
         <div className="interaction-callout interaction-callout--evidence" role="status">
           <strong><kbd>E</kbd> 차량 번호판 / 트렁크 조사</strong>
-          <span>{vehicleState.reviewed?'틀린 차량을 조작하면 도난 경보 발생':'먼저 경비용 CCTV 기록을 확보하라'}</span>
+          <span>{vehicleState.solved?'출입키 회수 완료 · 중앙 셔터 단말기로 이동':vehicleState.reviewed?'틀린 차량을 조작하면 도난 경보 발생':'먼저 경비용 CCTV 기록을 확보하라'}</span>
         </div>}
       {started&&locked&&puzzleProximity==='can'&&<div className="interaction-callout" role="status">
         <strong><kbd>E</kbd> 빈 캔 줍기</strong><span>회수한 캔은 다시 던질 수 있다</span>
@@ -1022,14 +1143,14 @@ export default function App(){
         <span>F 손전등 딸깍 · 배터리 7분 · 예비 건전지 선택 후 G 충전</span>
         <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
         <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
-        <span>F 손전등 · ESC 일시정지 · H 조작법 · J CCTV 기록</span>
-        {floor===2&&<span>2층: CCTV → 차량 번호 추리 → 출입 인증기 → 서비스 셔터</span>}
+        <span>F 손전등 · ESC 일시정지 · H 조작법 · J 확보한 단서 메모</span>
+        {floor===2&&<span>2층: CCTV → 317번 차량 출입키 → 셔터 우측 단말기(E 유지) → 사이렌 도주</span>}
       </div>}
     </div>
     {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel" role="dialog" aria-modal="true">
       <div className="eyebrow">B∞ / THE ENDLESS PARKING GARAGE</div>
       <h1>{caught?'소리가 끊겼다.':ending?'다시 B2.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
-      <p>{caught?'귓가를 찢는 비명, 바닥에 떨어진 손전등. 마지막으로 들린 것은 그놈의 거친 숨소리였다.':ending?<>317번 차량의 인증기는 셔터를 열었다.<br/>그러나 계단에는 또다시 B2가 적혀 있었다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
+      <p>{caught?'귓가를 찢는 비명, 바닥에 떨어진 손전등. 마지막으로 들린 것은 그놈의 거친 숨소리였다.':ending?<>317번의 키로 잠겨 있던 서비스 셔터를 열었다.<br/>하지만 계단 끝에는 또다시 B2가 적혀 있었다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
