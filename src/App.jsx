@@ -71,10 +71,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   const survival=useRef(freshSurvival());
   const breathClock=useRef(0);
   const vitalsClock=useRef(0);
-  const bobClock=useRef(0);
   const flashlightCharge=useRef(100);
   const batteryReportClock=useRef(0);
-  const tiltSmooth=useRef(0);
   const bobSmooth=useRef(0);
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
@@ -117,7 +115,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     flashlightCharge.current=100;
     batteryReportClock.current=0;
     onBatteryReport(100);
-    camera.rotation.z=0;tiltSmooth.current=0;bobSmooth.current=0;
+    bobSmooth.current=0; // pointer-lock camera rotation is never touched by head bob
     breathClock.current=0;vitalsClock.current=0;
     onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
@@ -131,6 +129,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     camera.rotation.set(0,0,0);
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
+    bobSmooth.current=0;
     survival.current=freshSurvival();
     breathClock.current=0;vitalsClock.current=0;
     onVitals({...survival.current,breath:0,exhausted:false});
@@ -350,14 +349,16 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       grounded:vertical.current===0&&velocityY.current===0,
       intensity:cameraShake,reducedEffects
     });
-    bobSmooth.current=THREE.MathUtils.damp(bobSmooth.current,cameraOffsets.rise,12,dt);
-    tiltSmooth.current=THREE.MathUtils.damp(tiltSmooth.current,cameraOffsets.roll,10,dt);
+    // Mouse owns pitch and yaw: the camera never receives programmatic roll.
+    // Stop the bob immediately after sprinting or when hitting an obstacle.
+    bobSmooth.current=sprinting&&movedDistance>.0001&&vertical.current===0
+      ?THREE.MathUtils.damp(bobSmooth.current,cameraOffsets.rise,12,dt)
+      :0;
     if(footstep.steps){
       const surface=surfaceAt(camera.position.x,camera.position.z);
       onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
     }
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+bobSmooth.current;
-    camera.rotation.z=tiltSmooth.current;
     playerRef.current={x:camera.position.x,z:camera.position.z,speed:movedDistance/Math.max(dt,.001),crouched:crouching};
     if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
     if(camera.position.z < -10 && direction.z>0.45&&!turnedOnce.current){turnedOnce.current=true;onTurn();}
