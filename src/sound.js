@@ -131,6 +131,16 @@ export function createSoundEngine() {
     tone(67, 1.10, .36);
     noise(1400,.28,.12);
   }
+  function horrorCue(type) {
+    // Small positional illusion cues, purposely NOT player noise events for the AI.
+    if(type==='phantom') {
+      noise(500,.44,.18,'lowpass');
+      tone(127,.42,.16);
+    } else if(type==='false-exit') {
+      noise(2500,.16,.24);
+      tone(290,.26,.14,'sawtooth');
+    }
+  }
 
   function death() {
     // Synthetic short gasp/scream, blunt fall, wet scrape and muffled crunch.
@@ -207,7 +217,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, death,
+    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, horrorCue, death,
     updateCreature: creatureAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();
