@@ -1,15 +1,15 @@
 // Observer is distinct from the Listener: it reacts to visible movement,
 // never to sound. Stopping and hiding behind solid obstacles both defeat sight.
-export const OBSERVER_VIEW_DISTANCE=19;
-export const OBSERVER_DOT_THRESHOLD=.46;
-export const OBSERVER_LOSE_SIGHT_SECONDS=1.05;
-export const OBSERVER_PURSUIT_SPEED=3.12;
+export const OBSERVER_VIEW_DISTANCE=24;
+export const OBSERVER_DOT_THRESHOLD=.32;
+export const OBSERVER_LOSE_SIGHT_SECONDS=1.3;
+export const OBSERVER_PURSUIT_SPEED=4.6;
 export function motionExposure({distance,dot,speed,blocked=false,crouched=false}){
   if(blocked||distance>OBSERVER_VIEW_DISTANCE||dot<OBSERVER_DOT_THRESHOLD||speed<.16)return 0;
   // Visible, but not an instant death sentence: roughly one second of
   // walking or half a second of sprinting is needed for full acquisition.
-  const close=1+Math.max(0,11-distance)*.045;
-  const motion=speed>4?1.65:speed>2?.98:.66;
+  const close=1+Math.max(0,12-distance)*.055;
+  const motion=speed>4?2.05:speed>2?1.18:.77;
   return (crouched?.48:1)*motion*close;
 }
 export function sightBlocked(from,to,pillars,cars){
@@ -31,4 +31,11 @@ export function sightBlocked(from,to,pillars,cars){
 }
 export function tickObservation(suspicion,rate,dt){
   return Math.max(0,Math.min(1.25,suspicion+(rate>0?rate*dt:-.7*dt)));
+}
+
+export const OBSERVER_PATROL=Object.freeze([
+ [14,-12],[14,-22],[18,-31],[15,-22],[14,-12],[18,-2]
+]);
+export function patrolWaypoint(index=0){
+ return OBSERVER_PATROL[Math.abs(Math.floor(index))%OBSERVER_PATROL.length];
 }
