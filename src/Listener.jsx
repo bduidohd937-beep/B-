@@ -9,6 +9,38 @@ const obstructed=(x,z)=>PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-
  || CARS.some(([cx,cz])=>Math.abs(x-cx)<1.8&&Math.abs(z-cz)<2.8);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 
+const STEP=2;
+const cols=18,rows=42;
+const toGrid=(x,z)=>[Math.max(0,Math.min(cols-1,Math.round((x+17)/STEP))),Math.max(0,Math.min(rows-1,Math.round((z+44)/STEP)))];
+const toWorld=(gx,gz)=>[-17+gx*STEP,-44+gz*STEP];
+const key=(x,z)=>x+z*cols;
+function buildRoute(from,to){
+  const [sx,sz]=toGrid(from.x,from.z),[tx,tz]=toGrid(to.x,to.z);
+  const start=key(sx,sz),goal=key(tx,tz);
+  const q=[start],parents=new Map([[start,-1]]);
+  for(let i=0;i<q.length;i++){
+    const k=q[i];if(k===goal)break;
+    const x=k%cols,z=Math.floor(k/cols);
+    for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx=x+dx,nz=z+dz;
+      if(nx<0||nz<0||nx>=cols||nz>=rows)continue;
+      const id=key(nx,nz);if(parents.has(id))continue;
+      const [wx,wz]=toWorld(nx,nz);
+      if(obstructed(wx,wz))continue;
+      parents.set(id,k);q.push(id);
+    }
+  }
+  if(!parents.has(goal))return [];
+  const result=[];let current=goal;
+  while(current!==start&&result.length<cols*rows){
+    const gx=current%cols,gz=Math.floor(current/cols);
+    const [x,z]=toWorld(gx,gz);result.push({x,z});
+    current=parents.get(current);
+  }
+  return result.reverse();
+}
+
+
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
 export default function Listener({active,events,playerRef,onCaught,onState}) {
@@ -19,11 +51,13 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
   const searchTime=useRef(0);
   const cooldown=useRef(0);
   const statusTime=useRef(0);
+  const route=useRef([]);
+  const routeTime=useRef(0);
   useFrame((_,rawDelta)=>{
     if(!group.current)return;
     const dt=Math.min(rawDelta,.06);
     const pos=group.current.position;
-    if(!active){state.current='idle';pos.copy(BASE);lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;return;}
+    if(!active){state.current='idle';pos.copy(BASE);route.current=[];routeTime.current=0;lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;return;}
     cooldown.current=Math.max(0,cooldown.current-dt);
     const recent=events.current.filter(e=>e.id>lastEvent.current);
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
@@ -39,11 +73,19 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
       }
     }
     const destination=(state.current==='idle'||state.current==='return')?BASE:target.current;
-    const range=dist(pos,destination);
+    routeTime.current-=dt;
+    if(routeTime.current<=0){
+      route.current=buildRoute(pos,destination);
+      routeTime.current=1;
+    }
+    while(route.current.length&&dist(pos,route.current[0])<.65)route.current.shift();
+    const waypoint=route.current.length?route.current[0]:destination;
+    const range=dist(pos,waypoint);
+    const goalRange=dist(pos,destination);
     if(range>.6){
       const speed=state.current==='investigate'?2.9:1.4;
-      const dx=(destination.x-pos.x)/range*dt*speed;
-      const dz=(destination.z-pos.z)/range*dt*speed;
+      const dx=(waypoint.x-pos.x)/range*dt*speed;
+      const dz=(waypoint.z-pos.z)/range*dt*speed;
       if(!obstructed(pos.x+dx,pos.z+dz)){pos.x+=dx;pos.z+=dz;}
       else {
         // Steer around parked cars and columns without passing through them.
@@ -54,8 +96,9 @@ export default function Listener({active,events,playerRef,onCaught,onState}) {
         else if(!obstructed(pos.x,pos.z+dz)){pos.z+=dz;}
       }
       group.current.rotation.y=Math.atan2(destination.x-pos.x,destination.z-pos.z);
-    } else if(state.current==='investigate'){state.current='search';searchTime.current=0;}
-    else if(state.current==='return'&&dist(pos,BASE)<.7){state.current='idle';}
+    }
+    if(goalRange<1.15&&state.current==='investigate'){state.current='search';searchTime.current=0;}
+    else if(goalRange<1.15&&state.current==='return'){state.current='idle';}
     if(state.current==='search'){
       searchTime.current+=dt;
       group.current.rotation.y+=dt*.6;
