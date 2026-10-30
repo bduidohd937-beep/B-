@@ -25,12 +25,20 @@ export function canUsePanel(x, z, floor = 1) {
 // behind the panel, looking sideways or looking away must never show E.
 export const PANEL_FRONT_OFFSET=.6;
 export const PANEL_FACING_DOT=.73;
+// Once the player STARTS an E hold while facing the switch, only physical
+// distance and front-side access matter. Looking behind is permitted.
+// Moving through/behind the cabinet or releasing E still interrupts it.
+export function canHoldPanel(x,z,floor=1){
+  const [px,pz]=panelPosition(floor);
+  return Number.isFinite(x)&&Number.isFinite(z)&&canUsePanel(x,z,floor)
+    &&z>=pz+.64&&Math.abs(x-px)<=1.65;
+}
 export function canOperatePanel(eye,looking,floor=1){
   if(!eye||!looking||eye.length<3||looking.length<3)return false;
   const [x,y,z]=eye;
   const [px,pz]=panelPosition(floor);
   if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z))return false;
-  if(!canUsePanel(x,z,floor)||z<pz+.64||Math.abs(x-px)>1.65)return false;
+  if(!canHoldPanel(x,z,floor))return false;
   const tx=px,ty=1.1,tz=pz+PANEL_FRONT_OFFSET;
   const dx=tx-x,dy=ty-y,dz=tz-z;
   const len=Math.hypot(dx,dy,dz);
