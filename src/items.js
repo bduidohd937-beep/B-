@@ -6,7 +6,7 @@ export const ITEM_TYPES=Object.freeze({
   radio:{label:'잡음 무전기',key:'RADIO',description:'곧바로 9초간 반복 잡음'},
   glow:{label:'야광봉',key:'GLOW',description:'50초간 길 표시'},
   energy:{label:'에너지 드링크',key:'DRINK',description:'스태미나 회복 + 5초 질주 부스트'},
-  lube:{label:'윤활 스프레이',key:'LUBE',description:'배전반 사이렌과 기계 소음을 한 번 무음화'}
+  lube:{label:'윤활 스프레이',key:'LUBE',description:'배전반 기계음만 감쇄 · 전자식 사이렌 작동'}
 });
 // Scarce, intentional loot instead of five free pickups at spawn.
 // The quiet route is off-axis; the powerful radio/drink appear deeper in loop 2.
@@ -38,15 +38,14 @@ export function pickupRadius(position,point,radius=2.3){
  return Math.hypot(position[0]-point[0],position[2]-point[2])<=radius;
 }
 export function itemEffect(type,nearPanel=false){
- if(type==='lube')return nearPanel?'silence':'requires-panel';
+ if(type==='lube')return nearPanel?'attenuate':'requires-panel';
  if(type==='energy')return 'boost';
  if(['alarm','radio','glow'].includes(type))return 'deploy';
  return 'none';
 }
-// Deploying a glowstick or applying lubricant is deliberately noiseless.
-// Other gear still makes an audible click or a sustained decoy sound.
+// All item manipulations make some noise, with precise values in interactions.js.
 export function gearMakesNoise(type){
- return type!=='glow'&&type!=='lube';
+ return Boolean(ITEM_TYPES[type]);
 }
 export function gadgetTiming(type,seconds){
  if(type==='alarm')return {active:seconds>=4&&seconds<12,end:seconds>=12,interval:.68,loudness:94};
