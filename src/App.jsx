@@ -539,10 +539,10 @@ export default function App(){
       <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}/>
     </Canvas>
     <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
-    {floorFlash&&<div className="floor-loop-flash" aria-live="polite">
+    {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
       <span>STAIR B2</span><strong>YOU ARE STILL HERE</strong><small>03:17 — AGAIN</small>
     </div>}
-    {deathPhase!=='alive'&&<div className={'death-fx death-fx--'+deathPhase} aria-hidden="true">
+    {deathPhase!=='alive'&&<div className={'death-fx death-fx--'+deathPhase+(reducedEffects?' death-fx--reduced':'')} aria-hidden="true">
       <div className="death-fx__blood"/>
       <div className="death-fx__blackout"/>
     </div>}
