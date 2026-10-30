@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { startingPickups,slots,selectSlot,canAddToInventory,pickupRadius,itemEffect,gadgetTiming,gearMakesNoise } from '../src/items.js';
-test('two floors each hold five distinct new items',()=>{
+test('rare, staged item placement makes loot an earned tactical choice',()=>{
  for(const floor of [1,2]){
   const list=startingPickups(floor);
-  assert.equal(list.length,5);
+  assert.equal(list.length,3);
   assert.equal(new Set(list.map(x=>x.type)).size,5);
   assert.ok(list.every(x=>x.position.length===3));
  }
