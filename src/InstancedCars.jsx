@@ -9,16 +9,18 @@ const temp=new THREE.Object3D();
 function createAtlas(cars){
  const cols=8,rows=Math.ceil(cars.length/cols);
  const canvas=document.createElement('canvas');
- canvas.width=128*cols;canvas.height=64*rows;
+ canvas.width=192*cols;canvas.height=84*rows;
  const ctx=canvas.getContext('2d');
  cars.forEach((car,i)=>{
-   const x=(i%cols)*128,y=Math.floor(i/cols)*64;
-   ctx.fillStyle='#c8cabe';ctx.fillRect(x+2,y+3,124,58);
-   ctx.strokeStyle='#53666b';ctx.lineWidth=3;
-   ctx.strokeRect(x+4,y+5,120,54);
-   ctx.fillStyle='#1c2b34';ctx.font='bold 23px sans-serif';
+   const x=(i%cols)*192,y=Math.floor(i/cols)*84;
+   // Retroreflective off-white substrate with dark, high-contrast engraving.
+   // No emissive cheating: this still needs the flashlight to read clearly.
+   ctx.fillStyle='#d9ddd6';ctx.fillRect(x+3,y+3,186,78);
+   ctx.strokeStyle='#435761';ctx.lineWidth=4;
+   ctx.strokeRect(x+5,y+5,182,74);
+   ctx.fillStyle='#18252b';ctx.font='bold 30px sans-serif';
    ctx.textAlign='center';ctx.textBaseline='middle';
-   ctx.fillText(plateForCar(car.index),x+64,y+33);
+   ctx.fillText(plateForCar(car.index),x+96,y+43);
  });
  const texture=new THREE.CanvasTexture(canvas);
  texture.colorSpace=THREE.SRGBColorSpace;
@@ -28,13 +30,19 @@ function createAtlas(cars){
  const position=[],uv=[],indices=[];
  cars.forEach((car,i)=>{
    const [x,z]=car.location;
-   const left=x-.43,right=x+.43,bottom=.66,top=.94,front=z+2.294;
-   const base=i*4;
+   const left=x-.53,right=x+.53,bottom=.63,top=.99;
+   const rear=z+2.292,front=z-2.292;
+   const base=i*8;
+   // Actual double-sided rear AND front plates, matching the object's body.
+   position.push(left,bottom,rear,right,bottom,rear,right,top,rear,left,top,rear);
    position.push(left,bottom,front,right,bottom,front,right,top,front,left,top,front);
    const u0=(i%cols)/cols,u1=(i%cols+1)/cols;
    const v0=1-(Math.floor(i/cols)+1)/rows,v1=1-Math.floor(i/cols)/rows;
-   uv.push(u0,v0,u1,v0,u1,v1,u0,v1);
-   indices.push(base,base+1,base+2,base,base+2,base+3);
+   for(let face=0;face<2;face++){
+     uv.push(u0,v0,u1,v0,u1,v1,u0,v1);
+     const p=base+face*4;
+     indices.push(p,p+1,p+2,p,p+2,p+3);
+   }
  });
  const geometry=new THREE.BufferGeometry();
  geometry.setAttribute('position',new THREE.Float32BufferAttribute(position,3));
@@ -42,7 +50,7 @@ function createAtlas(cars){
  geometry.setIndex(indices);
  geometry.computeVertexNormals();
  const material=new THREE.MeshStandardMaterial({
-   map:texture,roughness:.86,metalness:.06,side:THREE.DoubleSide
+   map:texture,roughness:.79,metalness:.02,side:THREE.DoubleSide
  });
  return {geometry,material,texture};
 }
