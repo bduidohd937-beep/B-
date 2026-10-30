@@ -23,8 +23,10 @@ const SecurityDesk=React.memo(function SecurityDesk({reviewed=false}){
        <meshStandardMaterial color="#222c30" roughness={.8}/></mesh>
      <mesh position={[0,.035,.19]}>
        <planeGeometry args={[1.18,.65]}/>
-       <meshBasicMaterial color={reviewed?"#243a35":"#1d2e30"}/>
+       <meshBasicMaterial color={reviewed?"#273b37":"#253838"}/>
      </mesh>
+     {/* A CRT's local spill is environmental illumination, not a pickup glow. */}
+     <pointLight position={[0,.035,.43]} color="#8ab6a9" intensity={.37} distance={4.6} decay={2}/>
      <Text position={[0,.25,.205]} fontSize={.10} color="#97c1ad">SECURITY / B2</Text>
      <Text position={[0,.055,.206]} fontSize={.12} color="#9aafa5">
        {reviewed?"LOG C-17 / 03:17":"CAM-C / LOG"}
