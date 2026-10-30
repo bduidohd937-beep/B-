@@ -36,7 +36,7 @@ export default React.memo(function SurvivalHUD({latestNoise,moveMode,airborne,vi
   const listenerMode=creature?.mode||'idle';
   const danger=listenerMode==='investigate'?'놈이 소리를 따라 움직인다':
     listenerMode==='listen'?'놈이 움직임을 멈췄다':
-    listenerMode==='search'?'주변을 수색 중이다':null;
+    listenerMode==='search'?'주변을 수색 중이다':listenerMode==='patrol'?'주차장 안을 배회하고 있다':null;
   return <aside className={'survival-panel'+(reducedEffects?' survival-panel--reduced':'')} aria-label="생존 상태 및 소음 정보">
     <div className="survival-panel__title">SURVIVAL SIGNAL <span>REC ●</span></div>
     <section className={'survival-panel__gauge survival-panel__gauge--stamina '+(low?'is-low':'')} aria-label="스태미나">

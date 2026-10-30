@@ -10,10 +10,16 @@ import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 import {buildRoute} from './navigationGrid.js';
 import {passesParkedCar} from './chaseAudioRules.js';
+import {
+  FIRST_GUARD_HOME,FIRST_GUARD_PATROL,FIRST_GUARD_WALK_SPEED,
+  FIRST_GUARD_ROUTE_REPLAN_SECONDS,nextFirstGuardWaypoint
+} from './firstFloorThreat.js';
 
-// Alarm rush starts far enough from each circuit to leave a genuine escape window.
-const BASE = new THREE.Vector3(14,0,-8);
+// Loop 01 actively guards the breaker instead of standing 34m across the map.
+// Loop 02 retains its established spawn and the Observer's separate role.
+const BASE = new THREE.Vector3(FIRST_GUARD_HOME[0],0,FIRST_GUARD_HOME[1]);
 const LOOP_BASE = new THREE.Vector3(-14,0,-7);
+const PATROL = FIRST_GUARD_PATROL.map(([x,z])=>new THREE.Vector3(x,0,z));
 const CARS=PARKED_CARS;
 const obstructed=(x,z,powered=false)=>terrainBlocked(x,z,powered);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
@@ -64,6 +70,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
   const currentSpeed=useRef(1.2);
   const route=useRef([]);
   const routeTime=useRef(0);
+  const patrolIndex=useRef(1);
   const soundClock=useRef(0);
   const rushTime=useRef(0);
   const listenerLocation=useRef(new THREE.Vector3());
@@ -71,8 +78,9 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
   const modelMotion=useRef({state:'idle',speed:0,excitement:0});
   useEffect(()=>{
     if(group.current)group.current.position.copy(home);
-    state.current='idle';
+    state.current=floor===1?'patrol':'idle';
     target.current.copy(home);
+    patrolIndex.current=1;
     searchTime.current=0;
     cooldown.current=0;
     excitement.current=0;
@@ -98,6 +106,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         return;
       }
       state.current='idle';pos.copy(home);route.current=[];routeTime.current=0;
+      patrolIndex.current=1;
       excitement.current=0;currentSpeed.current=1.2;rushTime.current=0;
       modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
@@ -106,6 +115,9 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       return;
     }
     cooldown.current=Math.max(0,cooldown.current-dt);
+    if(floor===1&&state.current==='idle'){
+      state.current='patrol';routeTime.current=0;
+    }
     // The log is capped at 32 entries. Iterate it in-place to avoid creating
     // a new filtered array every single renderer frame.
     const log=events.current;
@@ -147,17 +159,19 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     rushTime.current=Math.max(0,rushTime.current-dt);
     const targetSpeed=state.current==='investigate'
       ?rushSpeed(rushTime.current,excitement.current)
-      :state.current==='return'?1.45:state.current==='search'?.6:0;
+      :state.current==='patrol'?FIRST_GUARD_WALK_SPEED:
+        state.current==='return'?1.45:state.current==='search'?.6:0;
     currentSpeed.current=THREE.MathUtils.damp(currentSpeed.current,targetSpeed,
       state.current==='investigate'&&rushTime.current>0?9:state.current==='investigate'?2.8:1.25,dt);
-    const destination=(state.current==='idle'||state.current==='return')?home:target.current;
-    if(state.current==='investigate'||state.current==='return'){
+    const destination=state.current==='patrol'?PATROL[patrolIndex.current]:
+      (state.current==='idle'||state.current==='return')?home:target.current;
+    if(state.current==='investigate'||state.current==='return'||state.current==='patrol'){
       routeTime.current-=dt;
       if(routeTime.current<=0){
         route.current=buildRoute(pos,destination,powered);
         // Cached occupancy eliminates recurring grid collision checks; avoid
         // repathing every second unless a new noise resets routeTime to zero.
-        routeTime.current=2.3;
+        routeTime.current=state.current==='patrol'?FIRST_GUARD_ROUTE_REPLAN_SECONDS:2.3;
       }
     }else{
       // Neither listening nor searching needs a full-map BFS every frame.
@@ -168,7 +182,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     const waypoint=route.current.length?route.current[0]:destination;
     const range=dist(pos,waypoint);
     const goalRange=dist(pos,destination);
-    if(range>.6&&(state.current==='investigate'||state.current==='return')){
+    if(range>.6&&(state.current==='investigate'||state.current==='return'||state.current==='patrol')){
       const speed=currentSpeed.current;
       const dx=(waypoint.x-pos.x)/range*dt*speed;
       const dz=(waypoint.z-pos.z)/range*dt*speed;
@@ -184,7 +198,17 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       group.current.rotation.y=Math.atan2(destination.x-pos.x,destination.z-pos.z);
     }
     if(goalRange<1.15&&state.current==='investigate'){state.current='search';searchTime.current=0;}
-    else if(goalRange<1.15&&state.current==='return'){state.current='idle';}
+    else if(goalRange<1.15&&state.current==='return'){
+      state.current=floor===1?'patrol':'idle';
+      patrolIndex.current=1;
+      route.current=[];routeTime.current=0;
+    }else if(state.current==='patrol'){
+      const next=nextFirstGuardWaypoint(patrolIndex.current,pos);
+      if(next!==patrolIndex.current){
+        patrolIndex.current=next;
+        route.current=[];routeTime.current=0;
+      }
+    }
     if(state.current==='search'){
       searchTime.current+=dt;
       group.current.rotation.y+=dt*.6;
