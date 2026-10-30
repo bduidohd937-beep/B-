@@ -897,6 +897,9 @@ export default function App(){
   },[]);
   const respawn=useCallback(()=>{
     noiseLog.current=[];
+    projectileRef.current=null;
+    throwAimRef.current=null;
+    setProjectile(null);
     alarmFiredRef.current=false;
     setAlarmActive(false);
     soundRef.current?.stopSiren?.();
@@ -992,6 +995,8 @@ export default function App(){
       setFloorFlash(true);
       // The next loop contains another can unless the player carries theirs.
       setCanPosition(canCollected?null:[2,.18,12]);
+      projectileRef.current=null;
+      throwAimRef.current=null;
       setProjectile(null);
       return;
     }
