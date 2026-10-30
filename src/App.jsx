@@ -17,15 +17,15 @@ for (let z = -28; z <= 18; z += 9) for (const x of [-10, 10]) pillars.push([x, z
 const parkedCars = [[-6,-20],[-6,-3],[-6,14],[6,-24],[6,-7],[6,11]];
 const clamp = THREE.MathUtils.clamp;
 
-function Car({ x, z, color = '#303b3e' }) {
+const Car = React.memo(function Car({ x, z, color = '#303b3e' }) {
   return <group position={[x,0,z]}>
     <mesh position={[0,.58,0]} castShadow><boxGeometry args={[2.45,.95,4.5]}/><meshStandardMaterial color={color} roughness={.47} metalness={.33}/></mesh>
     <mesh position={[0,1.22,-.22]}><boxGeometry args={[2.16,.55,2.5]}/><meshStandardMaterial color="#18282d" metalness={.3} roughness={.23}/></mesh>
     {[-1,1].flatMap(s=>[-1.5,1.5].map(t=><mesh key={s+':'+t} position={[s*1.23,.38,t]} rotation={[0,0,Math.PI/2]}><cylinderGeometry args={[.35,.35,.16,12]}/><meshStandardMaterial color="#101417"/></mesh>))}
     {[-.8,.8].map(x=><mesh key={x} position={[x,.64,2.26]}><boxGeometry args={[.45,.2,.04]}/><meshBasicMaterial color="#842d2b"/></mesh>)}
   </group>;
-}
-function Garage({ altered, flicker, canPosition }) {
+});
+const Garage = React.memo(function Garage({ altered, flicker, canPosition }) {
   return <group>
     <mesh rotation={[-Math.PI/2,0,0]} receiveShadow><planeGeometry args={[42,92]}/><meshStandardMaterial color="#32383a" roughness={.97}/></mesh>
     <mesh position={[0,4.7,-4]} receiveShadow><boxGeometry args={[42,.45,92]}/><meshStandardMaterial color="#3a4042" roughness={1}/></mesh>
@@ -63,15 +63,15 @@ function Garage({ altered, flicker, canPosition }) {
     </group>}
     <mesh position={[0,.05,-32]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshBasicMaterial color="#22272b" transparent opacity={.5}/></mesh>
   </group>;
-}
-function Watcher({ shifted }) {
+});
+const Watcher = React.memo(function Watcher({ shifted }) {
   return <group position={shifted?[-8,0,-8]:[9,0,-16]}>
     <mesh position={[0,1.35,0]}><capsuleGeometry args={[.27,1.25,5,8]}/><meshStandardMaterial color="#080b0b" roughness={1}/></mesh>
     <mesh position={[0,2.38,.03]}><sphereGeometry args={[.26,12,12]}/><meshStandardMaterial color="#080b0b"/></mesh>
     {[-.16,.16].map(x=><mesh key={x} position={[x,.47,0]}><boxGeometry args={[.18,.95,.19]}/><meshStandardMaterial color="#090b0c"/></mesh>)}
     <mesh position={[0,2.32,.23]}><boxGeometry args={[.31,.04,.02]}/><meshBasicMaterial color="#3a4141"/></mesh>
   </group>;
-}
+});
 function Flashlight({ enabled }) {
   const { camera, scene } = useThree();
   const lamp=useRef();
@@ -91,7 +91,7 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
   const { camera } = useThree();
   const keys = useRef({});
   const hadLooked = useRef(false);
@@ -116,6 +116,8 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
   const alteredRef=useRef(false);
   alteredRef.current=altered;
   const checkSet=useRef(false);
+  const nearReported=useRef(false);
+  const proximityReported=useRef(null);
   const panelHeld=useRef(false);
   const panelTime=useRef(0);
   const panelUpdate=useRef(0);
@@ -135,6 +137,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
     stepMeter.current={meters:0,elapsed:1,moving:false};
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
+    proximityReported.current=null;
     onPanelProgress(0);
   },[respawnSignal,camera,checkpoint,onPanelProgress]);
   useEffect(()=>{
@@ -145,6 +148,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
     stepMeter.current={meters:0,elapsed:1,moving:false};
     crouchToggle.current=false;
     checkSet.current=true;
+    proximityReported.current=null;
     keys.current={};
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     onPanelProgress(0);
@@ -240,7 +244,11 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=canUsePanel(camera.position.x,camera.position.z,floorRef.current);
-    onPuzzleProximity(nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':null);
+    const nextProximity=nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':null;
+    if(nextProximity!==proximityReported.current){
+      proximityReported.current=nextProximity;
+      onPuzzleProximity(nextProximity);
+    }
     // The panel makes a loud crackle at the START of a two-second hold.
     // Distracting the nearby listening creature gives enough time to finish.
     if(!poweredRef.current && nearPanel && keys.current.KeyE){
@@ -274,7 +282,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
     }
     camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
     playerRef.current={x:camera.position.x,z:camera.position.z};
-    if(camera.position.z < -10)onNear();
+    if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
     if(camera.position.z < -10 && direction.z>0.45&&!hadLooked.current){hadLooked.current=true;onTurn();}
     if(!shiftedOnce.current){
       const toWatcher=new THREE.Vector3(9-camera.position.x,2-camera.position.y,-16-camera.position.z);
@@ -288,8 +296,8 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
     if(canEnterNextArea(camera.position.x,camera.position.z,floorRef.current,poweredRef.current))onFinish();
   });
   return null;
-}
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete }) {
+});
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -307,7 +315,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <fog attach="fog" args={[floor===2?'#1b1018':'#101719',floor===2?6:9,floor===2?34:49]}/>
     <ambientLight intensity={floor===2?.27:.43} color={floor===2?'#ae8e98':'#9cadad'}/>
     <Garage altered={altered} flicker={flicker} canPosition={canPosition}/>
-    {floor===2&&<DistortedB2/>}
+    {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
     <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
@@ -373,6 +381,9 @@ export default function App(){
     onNoiseRef.current?.({type:'throw',loudness:100,position:end});
   },[]);
   const soundRef=useRef(null);
+  const onHorrorCue=useCallback(type=>{
+    soundRef.current?.horrorCue?.(type);
+  },[]);
   const noiseLog=useRef([]);
   const noiseId=useRef(0);
   const playerRef=useRef({x:0,z:17});
@@ -480,7 +491,7 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue}/>
     </Canvas>
     <div className="vignette"/>
     {floorFlash&&<div className="floor-loop-flash" aria-live="polite">
