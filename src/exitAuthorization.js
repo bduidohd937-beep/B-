@@ -6,7 +6,7 @@ export const SECURITY_READER_RADIUS=2.3;
 export const KEY_HOLD_SECONDS=3.25;
 export const SHUTTER_RAISE_SECONDS=5.25;
 export const SHUTTER_PASS_SECONDS=2.45;
-// Brief high-volume siren; after starting, the player may leave and hide.
+// Instant high-volume siren on FIRST key turn; the shutter motor starts only after the hold.
 export const EXIT_ALARM_SECONDS=9;
 export const EXIT_ALARM_LOUDNESS=100;
 
@@ -20,7 +20,7 @@ export function canUseKeyReader(x,z){
    Math.hypot(x-SECURITY_KEY_READER[0],z-SECURITY_KEY_READER[2])<=SECURITY_READER_RADIUS;
 }
 export function freshGateAuthentication(){
- return {phase:'locked',hold:0,elapsed:0};
+ return {phase:'locked',hold:0,elapsed:0,alarmRaised:false};
 }
 export function advanceGateAuthentication(previous,{
  dt=0,active=true,hasKey=false,near=false,holding=false
@@ -32,19 +32,22 @@ export function advanceGateAuthentication(previous,{
  if(state.phase==='opening'){
    const elapsed=Math.min(SHUTTER_RAISE_SECONDS,state.elapsed+seconds);
    if(elapsed>=SHUTTER_RAISE_SECONDS)
-     return {state:{phase:'open',hold:KEY_HOLD_SECONDS,elapsed:SHUTTER_RAISE_SECONDS},event:'open'};
+     return {state:{phase:'open',hold:KEY_HOLD_SECONDS,elapsed:SHUTTER_RAISE_SECONDS,alarmRaised:true},event:'open'};
    return {state:{...state,elapsed},event:null};
  }
  if(!hasKey||!near||!holding){
-   return {state:freshGateAuthentication(),
+   // Losing the key hold cancels authentication but cannot silence an already
+   // triggered industrial alarm. The player must retry the full hold.
+   return {state:{phase:'locked',hold:0,elapsed:0,alarmRaised:Boolean(state.alarmRaised)},
       event:state.phase==='authenticating'?'cancel':null};
  }
  const hold=Math.min(KEY_HOLD_SECONDS,state.hold+seconds);
  if(hold>=KEY_HOLD_SECONDS){
-   return {state:{phase:'opening',hold:KEY_HOLD_SECONDS,elapsed:0},event:'alarm'};
+   return {state:{phase:'opening',hold:KEY_HOLD_SECONDS,elapsed:0,alarmRaised:true},event:'motor'};
  }
- return {state:{phase:'authenticating',hold,elapsed:0},
-   event:state.phase==='locked'?'insert':null};
+ const firstInsertion=!state.alarmRaised;
+ return {state:{phase:'authenticating',hold,elapsed:0,alarmRaised:true},
+   event:firstInsertion?'alarm':state.phase==='locked'?'insert':null};
 }
 export function gatePassable(state){
  return Boolean(state&&(state.phase==='open'||
