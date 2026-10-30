@@ -53,6 +53,25 @@ function Watcher({ shifted }) {
     <mesh position={[0,2.32,.23]}><boxGeometry args={[.31,.04,.02]}/><meshBasicMaterial color="#3a4141"/></mesh>
   </group>;
 }
+function Flashlight({ enabled }) {
+  const { camera, scene } = useThree();
+  const lamp=useRef();
+  const target=useMemo(()=>new THREE.Object3D(),[]);
+  const origin=useMemo(()=>new THREE.Vector3(),[]);
+  const aim=useMemo(()=>new THREE.Vector3(),[]);
+  useEffect(()=>{scene.add(target);return ()=>scene.remove(target)},[scene,target]);
+  useFrame(()=>{
+    if(!lamp.current)return;
+    camera.getWorldPosition(origin);
+    camera.getWorldDirection(aim);
+    lamp.current.position.copy(origin).addScaledVector(aim,.22).add(new THREE.Vector3(0,-.12,0));
+    target.position.copy(origin).addScaledVector(aim,14);
+    target.updateMatrixWorld();
+  });
+  return <spotLight ref={lamp} target={target} intensity={enabled?100:0}
+    angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
+}
+
 function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFinish, onNoise, onMoveMode, playerRef, respawnSignal }) {
   const { camera } = useThree();
   const keys = useRef({});
@@ -68,6 +87,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
   const lastMode = useRef('walk');
+  const lastActive = useRef(false);
   const forward = useMemo(()=>new THREE.Vector3(),[]);
   const right = useMemo(()=>new THREE.Vector3(),[]);
   const movement = useMemo(()=>new THREE.Vector3(),[]);
@@ -90,18 +110,9 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     window.addEventListener('keydown',down);window.addEventListener('keyup',up);
     return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);};
   },[camera]);
-  useEffect(()=>{
-    const lamp = new THREE.SpotLight('#e4eadc', 37, 29, Math.PI/7, .58, 2);
-    lamp.position.set(.12,-.09,-.05);
-    lamp.target.position.set(0,-.18,-8);
-    camera.add(lamp); camera.add(lamp.target);
-    lamp.userData.flashlight=true;
-    return ()=>{camera.remove(lamp);camera.remove(lamp.target);lamp.dispose?.();};
-  },[camera]);
   useFrame((_,delta)=>{
-    const lamp=camera.children.find(c=>c.userData?.flashlight);
-    if(lamp)lamp.intensity=torch?37:0;
-    if(!active)return;
+    if(!active){lastActive.current=false;return;}
+    if(!lastActive.current){keys.current={};jumpQueued.current=false;lastActive.current=true;}
     camera.getWorldDirection(direction);
     forward.set(direction.x,0,direction.z).normalize();
     right.crossVectors(forward,camera.up).normalize();
@@ -117,7 +128,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     if(lastMode.current!==mode){lastMode.current=mode;onMoveMode(mode);}
     const moving=movement.lengthSq()>0;
     if(jumpQueued.current){
-      if(!crouching&&vertical.current===0){velocityY.current=4.5;onNoise({type:'jump',loudness:48,position:camera.position.toArray()});}
+      if(!crouching&&vertical.current===0){velocityY.current=4.5;onNoise({type:'jump',loudness:72,position:camera.position.toArray()});}
       jumpQueued.current=false;
     }
     if(moving){
@@ -178,6 +189,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <fog attach="fog" args={['#101719',9,49]}/>
     <ambientLight intensity={.43} color="#9cadad"/>
     <Garage altered={altered} flicker={flicker}/>
+    <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState}/>
     <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal}/>
@@ -252,7 +264,7 @@ export default function App(){
     <div className="vignette"/>
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.4 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.5 / WORK IN PROGRESS</div>
       <div className="reticle"/>
       <div className="audio-toggle" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
       <div className="creature-indicator">{creatureState==='investigate'?'어딘가에서 긁는 소리가 들린다':creatureState==='search'?'무언가가 주변을 수색 중이다':creatureState==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
@@ -266,7 +278,7 @@ export default function App(){
       <h1>{caught?'들켰다.':ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
       <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.4 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.5 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
