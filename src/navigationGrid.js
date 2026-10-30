@@ -1,4 +1,4 @@
-import {WALK_BOUNDS,terrainBlocked} from './garageLayout.js';
+import {WALK_BOUNDS,terrainBlockedRadius,LISTENER_COLLISION_RADIUS} from './garageLayout.js';
 
 // Precompute static grid occupancy ONCE per gate condition. Previously the
 // Listener ran thousands of JS .some() obstacle checks every path update,
@@ -22,7 +22,7 @@ export function navigationGrid(powered=false){
  const blocked=new Uint8Array(SIZE);
  for(let gz=0;gz<NAV_ROWS;gz++)for(let gx=0;gx<NAV_COLS;gx++){
    const [x,z]=world(gx,gz);
-   blocked[id(gx,gz)]=terrainBlocked(x,z,key)?1:0;
+   blocked[id(gx,gz)]=terrainBlockedRadius(x,z,LISTENER_COLLISION_RADIUS,key)?1:0;
  }
  grids.set(key,blocked);
  builds++;
