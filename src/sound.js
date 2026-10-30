@@ -1,4 +1,4 @@
-import {shoeFootstep} from './footstepFoley.js';
+import {loadRecordedFootsteps,recordedFootstepDynamics} from './recordedFootsteps.js';
 import { createSpatialCreatureAudio } from './spatialAudio.js';
 import { createSpatialObserverAudio } from './observerSpatialAudio.js';
 import { createVitalsAudio } from './vitalsAudio.js';
@@ -92,36 +92,35 @@ export function createSoundEngine() {
     source.onended = () => { source.disconnect(); gain.disconnect(); };
   }
 
+  // Load once after the first user audio gesture. Failed samples simply
+  // make steps quieter; they never bring down the game or its WebAudio mixer.
   let shoeFootIndex=0;
+  let recordings=new Map();
+  loadRecordedFootsteps(ctx).then(assets=>{recordings=assets;}).catch(err=>{
+    console.warn('Footstep recordings unavailable',err);
+  });
   function step(mode='walk',surface='concrete'){
     if(!enabled||ctx.state==='closed')return;
-    const f=shoeFootstep(mode,surface,shoeFootIndex++);
-    const t=ctx.currentTime;
-    // Two physical phases: sole landing, then short dry skid/release.
-    // Neither phase uses an oscillator: remove the 96/125Hz "puk-puk"
-    // sine-like low tone that made footsteps resemble repeated impacts.
-    const contact=(freq,type,length,volume,delay)=>{
-      const source=ctx.createBufferSource();
-      source.buffer=noiseBuffer;
-      const filter=ctx.createBiquadFilter();
-      filter.type=type;
-      filter.frequency.value=freq;
-      filter.Q.value=type==='bandpass'?.78:.56;
-      const gain=ctx.createGain();
-      const start=t+delay;
-      const peak=Math.max(.0002,volume);
-      gain.gain.setValueAtTime(.0001,start);
-      gain.gain.exponentialRampToValueAtTime(peak,start+.011);
-      gain.gain.exponentialRampToValueAtTime(.0001,start+length);
-      source.connect(filter);filter.connect(gain);gain.connect(master);
-      source.start(start,Math.random()*.65);
-      source.stop(start+length+.012);
-      source.onended=()=>{
-        try{source.disconnect();filter.disconnect();gain.disconnect();}catch{}
-      };
+    const settings=recordedFootstepDynamics(mode,surface,shoeFootIndex++);
+    const recorded=recordings.get(settings.file)||recordings.get('concrete_a');
+    if(!recorded){
+      // Quiet temporary contact while audio assets finish decoding; no
+      // pitched oscillator, thick impact or duplicate low-frequency thud.
+      noise(1430,.034,mode==='crouch'?.026:.065,'bandpass');
+      return;
+    }
+    const source=ctx.createBufferSource();
+    source.buffer=recorded;
+    source.playbackRate.value=settings.playbackRate;
+    const filter=ctx.createBiquadFilter();
+    filter.type='highpass';filter.frequency.value=settings.highpass;
+    filter.Q.value=.65;
+    const gain=ctx.createGain();gain.gain.value=settings.gain;
+    source.connect(filter);filter.connect(gain);gain.connect(master);
+    source.start();
+    source.onended=()=>{
+      try{source.disconnect();filter.disconnect();gain.disconnect();}catch{}
     };
-    contact(f.heelHz,f.heelType,f.heelDuration,f.heelVolume,0);
-    contact(f.dragHz,f.dragType,f.dragDuration,f.dragVolume,f.dragDelay);
   }
 
   function jump() {
@@ -379,77 +378,34 @@ export function createSoundEngine() {
   }
 
   function death() {
-    // Synthetic short gasp/scream, blunt fall, wet scrape and muffled crunch.
-    // No recorded person, licensed assets or visual gore textures.
+    // No oscillator "bwooo" scream or pitch-sliding cartoon trombone.
+    // A sharp cut of breath, a heavy non-tonal impact and sudden empty air
+    // fit the first-person blackout better than a comical synthesized cry.
     creatureAudio.update({active:false});
-    if(!enabled || ctx.state==='closed')return;
-    const start=ctx.currentTime;
-
-    const scream=ctx.createOscillator();
-    const throat=ctx.createBiquadFilter();
-    const vocal=ctx.createGain();
-    scream.type='sawtooth';
-    scream.frequency.setValueAtTime(345,start);
-    scream.frequency.exponentialRampToValueAtTime(630,start+.21);
-    scream.frequency.exponentialRampToValueAtTime(145,start+.8);
-    throat.type='bandpass';
-    throat.frequency.value=900;
-    throat.Q.value=.55;
-    vocal.gain.setValueAtTime(.0001,start);
-    vocal.gain.exponentialRampToValueAtTime(.19,start+.12);
-    vocal.gain.exponentialRampToValueAtTime(.26,start+.29);
-    vocal.gain.exponentialRampToValueAtTime(.0001,start+.91);
-    scream.connect(throat);
-    throat.connect(vocal);
-    vocal.connect(master);
-    scream.start(start);
-    scream.stop(start+.94);
-    scream.onended=()=>{scream.disconnect();throat.disconnect();vocal.disconnect();};
-
-    const shriek=ctx.createBufferSource();
-    shriek.buffer=noiseBuffer;
-    const airy=ctx.createBiquadFilter();
-    airy.type='bandpass';
-    airy.frequency.value=1580;
-    airy.Q.value=.4;
-    const breath=ctx.createGain();
-    breath.gain.setValueAtTime(.0001,start);
-    breath.gain.exponentialRampToValueAtTime(.29,start+.1);
-    breath.gain.exponentialRampToValueAtTime(.0001,start+.74);
-    shriek.connect(airy);airy.connect(breath);breath.connect(master);
-    shriek.start(start,Math.random()*.1);
-    shriek.stop(start+.76);
-    shriek.onended=()=>{shriek.disconnect();airy.disconnect();breath.disconnect();};
-
-    function impact(delay,low,volume,length){
-      const at=start+delay;
-      const noiseSource=ctx.createBufferSource();
-      noiseSource.buffer=noiseBuffer;
-      const filter=ctx.createBiquadFilter();
-      filter.type='lowpass';filter.frequency.value=low;
-      const gain=ctx.createGain();
-      gain.gain.setValueAtTime(.0001,at);
-      gain.gain.exponentialRampToValueAtTime(volume,at+.009);
-      gain.gain.exponentialRampToValueAtTime(.0001,at+length);
-      noiseSource.connect(filter);filter.connect(gain);gain.connect(master);
-      noiseSource.start(at,Math.random()*.45);
-      noiseSource.stop(at+length+.01);
-      noiseSource.onended=()=>{noiseSource.disconnect();filter.disconnect();gain.disconnect();};
-    }
-    impact(.28,340,.67,.28);
-    impact(.83,740,.37,.22);
-    impact(1.18,280,.24,.25);
-    const thud=ctx.createOscillator();
-    const lowGain=ctx.createGain();
-    thud.type='triangle';
-    thud.frequency.setValueAtTime(100,start+.28);
-    thud.frequency.exponentialRampToValueAtTime(43,start+.61);
-    lowGain.gain.setValueAtTime(.0001,start+.28);
-    lowGain.gain.exponentialRampToValueAtTime(.62,start+.3);
-    lowGain.gain.exponentialRampToValueAtTime(.0001,start+.68);
-    thud.connect(lowGain);lowGain.connect(master);
-    thud.start(start+.28);thud.stop(start+.69);
-    thud.onended=()=>{thud.disconnect();lowGain.disconnect();};
+    observerAudio.update({active:false});
+    if(!enabled||ctx.state==='closed')return;
+    const now=ctx.currentTime;
+    const hit=(delay,freq,type,length,peak)=>{
+      const start=now+delay;
+      const src=ctx.createBufferSource();src.buffer=noiseBuffer;
+      const band=ctx.createBiquadFilter();
+      band.type=type;band.frequency.value=freq;band.Q.value=.55;
+      const amp=ctx.createGain();
+      amp.gain.setValueAtTime(.0001,start);
+      amp.gain.exponentialRampToValueAtTime(peak,start+.012);
+      amp.gain.exponentialRampToValueAtTime(.0001,start+length);
+      src.connect(band);band.connect(amp);amp.connect(master);
+      src.start(start,Math.random()*.4);src.stop(start+length+.012);
+      src.onended=()=>{
+        try{src.disconnect();band.disconnect();amp.disconnect();}catch{}
+      };
+    };
+    // The grab hits immediately; the delayed floor impact is heavy, short.
+    hit(0,1320,'bandpass',.11,.25); // cut-off inhale / cloth snap
+    hit(.08,570,'lowpass',.24,.55); // body collision
+    hit(.26,270,'lowpass',.20,.36); // floor fall
+    hit(.39,1180,'bandpass',.16,.13); // dragging shoe
+    // Everything else dies away after half a second. No drawn-out glide.
   }
 
   return {

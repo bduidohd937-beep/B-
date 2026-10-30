@@ -12,19 +12,24 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
  panner.maxDistance=OBSERVER_AUDIO_RANGE+8;
  panner.rolloffFactor=.9;
 
+ // Continuous sawtooth drones sounded like a flying insect.
+ // Broadband low mechanical scraping uses NO pitched, sustained oscillator.
  const filter=ctx.createBiquadFilter();
- filter.type='lowpass';filter.frequency.value=360;
- const motor=ctx.createOscillator();
- motor.type='sawtooth';motor.frequency.value=53;
+ filter.type='lowpass';filter.frequency.value=240;
+ const motor=ctx.createBufferSource();
+ motor.buffer=sharedNoise;motor.loop=true;
  const motorGain=ctx.createGain();motorGain.gain.value=0;
  motor.connect(filter);filter.connect(motorGain);
  motorGain.connect(panner);panner.connect(master);
  motor.start();
 
- const sub=ctx.createOscillator();
- sub.type='triangle';sub.frequency.value=38;
+ const sub=ctx.createBufferSource();
+ sub.buffer=sharedNoise;sub.loop=true;
+ const subFilter=ctx.createBiquadFilter();
+ subFilter.type='bandpass';subFilter.frequency.value=155;subFilter.Q.value=.45;
  const subGain=ctx.createGain();subGain.gain.value=0;
- sub.connect(subGain);subGain.connect(panner);sub.start();
+ sub.connect(subFilter);subFilter.connect(subGain);subGain.connect(panner);
+ sub.start();
 
  let disposed=false,mode='scan',nextFootfall=0,footSide=0;
  const clean=(...nodes)=>{for(const node of nodes)try{node.disconnect();}catch{}};
@@ -49,17 +54,10 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
      panner.positionZ.setTargetAtTime(z,t,.05);
    }else panner.setPosition(x,y,z);
  }
- function servoPunch(startHz,endHz,length,gain,t){
-   const source=ctx.createOscillator(),env=ctx.createGain();
-   source.type='triangle';
-   source.frequency.setValueAtTime(startHz,t);
-   source.frequency.exponentialRampToValueAtTime(endHz,t+length);
-   env.gain.setValueAtTime(.0001,t);
-   env.gain.exponentialRampToValueAtTime(gain,t+.029);
-   env.gain.exponentialRampToValueAtTime(.0001,t+length);
-   source.connect(env);env.connect(panner);
-   source.start(t);source.stop(t+length+.02);
-   source.onended=()=>clean(source,env);
+ function hydraulicBurst(t,amount=.22,length=.25){
+   // Low unpitched piston shudder, enveloped in metal transients.
+   transient(240,'lowpass',amount,length,t);
+   transient(920,'bandpass',Math.min(.24,amount*.7),length*.55,t,.05);
  }
  function cue(kind,t){
    if(disposed)return;
@@ -67,16 +65,16 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
      // Mechanical iris snaps shut. Two dry catches; no rising electronic bee.
      transient(970,'bandpass',.20,.095,t);
      transient(1250,'bandpass',.16,.072,t,.095);
-     servoPunch(145,73,.31,.16,t);
+     hydraulicBurst(t,.18,.20);
    }else if(kind==='lock'){
      // Heavy industrial impact + a low-frequency hydraulic deceleration.
      transient(510,'lowpass',.32,.24,t);
      transient(890,'bandpass',.26,.21,t,.055);
-     servoPunch(105,41,.52,.30,t);
+     hydraulicBurst(t,.31,.29);
    }else if(kind==='lost'){
      // Abrupt lock release. Leave the breathing low motor in search only.
      transient(550,'lowpass',.095,.15,t);
-     servoPunch(84,49,.25,.12,t);
+     hydraulicBurst(t,.10,.13);
    }
  }
  function footfall(t,intensity){
@@ -107,8 +105,7 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
    motorGain.gain.setTargetAtTime(profile.gain,t,next==='search'?.04:.13);
    subGain.gain.setTargetAtTime(profile.gain*.62,t,.12);
    filter.frequency.setTargetAtTime(profile.lowpass,t,.15);
-   motor.frequency.setTargetAtTime(next==='chase'?61:next==='alert'?55:48,t,.2);
-   sub.frequency.setTargetAtTime(next==='chase'?44:36,t,.18);
+   subFilter.frequency.setTargetAtTime(next==='chase'?190:130,t,.18);
    if(profile.steps&&t>=nextFootfall){
      const close=Math.max(0,Math.min(1,1-distance/OBSERVER_AUDIO_RANGE));
      footfall(t,close);
@@ -121,7 +118,7 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
    if(disposed)return;
    disposed=true;
    for(const source of [motor,sub])try{source.stop();}catch{}
-   clean(motor,sub,filter,motorGain,subGain,panner);
+   clean(motor,sub,filter,motorGain,subFilter,subGain,panner);
  }
  return {update,dispose};
 }

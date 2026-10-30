@@ -10,6 +10,7 @@ import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 import {buildRoute} from './navigationGrid.js';
 import {passesParkedCar} from './chaseAudioRules.js';
+import {canListenerCatch,reachableSoundTarget,shouldReplanOnStall} from './listenerContactRules.js';
 import {
   FIRST_GUARD_HOME,FIRST_GUARD_PATROL,FIRST_GUARD_WALK_SPEED,
   FIRST_GUARD_ROUTE_REPLAN_SECONDS,FIRST_GUARD_LISTEN_SECONDS,
@@ -74,6 +75,8 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
   const patrolIndex=useRef(1);
   const watchTime=useRef(0);
   const stuckTime=useRef(0);
+  const lastGoalDistance=useRef(Infinity);
+  const noProgressTime=useRef(0);
   const soundClock=useRef(0);
   const rushTime=useRef(0);
   const listenerLocation=useRef(new THREE.Vector3());
@@ -85,6 +88,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     target.current.copy(home);
     patrolIndex.current=1;
     watchTime.current=0;stuckTime.current=0;
+    lastGoalDistance.current=Infinity;noProgressTime.current=0;
     searchTime.current=0;
     cooldown.current=0;
     excitement.current=0;
@@ -112,6 +116,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       state.current='idle';pos.copy(home);route.current=[];routeTime.current=0;
       patrolIndex.current=1;
       watchTime.current=0;stuckTime.current=0;
+      lastGoalDistance.current=Infinity;noProgressTime.current=0;
       excitement.current=0;currentSpeed.current=1.2;rushTime.current=0;
       modelMotion.current={state:'idle',speed:0,excitement:0};
       lastEvent.current=events.current.length?events.current[events.current.length-1].id:0;
@@ -141,7 +146,13 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
-      const distanceToSound=dist(pos,point);
+      const distanceToSound=dist(pos,point); // Physical hearing still tests actual sound.
+      const reachable=reachableSoundTarget(event.position,event.type,floor);
+      if(reachable?.source==='breaker-face'){
+        // The electronic alarm originates inside the solid cabinet but the
+        // accessible face (+Z) is where a real person can operate it.
+        point.set(reachable.x,0,reachable.z);
+      }
       const reaction=event.type==='siren'||event.type==='car-alarm'
         ? (distanceToSound<=(event.type==='siren'?SIREN_HEARING_RADIUS:CAR_ALARM_HEARING_RADIUS)?'investigate':'none')
         : event.type==='breath'
@@ -157,6 +168,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         state.current=reaction==='listen'?'listen':'investigate';
         searchTime.current=0;
         routeTime.current=0;
+        lastGoalDistance.current=Infinity;noProgressTime.current=0;
         excitement.current=Math.min(100,Math.max(excitement.current,
           reaction==='listen'?Math.min(25,12+(event.loudness||8)):event.loudness || 0));
         heardSomething=true;
@@ -190,7 +202,10 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       route.current=[];
       routeTime.current=0;
     }
-    while(route.current.length&&dist(pos,route.current[0])<.65)route.current.shift();
+    while(route.current.length&&dist(pos,route.current[0])<.65){
+      route.current.shift();
+      lastGoalDistance.current=Infinity;noProgressTime.current=0;
+    }
     const waypoint=route.current.length?route.current[0]:destination;
     const range=dist(pos,waypoint);
     const goalRange=dist(pos,destination);
@@ -209,6 +224,21 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
           route.current=[];routeTime.current=0;stuckTime.current=0;
         }
       }else stuckTime.current=0;
+      // Tangent steps can keep moving yet orbit the same blocked object.
+      // Detect lack of progress toward the CURRENT waypoint, not just
+      // zero displacement. Replan to the last HEARD location only.
+      const remaining=dist(pos,waypoint);
+      if(!Number.isFinite(lastGoalDistance.current)||
+         remaining<lastGoalDistance.current-.14){
+        lastGoalDistance.current=remaining;
+        noProgressTime.current=0;
+      }else{
+        noProgressTime.current+=dt;
+        if(shouldReplanOnStall(lastGoalDistance.current,remaining,noProgressTime.current)){
+          route.current=[];routeTime.current=0;
+          lastGoalDistance.current=Infinity;noProgressTime.current=0;
+        }
+      }
       group.current.rotation.y=Math.atan2(waypoint.x-pos.x,waypoint.z-pos.z);
     }
     if(goalRange<1.15&&state.current==='investigate'){state.current='search';searchTime.current=0;}
@@ -244,7 +274,8 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     }
     const player=playerRef.current;
     let capturedNow=false;
-    if(player&&cooldown.current===0&&dist(pos,player)<1.28){
+    if(player&&cooldown.current===0&&
+       canListenerCatch(pos,player,(x,z)=>obstructed(x,z,powered))){
       cooldown.current=4;
       state.current='return';target.current.copy(home);
       capturedNow=true;

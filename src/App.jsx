@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import {gatePowerAfterRespawn} from './respawnRules.js';
 import {
  canReadCctv,canUseKeyReader,freshGateAuthentication,
  advanceGateAuthentication,gateLiftRatio,keyHoldProgress,
@@ -37,7 +38,7 @@ import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
 import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
 import { itemActionNoise,mechanicalNoise,nearestLookedAtPickup } from './interactions.js';
-import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, canOperatePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
+import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, canOperatePanel, canHoldPanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const clamp = THREE.MathUtils.clamp;
 function Flashlight({enabled,charge=100,reducedEffects=false}){
@@ -353,7 +354,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=floorRef.current===1&&
-      canOperatePanel(camera.position.toArray(),direction.toArray(),1);
+      (panelHeld.current&&keys.current.KeyE
+        ?canHoldPanel(camera.position.x,camera.position.z,1)
+        :canOperatePanel(camera.position.toArray(),direction.toArray(),1));
     const nearKeyReader=floorRef.current===2&&canUseKeyReader(camera.position.x,camera.position.z);
     if(floorRef.current===2&&screenOpenRef.current&&
        !canReadCctv(camera.position.x,camera.position.z,CCTV_STATION)&&!cctvRangeReported.current){
@@ -911,6 +914,11 @@ export default function App(){
     setCarAlarm(null);
     setEvidenceOpen(false);
     setGateAuth(freshGateAuthentication());
+    // Death resets the unfinished stage: the first-floor shutter must NOT
+    // remain open after a caught player respawns at their checkpoint.
+    setPowered(old=>gatePowerAfterRespawn(floorRef.current,old));
+    setPanelProgress(0);
+    setPuzzleProximity(null);
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);

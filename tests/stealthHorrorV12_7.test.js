@@ -24,7 +24,10 @@ test('cabinet has real collision but standing in front remains physically possib
 });
 test('same front+gaze test controls E prompt, starting and HOLDING the breaker',()=>{
  assert.match(app,/canOperatePanel\(eye,looking,1\)/);
- assert.match(app,/const nearPanel=floorRef\.current===1&&\s*canOperatePanel\(camera\.position\.toArray\(\),direction\.toArray\(\),1\)/);
+ assert.match(app,/const nearPanel=floorRef\.current===1&&/);
+ assert.match(app,/panelHeld\.current&&keys\.current\.KeyE/);
+ assert.match(app,/canHoldPanel\(camera\.position\.x,camera\.position\.z,1\)/);
+ assert.match(app,/canOperatePanel\(camera\.position\.toArray\(\),direction\.toArray\(\),1\)/);
  assert.match(app,/!poweredRef\.current && nearPanel && keys\.current\.KeyE/);
  assert.match(app,/panelHeld\.current=false;panelTime\.current=0;onPanelProgress\(0\)/);
 });
