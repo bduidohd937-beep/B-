@@ -5,6 +5,9 @@ import { heartIntensity } from './survival.js';
 // AI noise event. Breath is audible locally; Player separately emits AI noise.
 export function createVitalsAudio(ctx, master, noiseBuffer){
   let nextBeat=0, nextBreath=0, disposed=false;
+  const bus=ctx.createGain();
+  bus.gain.value=0;
+  bus.connect(master);
   function pulse(time,pitch,volume){
     const oscillator=ctx.createOscillator();
     const filter=ctx.createBiquadFilter();
@@ -17,7 +20,7 @@ export function createVitalsAudio(ctx, master, noiseBuffer){
     gain.gain.setValueAtTime(.0001,time);
     gain.gain.exponentialRampToValueAtTime(volume,time+.012);
     gain.gain.exponentialRampToValueAtTime(.0001,time+.17);
-    oscillator.connect(filter);filter.connect(gain);gain.connect(master);
+    oscillator.connect(filter);filter.connect(gain);gain.connect(bus);
     oscillator.start(time);
     oscillator.stop(time+.18);
     oscillator.onended=()=>{oscillator.disconnect();filter.disconnect();gain.disconnect();};
@@ -41,7 +44,7 @@ export function createVitalsAudio(ctx, master, noiseBuffer){
       envelope.gain.setTargetAtTime(.0001,at+duration*.55,duration*.1);
       envelope.gain.setValueAtTime(.0001,at+duration);
       source.connect(low);low.connect(nose);nose.connect(envelope);
-      envelope.connect(master);
+      envelope.connect(bus);
       source.start(at,Math.random()*.2);
       source.stop(at+duration+.018);
       source.onended=()=>{
@@ -55,10 +58,12 @@ export function createVitalsAudio(ctx, master, noiseBuffer){
     if(disposed||ctx.state==='closed')return;
     const now=ctx.currentTime;
     if(!active){
+      bus.gain.setTargetAtTime(0,now,.025);
       nextBeat=now;
       nextBreath=now;
       return;
     }
+    bus.gain.setTargetAtTime(1,now,.04);
     const heart=heartIntensity(creatureDistance);
     if(heart>.03){
       if(now>=nextBeat){
@@ -74,5 +79,5 @@ export function createVitalsAudio(ctx, master, noiseBuffer){
       }
     }else nextBreath=now;
   }
-  return {update,dispose(){disposed=true;}};
+  return {update,dispose(){disposed=true;try{bus.disconnect();}catch{}}};
 }
