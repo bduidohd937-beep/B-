@@ -10,6 +10,9 @@ const clamp=(n,min,max)=>Math.min(max,Math.max(min,n));
 // actual thrown object. Only the terminal impact emits an AI noise event.
 export function throwPoint(start,end,t){
  const u=clamp(Number.isFinite(t)?t:0,0,1);
+ // Exact endpoints avoid a tiny 1e-16 floating point lift at impact.
+ if(u===0)return [...start];
+ if(u===1)return [...end];
  return [
    start[0]+(end[0]-start[0])*u,
    start[1]+(end[1]-start[1])*u+THROW_ARC_HEIGHT*Math.sin(Math.PI*u),
