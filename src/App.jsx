@@ -3,6 +3,11 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import {
+ canReadCctv,canUseKeyReader,freshGateAuthentication,
+ advanceGateAuthentication,gateLiftRatio,keyHoldProgress,
+ SECURITY_KEY_READER,EXIT_ALARM_SECONDS,EXIT_ALARM_LOUDNESS
+} from './exitAuthorization.js';
 import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
 import { tickFlashlight,rechargeFlashlight,clampCharge,lowBatteryBrightness,FLASHLIGHT_CLICK_NOISE } from './flashlightRules.js';
 import { cameraMotion } from './cameraMotion.js';
@@ -56,7 +61,7 @@ function Flashlight({enabled,charge=100,reducedEffects=false}){
     decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects,onVehicleAction,vehicleSolved,cctvScreenOpen,onCctvOutOfRange,onGateProgress,onGateEvent }) {
   const { camera } = useThree();
   const keys = useRef({});
   const groundPickupsRef=useRef(pickupItems);
@@ -90,6 +95,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   const nearReported=useRef(false);
   const proximityReported=useRef(null);
   const panelHeld=useRef(false);
+  const gateAuthRef=useRef(freshGateAuthentication());
+  const authClock=useRef(0);
+  const screenOpenRef=useRef(cctvScreenOpen);
+  screenOpenRef.current=cctvScreenOpen;
+  const cctvRangeReported=useRef(false);
   const panelTime=useRef(0);
   const panelUpdate=useRef(0);
   const poweredRef=useRef(powered);
@@ -120,9 +130,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
+    gateAuthRef.current=freshGateAuthentication();authClock.current=0;
+    onGateProgress(gateAuthRef.current);
     proximityReported.current=null;
     onPanelProgress(0);
-  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals,onBatteryReport]);
+  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals,onBatteryReport,onGateProgress]);
   useEffect(()=>{
     if(!floorSignal)return;
     camera.position.set(...SECOND_FLOOR_START);
@@ -138,8 +150,10 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     proximityReported.current=null;
     keys.current={};
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
+    gateAuthRef.current=freshGateAuthentication();authClock.current=0;
+    onGateProgress(gateAuthRef.current);
     onPanelProgress(0);
-  },[floorSignal,camera,onPanelProgress,onVitals]);
+  },[floorSignal,camera,onPanelProgress,onVitals,onGateProgress]);
   useEffect(()=>{
     if(!boostSignal)return;
     survival.current=applyEnergyDrink(survival.current);
@@ -163,10 +177,14 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         const eye=camera.position.toArray(),looking=look.toArray();
         const nearBreaker=floorRef.current===1&&
           canUsePanel(camera.position.x,camera.position.z,1);
+        const nearKeyReader=floorRef.current===2&&
+          canUseKeyReader(camera.position.x,camera.position.z);
         const mystery=floorRef.current===2
           ?findMysteryInteraction(eye,looking,{floor:2,solved:vehicleSolvedRef.current})
           :null;
-        if(mystery){
+        if(nearKeyReader){
+          // Hold E; the authentication state machine operates in useFrame.
+        }else if(mystery){
           vehicleActionRef.current?.(mystery,eye);
         }else if(!nearBreaker){
           const focused=nearestLookedAtPickup(eye,looking,
@@ -302,6 +320,14 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=floorRef.current===1&&canUsePanel(camera.position.x,camera.position.z,1);
+    const nearKeyReader=floorRef.current===2&&canUseKeyReader(camera.position.x,camera.position.z);
+    if(floorRef.current===2&&screenOpenRef.current&&
+       !canReadCctv(camera.position.x,camera.position.z,CCTV_STATION)&&!cctvRangeReported.current){
+       cctvRangeReported.current=true;
+       onCctvOutOfRange();
+    }else if(!screenOpenRef.current){
+       cctvRangeReported.current=false;
+    }
     const mystery=floorRef.current===2?findMysteryInteraction(
       camera.position.toArray(),direction.toArray(),
       {floor:2,solved:vehicleSolvedRef.current}
@@ -310,7 +336,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       camera.position.toArray(),direction.toArray(),groundPickupsRef.current,
       canRef.current?null:groundCanRef.current
     );
-    const nextProximity=mystery?.kind==='cctv'?'cctv':
+    const nextProximity=nearKeyReader?'key-reader':
+      mystery?.kind==='cctv'?'cctv':
       mystery?.kind==='vehicle'?'vehicle:'+mystery.id:
       nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':
       focused?.kind==='can'?'can':focused?.kind==='item'?'item:'+focused.type:null;
@@ -334,6 +361,22 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       }
     }else if(panelHeld.current){
       panelHeld.current=false;panelTime.current=0;onPanelProgress(0);
+    }
+    // Keyed interlock runs during active gameplay only. Releasing E during
+    // insertion cancels that attempt; once the siren starts the shutter
+    // continues raising even after the player hides or flees.
+    if(floorRef.current===2){
+      const {state,event}=advanceGateAuthentication(gateAuthRef.current,{
+        dt,active,hasKey:vehicleSolvedRef.current,near:nearKeyReader,
+        holding:Boolean(keys.current.KeyE)
+      });
+      gateAuthRef.current=state;
+      authClock.current+=dt;
+      if(event)onGateEvent(event);
+      if(event||authClock.current>=.12){
+        authClock.current=0;
+        if(event||state.phase!=='locked')onGateProgress(state);
+      }
     }
     const footstep=tickFootsteps(stepMeter.current,{
       distance:movedDistance,
