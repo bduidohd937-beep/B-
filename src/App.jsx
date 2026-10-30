@@ -857,6 +857,11 @@ export default function App(){
     const key=e=>{
       if(e.repeat)return;
       if(e.code==='KeyH')setShowControls(v=>!v);
+      if(e.code==='KeyJ'&&started&&locked&&!caught&&!ending&&floorRef.current===2){
+        if(vehicleStateRef.current.reviewed)setEvidenceOpen(v=>!v);
+        else notify('아직 확보한 CCTV 기록이 없다 · 경비 콘솔을 먼저 찾아라');
+        return;
+      }
       if(e.code!=='KeyF'||!started||!locked||caught||ending)return;
       if(!torchRef.current&&flashlightChargeRef.current<=0){
         notify('손전등 배터리 방전 · 예비 건전지를 찾아야 한다');
@@ -905,6 +910,10 @@ export default function App(){
       <div className="emergency-dread__blackout"/>
       <div className="emergency-dread__red"/>
     </div>}
+    {carAlarm&&floor===2&&<div className="car-theft-alarm" role="status" aria-live="assertive">
+      <strong>VEHICLE ANTI-THEFT ALARM</strong>
+      <span>도난 경보 발동 · 소리를 따라오는 놈을 조심하라</span>
+    </div>}
     {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
       <strong>EMERGENCY PROTOCOL · B2</strong>
       <span>위이이잉— · 전자 사이렌 가동 · 청음자가 배전반으로 돌진</span>
@@ -924,6 +933,21 @@ export default function App(){
           <span>귀 달린 놈 = 소리 · 관조자 = 움직임 · CCTV 기록 조사</span>}
         </div>}
       </section>
+      {floor===2&&evidenceOpen&&started&&!caught&&!ending&&
+        <aside className="cctv-evidence" aria-label="확보한 CCTV 영상 기록">
+          <div className="cctv-evidence__head">
+            <strong>ARCHIVE / {CAMERA_LOG.camera}</strong>
+            <span>FILE ERROR: UNREGISTERED</span>
+          </div>
+          <div className="cctv-evidence__screen">
+            <span>▶ CAM C / {CAMERA_LOG.time}</span>
+            <strong>ZONE {CAMERA_LOG.bay}</strong>
+            <small>VIDEO FRAME CORRUPTED — 317?</small>
+          </div>
+          <p>{CAMERA_LOG.detail}</p>
+          <p>{CAMERA_LOG.discrepancy}</p>
+          <footer>번호판을 직접 확인해야 한다 · <kbd>J</kbd> 닫기</footer>
+        </aside>}
       {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&floor===1&&puzzleProximity==='panel'&&!gatePowered&&
