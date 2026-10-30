@@ -4,6 +4,8 @@ import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
+import { tickFlashlight,rechargeFlashlight,clampCharge,lowBatteryBrightness,FLASHLIGHT_CLICK_NOISE } from './flashlightRules.js';
+import { cameraMotion } from './cameraMotion.js';
 import Listener from './Listener.jsx';
 import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
@@ -25,26 +27,31 @@ import { itemActionNoise,mechanicalNoise,nearestLookedAtPickup } from './interac
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const clamp = THREE.MathUtils.clamp;
-function Flashlight({ enabled }) {
-  const { camera, scene } = useThree();
+function Flashlight({enabled,charge=100,reducedEffects=false}){
+  const {camera,scene}=useThree();
   const lamp=useRef();
   const target=useMemo(()=>new THREE.Object3D(),[]);
   const origin=useMemo(()=>new THREE.Vector3(),[]);
   const aim=useMemo(()=>new THREE.Vector3(),[]);
   useEffect(()=>{scene.add(target);return ()=>scene.remove(target)},[scene,target]);
-  useFrame(()=>{
+  useFrame(({clock})=>{
     if(!lamp.current)return;
     camera.getWorldPosition(origin);
     camera.getWorldDirection(aim);
-    lamp.current.position.copy(origin).addScaledVector(aim,.22).add(new THREE.Vector3(0,-.12,0));
+    lamp.current.position.copy(origin).addScaledVector(aim,.22);
+    lamp.current.position.y-=.12;
     target.position.copy(origin).addScaledVector(aim,14);
     target.updateMatrixWorld();
+    // Low charge causes a gentle warm pulse, never disorienting 0/100 strobing.
+    lamp.current.intensity=enabled&&charge>0
+      ?108*lowBatteryBrightness(charge,clock.elapsedTime,reducedEffects):0;
   });
-  return <spotLight ref={lamp} target={target} intensity={enabled?100:0}
-    angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
+  return <spotLight ref={lamp} target={target} intensity={0}
+    angle={Math.PI/6.5} penumbra={.72} distance={33}
+    decay={1.7} color="#f2e9cb"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals, pickupItems, onPickupGear, selectedType, onSelectSlot, onUseGear, onDropGear, boostSignal,rechargeSignal,onBatteryReport,cameraShake,reducedEffects }) {
   const { camera } = useThree();
   const keys = useRef({});
   const groundPickupsRef=useRef(pickupItems);
@@ -59,7 +66,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
   const survival=useRef(freshSurvival());
   const breathClock=useRef(0);
   const vitalsClock=useRef(0);
-  const bobClock = useRef(0);
+  const bobClock=useRef(0);
+  const flashlightCharge=useRef(100);
+  const batteryReportClock=useRef(0);
+  const tiltSmooth=useRef(0);
+  const bobSmooth=useRef(0);
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
   const lastMode = useRef('walk');
@@ -93,13 +104,17 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
     survival.current=freshSurvival();
+    flashlightCharge.current=100;
+    batteryReportClock.current=0;
+    onBatteryReport(100);
+    camera.rotation.z=0;tiltSmooth.current=0;bobSmooth.current=0;
     breathClock.current=0;vitalsClock.current=0;
     onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     proximityReported.current=null;
     onPanelProgress(0);
-  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals]);
+  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals,onBatteryReport]);
   useEffect(()=>{
     if(!floorSignal)return;
     camera.position.set(...SECOND_FLOOR_START);
@@ -121,6 +136,11 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     survival.current=applyEnergyDrink(survival.current);
     onVitals({stamina:survival.current.stamina,exhausted:false,breath:0});
   },[boostSignal,onVitals]);
+  useEffect(()=>{
+    if(!rechargeSignal)return;
+    flashlightCharge.current=rechargeFlashlight(flashlightCharge.current);
+    onBatteryReport(flashlightCharge.current);
+  },[rechargeSignal,onBatteryReport]);
   useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
@@ -208,6 +228,15 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     if(keys.current.KeyD||keys.current.ArrowRight)movement.add(right);
     if(keys.current.KeyA||keys.current.ArrowLeft)movement.sub(right);
     const dt=Math.min(delta,.05);
+    const battery=tickFlashlight(flashlightCharge.current,{
+      active,enabled:torch,dt
+    });
+    flashlightCharge.current=battery.charge;
+    batteryReportClock.current-=dt;
+    if(batteryReportClock.current<=0||battery.empty&&torch){
+      onBatteryReport(battery.charge);
+      batteryReportClock.current=.24;
+    }
     const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
     const sprintIntent=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
     const moving=movement.lengthSq()>0;
@@ -289,14 +318,22 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       mode,dt
     });
     stepMeter.current=footstep.state;
-    if(moving&&vertical.current===0){
-      bobClock.current+=dt*(sprinting?11:crouching?3.5:7);
-    }
+    // Visual motion derives from the same stride progress used for audible
+    // footsteps, rather than a free-running random shake timer.
+    const cameraOffsets=cameraMotion({
+      mode,distanceIntoStep:footstep.state.meters,
+      moving:movedDistance>.0001,
+      grounded:vertical.current===0&&velocityY.current===0,
+      intensity:cameraShake,reducedEffects
+    });
+    bobSmooth.current=THREE.MathUtils.damp(bobSmooth.current,cameraOffsets.rise,12,dt);
+    tiltSmooth.current=THREE.MathUtils.damp(tiltSmooth.current,cameraOffsets.roll,10,dt);
     if(footstep.steps){
       const surface=surfaceAt(camera.position.x,camera.position.z);
       onNoise({type:'step',mode,surface,loudness:footstepLoudness(mode,surface),position:camera.position.toArray()});
     }
-    camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+(moving&&vertical.current===0?Math.sin(bobClock.current)*.023:0);
+    camera.position.y=1.7-.66*crouchAlpha.current+vertical.current+bobSmooth.current;
+    camera.rotation.z=tiltSmooth.current;
     playerRef.current={x:camera.position.x,z:camera.position.z,speed:movedDistance/Math.max(dt,.001),crouched:crouching};
     if(camera.position.z < -10&&!nearReported.current){nearReported.current=true;onNear();}
     if(camera.position.z < -10 && direction.z>0.45&&!turnedOnce.current){turnedOnce.current=true;onTurn();}
