@@ -20,6 +20,26 @@ export function canUsePanel(x, z, floor = 1) {
   return distance2D(x, z, position[0], position[1]) <= 2.25;
 }
 
+// Real front-facing breaker interaction. The physical switches face +Z
+// (see EscapePuzzle meshes at z+.57). Distance ALONE is not enough:
+// behind the panel, looking sideways or looking away must never show E.
+export const PANEL_FRONT_OFFSET=.6;
+export const PANEL_FACING_DOT=.73;
+export function canOperatePanel(eye,looking,floor=1){
+  if(!eye||!looking||eye.length<3||looking.length<3)return false;
+  const [x,y,z]=eye;
+  const [px,pz]=panelPosition(floor);
+  if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(z))return false;
+  if(!canUsePanel(x,z,floor)||z<pz+.64||Math.abs(x-px)>1.65)return false;
+  const tx=px,ty=1.1,tz=pz+PANEL_FRONT_OFFSET;
+  const dx=tx-x,dy=ty-y,dz=tz-z;
+  const len=Math.hypot(dx,dy,dz);
+  const lookLen=Math.hypot(looking[0],looking[1],looking[2]);
+  if(len<.01||lookLen<.01||!Number.isFinite(lookLen))return false;
+  const dot=(dx*looking[0]+dy*looking[1]+dz*looking[2])/(len*lookLen);
+  return dot>=PANEL_FACING_DOT;
+}
+
 export function gateIsPowered(floor, firstPowered, secondPowered) {
   return floor === SECOND_FLOOR ? Boolean(secondPowered) : Boolean(firstPowered);
 }
