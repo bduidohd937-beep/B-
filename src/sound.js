@@ -124,6 +124,13 @@ export function createSoundEngine() {
     tone(110, .65, .58);
     tone(440, .26, .24);
   }
+  function loopTransition() {
+    // Uncanny, descending garage hum and a backwards-feeling ventilation pulse.
+    noise(180, .76, .52, 'lowpass');
+    tone(370, .84, .37, 'sawtooth');
+    tone(67, 1.10, .36);
+    noise(1400,.28,.12);
+  }
 
   function death() {
     // Synthetic short gasp/scream, blunt fall, wet scrape and muffled crunch.
@@ -200,7 +207,7 @@ export function createSoundEngine() {
   }
 
   return {
-    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, death,
+    step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, death,
     updateCreature: creatureAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();
