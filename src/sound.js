@@ -1,59 +1,132 @@
-// Procedural audio; all sources are generated locally (no licensed audio files).
+// Original synthesized footsteps and impacts. No external sound assets.
 export function createSoundEngine() {
-  const AC = window.AudioContext || window.webkitAudioContext;
-  if (!AC) return null;
-  const ctx = new AC();
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  const ctx = new AudioContextClass();
   let enabled = true;
+
+  // Keep the low fluorescent hum well below transient effects.
   const master = ctx.createGain();
-  master.gain.value = .48;
-  master.connect(ctx.destination);
-  const humOsc = ctx.createOscillator();
-  const humLowpass = ctx.createBiquadFilter();
-  const humGain = ctx.createGain();
-  humOsc.type='sawtooth'; humOsc.frequency.value=58;
-  humLowpass.type='lowpass';humLowpass.frequency.value=95;
-  humGain.gain.value=.026;
-  humOsc.connect(humLowpass).connect(humGain).connect(master);
-  humOsc.start();
-  function pulse(freq, duration, volume, noise=false) {
-    if (!enabled || ctx.state==='closed') return;
-    const now=ctx.currentTime;
-    const gain=ctx.createGain();
-    gain.gain.setValueAtTime(.0001,now);
-    gain.gain.exponentialRampToValueAtTime(Math.max(.001,volume),now+.009);
-    gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
+  master.gain.value = .85;
+  const limiter = ctx.createDynamicsCompressor();
+  limiter.threshold.value = -12;
+  limiter.knee.value = 9;
+  limiter.ratio.value = 6;
+  limiter.attack.value = .004;
+  limiter.release.value = .18;
+  master.connect(limiter);
+  limiter.connect(ctx.destination);
+
+  const hum = ctx.createOscillator();
+  const humFilter = ctx.createBiquadFilter();
+  const humLevel = ctx.createGain();
+  hum.type = 'sawtooth';
+  hum.frequency.value = 59;
+  humFilter.type = 'lowpass';
+  humFilter.frequency.value = 95;
+  humLevel.gain.value = .012;
+  hum.connect(humFilter);
+  humFilter.connect(humLevel);
+  humLevel.connect(master);
+  hum.start();
+
+  // One shared noise buffer instead of generating thousands of samples every step.
+  const noiseBuffer = ctx.createBuffer(1, Math.round(ctx.sampleRate), ctx.sampleRate);
+  const values = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < values.length; i++) values[i] = Math.random() * 2 - 1;
+
+  function envelope(gain, time, length, peak) {
+    const attack = Math.min(.012, length / 6);
+    gain.gain.setValueAtTime(.0001, time);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0002, peak), time + attack);
+    gain.gain.exponentialRampToValueAtTime(.0001, time + length);
+  }
+
+  function noise(freq, length, peak, type = 'bandpass') {
+    if (!enabled || ctx.state === 'closed') return;
+    const source = ctx.createBufferSource();
+    source.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = type;
+    filter.frequency.value = freq;
+    filter.Q.value = .7;
+    const gain = ctx.createGain();
+    const start = ctx.currentTime;
+    envelope(gain, start, length, peak);
+    source.connect(filter);
+    filter.connect(gain);
     gain.connect(master);
-    let src;
-    if(noise) {
-      const buffer=ctx.createBuffer(1,Math.max(1,Math.round(ctx.sampleRate*duration)),ctx.sampleRate);
-      const data=buffer.getChannelData(0);
-      for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
-      src=ctx.createBufferSource();src.buffer=buffer;
-      const filter=ctx.createBiquadFilter();filter.type='lowpass';filter.frequency.value=freq;
-      src.connect(filter).connect(gain);
-    } else {
-      src=ctx.createOscillator();src.type='triangle';src.frequency.setValueAtTime(freq,now);
-      src.frequency.exponentialRampToValueAtTime(Math.max(30,freq*.55),now+duration);
-      src.connect(gain);
-    }
-    src.start(now);src.stop(now+duration+.01);
-    src.onended=()=>{try{src.disconnect();gain.disconnect();}catch{}};
+    source.start(start, Math.random() * Math.max(.001, 1 - length));
+    source.stop(start + length + .015);
+    source.onended = () => {
+      source.disconnect();
+      filter.disconnect();
+      gain.disconnect();
+    };
   }
-  function step(mode) {
-    const strength=mode==='sprint'?.19:mode==='crouch'?.035:.095;
-    pulse(mode==='sprint'?380:270,.085,strength,true);
-    pulse(85,.085,strength*.45);
+
+  function tone(freq, length, peak, type = 'triangle') {
+    if (!enabled || ctx.state === 'closed') return;
+    const source = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const start = ctx.currentTime;
+    source.type = type;
+    source.frequency.setValueAtTime(freq, start);
+    source.frequency.exponentialRampToValueAtTime(Math.max(30, freq * .55), start + length);
+    envelope(gain, start, length, peak);
+    source.connect(gain);
+    gain.connect(master);
+    source.start(start);
+    source.stop(start + length + .015);
+    source.onended = () => { source.disconnect(); gain.disconnect(); };
   }
-  function jump(){pulse(440,.13,.48,true);pulse(92,.18,.33);}
-  function land(){pulse(620,.27,.82,true);pulse(90,.31,.7);pulse(48,.38,.58);}
-  function metal(){pulse(1300,.16,.46,true);pulse(480,.29,.32);}
-  function splash(){pulse(1250,.24,.35,true);}
-  function throwCan(){pulse(1700,.32,.72,true);pulse(780,.25,.38);}
-  function flicker(){pulse(1600,.035,.075,true);}
+
+  function step(mode = 'walk') {
+    const crouching = mode === 'crouch';
+    const running = mode === 'sprint';
+    // Mid-frequency concrete scrape + low shoe impact: audible without metal or water.
+    noise(crouching ? 620 : running ? 1020 : 830,
+      running ? .17 : crouching ? .095 : .135,
+      running ? .68 : crouching ? .12 : .42);
+    tone(running ? 125 : 96, running ? .15 : .12,
+      running ? .40 : crouching ? .075 : .25);
+  }
+
+  function jump() {
+    noise(960, .22, .63);
+    tone(165, .18, .34);
+  }
+  function land() {
+    noise(680, .33, .94);
+    tone(115, .32, .67);
+    noise(230, .21, .31, 'lowpass');
+  }
+  function metal() {
+    noise(1900, .18, .47);
+    tone(560, .20, .25);
+  }
+  function splash() { noise(2050, .24, .45); }
+  function throwCan() {
+    noise(2100, .27, .7);
+    tone(790, .30, .36);
+  }
+  function flicker() { noise(2400, .035, .16); }
+
   return {
-    step,jump,land,metal,splash,throwCan,flicker,
-    resume(){if(ctx.state==='suspended')ctx.resume();},
-    setEnabled(v){enabled=v;master.gain.setTargetAtTime(v?.48:0,ctx.currentTime,.03);},
-    dispose(){try{humOsc.stop();}catch{}ctx.close();}
+    step, jump, land, metal, splash, throwCan, flicker,
+    resume() {
+      if (ctx.state === 'suspended') return ctx.resume();
+      return Promise.resolve();
+    },
+    setEnabled(value) {
+      enabled = Boolean(value);
+      if (ctx.state !== 'closed') {
+        master.gain.setTargetAtTime(enabled ? .85 : 0, ctx.currentTime, .035);
+      }
+    },
+    dispose() {
+      try { hum.stop(); } catch {}
+      if (ctx.state !== 'closed') ctx.close();
+    }
   };
 }
