@@ -12,7 +12,7 @@ import {buildRoute} from './navigationGrid.js';
 import {passesParkedCar} from './chaseAudioRules.js';
 import {
   FIRST_GUARD_HOME,FIRST_GUARD_PATROL,FIRST_GUARD_WALK_SPEED,
-  FIRST_GUARD_ROUTE_REPLAN_SECONDS,firstGuardWaypoint,nextFirstGuardWaypoint
+  FIRST_GUARD_ROUTE_REPLAN_SECONDS,nextFirstGuardWaypoint
 } from './firstFloorThreat.js';
 
 // Loop 01 actively guards the breaker instead of standing 34m across the map.
