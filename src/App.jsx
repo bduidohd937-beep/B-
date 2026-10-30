@@ -8,6 +8,8 @@ import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
 import ThrownCan from './ThrownCan.jsx';
 import SurvivalHUD from './SurvivalHUD.jsx';
+import GameClock from './GameClock.jsx';
+import { inventoryControls } from './uiRules.js';
 import EscapePuzzle from './EscapePuzzle.jsx';
 import DistortedB2 from './DistortedB2.jsx';
 import DeathCamera from './DeathCamera.jsx';
@@ -536,6 +538,10 @@ export default function App(){
   const onHorrorCue=useCallback(type=>{
     soundRef.current?.horrorCue?.(type);
   },[]);
+  const onClockAnomaly=useCallback(()=>{
+    // A player-only uncanny hint, not a noise event: the Listener cannot hear time reverse.
+    soundRef.current?.horrorCue?.('clock');
+  },[]);
   const noiseLog=useRef([]);
   const noiseId=useRef(0);
   const playerRef=useRef({x:0,z:17});
@@ -701,7 +707,7 @@ export default function App(){
     <div className="hud hud--v092">
       <header className="game-header">
         <div className="game-header__brand">B<span>∞</span> <small>THE ENDLESS PARKING GARAGE</small></div>
-        <div className="game-header__location">B2 <span>/</span> {floor===2?'LOOP 02':'LOOP 01'} <span className="game-header__time">03:17</span></div>
+        <div className="game-header__location">B2 <span>/</span> {floor===2?'LOOP 02':'LOOP 01'} <GameClock floor={floor} active={started&&locked&&!ending&&!caught} reducedEffects={reducedEffects} onAnomaly={onClockAnomaly}/></div>
       </header>
       <div className="reticle" aria-hidden="true"/>
       <section className="mission-card" aria-label="현재 탈출 목표">
@@ -709,7 +715,7 @@ export default function App(){
         <div className="mission-card__text">{objectiveText(gatePowered,floor)}</div>
         {floor===2&&<div className="mission-card__rule">귀 달린 놈 = 소리 · 관조자 = 움직임</div>}
       </section>
-      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2}/>}
+      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
@@ -736,7 +742,10 @@ export default function App(){
         <div className="inventory-quickbar" role="group" aria-label="장비 3칸">
           {[0,1,2].map(index=>{
             const type=bag[index];
-            return <div key={index} className={'inventory-slot'+(type&&index===selectedIndex?' is-selected':'')}>
+            return <div key={index}
+              className={'inventory-slot'+(type&&index===selectedIndex?' is-selected':'')+(!type?' is-empty':'')}
+              title={type?ITEM_TYPES[type].description:'빈 인벤토리 슬롯'}
+              aria-label={`${index+1}번 슬롯 · ${type?ITEM_TYPES[type].label:'비어 있음'}${type&&index===selectedIndex?' · 현재 선택':''}`}>
               <kbd>{index+1}</kbd>
               <span>{type?ITEM_TYPES[type].label:'비어 있음'}</span>
               <small>{type?ITEM_TYPES[type].key:'EMPTY'}</small>
@@ -744,8 +753,8 @@ export default function App(){
           })}
         </div>
         <div className="inventory-guide">
-          <span><kbd>G</kbd> {selectedType==='can'?'던지기':'사용'}</span>
-          <span><kbd>Q</kbd> 내려놓기</span>
+          {inventoryControls(selectedType).use&&<span><kbd>G</kbd> {selectedType==='can'?'캔 던지기':'장비 사용'}</span>}
+          {inventoryControls(selectedType).drop&&<span><kbd>Q</kbd> 장비 내려놓기</span>}
           <span><kbd>F</kbd> 손전등 {torch?'ON':'OFF'}</span>
           {checkpoint&&<span className="equipment-strip__checkpoint">SAVE ✓</span>}
         </div>
@@ -777,7 +786,7 @@ export default function App(){
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
         <p>H 조작법 · 헤드폰 권장 · 숨소리는 청음자가 들을 수 있습니다</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.10 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.10.1 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
