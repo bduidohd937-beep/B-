@@ -141,6 +141,11 @@ export function createSoundEngine() {
     } else if(type==='false-exit') {
       noise(2500,.16,.24);
       tone(290,.26,.14,'sawtooth');
+    } else if(type==='clock') {
+      // Very faint player-only backwards-sounding double tick.
+      // Does not enter the game's noise-event log or affect either enemy.
+      tone(265,.17,.055,'triangle');
+      noise(1240,.10,.045);
     }
   }
 

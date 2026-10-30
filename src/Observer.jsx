@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { motionExposure,sightBlocked,tickObservation } from './observerRules.js';
+import { motionExposure,sightBlocked,tickObservation,OBSERVER_VIEW_DISTANCE,OBSERVER_DOT_THRESHOLD,OBSERVER_LOSE_SIGHT_SECONDS,OBSERVER_PURSUIT_SPEED } from './observerRules.js';
 import { gateBlocksPlayer } from './puzzle.js';
 
 const HOME=new THREE.Vector3(-14,0,-6);
@@ -51,7 +51,7 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
     }
     const angle=body.current.rotation.y;
     const dot=(dx*Math.sin(angle)+dz*Math.cos(angle))/Math.max(.001,distance);
-    const inSight=distance<=19 && dot>.46 &&
+    const inSight=distance<=OBSERVER_VIEW_DISTANCE && dot>OBSERVER_DOT_THRESHOLD &&
       !sightBlocked(pos,player,PILLARS,CARS);
     const rate=motionExposure({
       distance,dot,speed:player.speed||0,blocked:!inSight,crouched:Boolean(player.crouched)
@@ -70,15 +70,15 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
     }
 
     if(mode.current==='chase'){
-      if(lost.current>1.4){mode.current='search';search.current=0;}
+      if(lost.current>OBSERVER_LOSE_SIGHT_SECONDS){mode.current='search';search.current=0;}
       else{
-        const walked=moveSafely(pos,target.current,3.35,dt,powered);
+        const walked=moveSafely(pos,target.current,OBSERVER_PURSUIT_SPEED,dt,powered);
         if(walked)body.current.rotation.y=Math.atan2(target.current.x-pos.x,target.current.z-pos.z);
       }
     }else if(mode.current==='search'){
       search.current+=dt;
       body.current.rotation.y+=dt*.95;
-      if(search.current>=3.2){mode.current='return';}
+      if(search.current>=3.4){mode.current='return';}
     }else if(mode.current==='return'){
       if(!moveSafely(pos,HOME,1.25,dt,powered)){mode.current='scan';}
       body.current.rotation.y=Math.atan2(HOME.x-pos.x,HOME.z-pos.z);

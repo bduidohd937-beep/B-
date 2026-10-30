@@ -39,6 +39,11 @@ export function itemEffect(type,nearPanel=false){
  if(['alarm','radio','glow'].includes(type))return 'deploy';
  return 'none';
 }
+// Deploying a glowstick or applying lubricant is deliberately noiseless.
+// Other gear still makes an audible click or a sustained decoy sound.
+export function gearMakesNoise(type){
+ return type!=='glow'&&type!=='lube';
+}
 export function gadgetTiming(type,seconds){
  if(type==='alarm')return {active:seconds>=4&&seconds<12,end:seconds>=12,interval:.68,loudness:94};
  if(type==='radio')return {active:seconds>=.9&&seconds<10,end:seconds>=10,interval:1.12,loudness:72};

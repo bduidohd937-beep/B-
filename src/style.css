@@ -173,3 +173,37 @@
  .inventory-guide{max-width:170px}
  .item-toast{bottom:47%;font-size:10px}
 }
+
+/* B∞ V0.10.1 — readable urgency without distracting flashes. */
+.game-clock{display:inline-flex;align-items:center;gap:4px;min-width:4ch;color:#d8c7a9!important;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:.085em;white-space:nowrap;transition:color .25s ease,text-shadow .25s ease}
+.game-clock--wrong{color:#ee9e96!important;text-shadow:0 0 7px #b9414a77}
+.game-clock__symbol{font-size:11px;color:#cf7e7d;opacity:.93;line-height:1}
+.game-clock--reduced,.game-clock--reduced *{transition:none!important}
+.survival-panel__title{font-weight:550}
+.survival-panel__caption{font-size:9px;font-weight:500;letter-spacing:.15em}
+.survival-panel__gauge .survival-panel__caption strong{font-size:27px;line-height:1.05;font-weight:800;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
+.survival-panel__gauge .survival-panel__caption small{font-size:10px;letter-spacing:0;font-weight:450}
+.survival-panel__gauge.noise-danger .survival-panel__caption strong{color:#ff9992;text-shadow:0 0 9px #de45463a}
+.survival-panel__gauge.noise-danger .survival-panel__track{box-shadow:inset 0 0 0 1px #9e43456b}
+.survival-panel__gauge.noise-danger .survival-panel__track>div{background:#e46866}
+.survival-panel__gauge.noise-danger:not(.survival-panel--reduced) .survival-panel__caption strong{animation:noise-pulse-slow 1.7s ease-in-out infinite}
+.survival-panel--reduced .survival-panel__gauge.noise-danger .survival-panel__caption strong{animation:none!important}
+@keyframes noise-pulse-slow{0%,100%{text-shadow:0 0 5px #d4594930}50%{text-shadow:0 0 14px #e6666588}}
+.inventory-slot{transition:opacity .22s ease,background-color .22s ease,border-color .22s ease}
+.inventory-slot.is-empty{opacity:.38;border-color:#65746b3a;background:#10181987;box-shadow:none}
+.inventory-slot.is-empty kbd{border-color:#81908455;color:#8b9990}
+.inventory-slot.is-selected{opacity:1}
+.inventory-guide{min-height:22px}
+@media(max-width:760px){
+ .survival-panel__gauge .survival-panel__caption strong{font-size:23px}
+ .game-clock{font-size:10px}
+ .inventory-slot.is-empty{opacity:.3}
+}
+@media(max-width:465px){
+ .survival-panel__gauge .survival-panel__caption strong{font-size:21px}
+ .inventory-guide{gap:4px}
+}
+@media(prefers-reduced-motion:reduce){
+ .survival-panel__gauge.noise-danger .survival-panel__caption strong{animation:none!important}
+ .game-clock,.inventory-slot{transition:none}
+}
