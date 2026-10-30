@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
 import ThrownCan from './ThrownCan.jsx';
+import NoiseHUD from './NoiseHUD.jsx';
 
 const pillars = [];
 for (let z = -28; z <= 18; z += 9) for (const x of [-10, 10]) pillars.push([x, z]);
@@ -107,6 +108,8 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   groundCanRef.current=canPosition;
   const activeRef=useRef(false);
   activeRef.current=active;
+  const alteredRef=useRef(false);
+  alteredRef.current=altered;
   const checkSet=useRef(false);
   const forward = useMemo(()=>new THREE.Vector3(),[]);
   const right = useMemo(()=>new THREE.Vector3(),[]);
@@ -144,7 +147,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
           endZ=clamp(camera.position.z+flat.z*range,-44,38);
           const obstacle=pillars.some(([x,z])=>Math.abs(endX-x)<1.3&&Math.abs(endZ-z)<1.3)
             || parkedCars.some(([x,z])=>Math.abs(endX-x)<1.85&&Math.abs(endZ-z)<2.85)
-            || (altered&&Math.abs(endX)<4.2&&Math.abs(endZ+38)<1.05);
+            || (alteredRef.current&&Math.abs(endX)<4.2&&Math.abs(endZ+38)<1.05);
           if(!obstacle)break;
           range-=.5;
         }
@@ -174,11 +177,16 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
     const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
     const sprinting=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
     const mode=crouching?'crouch':sprinting?'sprint':'walk';
-    if(lastMode.current!==mode){lastMode.current=mode;onMoveMode(mode);}
     const moving=movement.lengthSq()>0;
     if(jumpQueued.current){
       if(!crouching&&vertical.current===0){velocityY.current=4.5;onNoise({type:'jump',loudness:72,position:camera.position.toArray()});}
       jumpQueued.current=false;
+    }
+    const actualMovement = (vertical.current>0||velocityY.current>0) ? 'jump'
+      : !moving ? (crouching ? 'crouch-idle' : 'idle') : mode;
+    if(lastMode.current!==actualMovement){
+      lastMode.current=actualMovement;
+      onMoveMode(actualMovement);
     }
     if(moving){
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
@@ -258,7 +266,9 @@ export default function App(){
   const [ending,setEnding]=useState(false);
   const [shifted,setShifted]=useState(false);
   const [audioOn,setAudioOn]=useState(true);
-  const [moveMode,setMoveMode]=useState('walk');
+  const [moveMode,setMoveMode]=useState('idle');
+  const [airborne,setAirborne]=useState(false);
+  const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
   const [checkpoint,setCheckpoint]=useState(false);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
@@ -286,8 +296,11 @@ export default function App(){
   const playerRef=useRef({x:0,z:17});
   const [respawnSignal,setRespawnSignal]=useState(0);
   const [caught,setCaught]=useState(false);
-  const [creatureState,setCreatureState]=useState('idle');
-  const onCreatureState=useCallback(value=>setCreatureState(old=>old===value?old:value),[]);
+  const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0});
+  const onCreatureState=useCallback((mode,excitement,speed)=>{
+    setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed
+      ?old:{mode,excitement,speed});
+  },[]);
   const onCaught=useCallback(()=>{
     setCaught(true);
     document.exitPointerLock?.();
@@ -296,15 +309,21 @@ export default function App(){
     noiseLog.current=[];
     setRespawnSignal(n=>n+1);
     setCaught(false);
-    setCreatureState('idle');
+    setAirborne(false);
+    setMoveMode('idle');
+    setCreatureInfo({mode:'idle',excitement:0,speed:0});
     const canvas=document.querySelector('canvas');
     canvas?.requestPointerLock?.();
   },[]);
   const onMoveMode=useCallback(mode=>setMoveMode(mode),[]);
   const onNoise=useCallback(event=>{
     // Shared noise event contract for a future sound-sensitive creature.
-    noiseLog.current.push({...event,id:++noiseId.current,time:performance.now()});
+    const emitted={...event,id:++noiseId.current,time:performance.now()};
+    noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
+    if(['step','jump','land','throw'].includes(event.type))setLatestNoise(emitted);
+    if(event.type==='jump')setAirborne(true);
+    if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
     if(!sound)return;
     if(event.type==='step'){sound.step(event.mode);if(event.surface==='metal')sound.metal();if(event.surface==='water')sound.splash();}
@@ -341,13 +360,14 @@ export default function App(){
     <div className="vignette"/>
     <div className="hud">
       <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.5.1 / WORK IN PROGRESS</div>
+      <div className="stamp">PROTOTYPE 0.6 / WORK IN PROGRESS</div>
       <div className="reticle"/>
       <div className="audio-toggle" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
-      <div className="creature-indicator">{creatureState==='investigate'?'어딘가에서 긁는 소리가 들린다':creatureState==='search'?'무언가가 주변을 수색 중이다':creatureState==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
+      <div className="creature-indicator">{creatureInfo.mode==='investigate'?'청음자가 소리를 향해 다가온다':creatureInfo.mode==='search'?'무언가가 주변을 수색 중이다':creatureInfo.mode==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
+      {started&&<NoiseHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} creature={creatureInfo}/>}
       <div className="item-indicator">{canCollected?'빈 캔 보유 · G 던지기':canPosition?'바닥에 떨어진 캔 · 가까이 가서 E로 줍기':'캔이 날아가는 중…'}{checkpoint?' · 체크포인트 확보':''}</div>
       <div className="torch-indicator">손전등 [F] {torch?'ON':'OFF'}</div>
-      <div className="movement-indicator">{moveMode==='crouch'?'앉기 / 저소음':moveMode==='sprint'?'달리기 / 큰 발소리':'걷기 / 보통 발소리'}</div>
+      <div className="movement-indicator">{airborne?'점프 중 / 착지 소음 주의':moveMode==='idle'?'정지 / 무음':moveMode==='crouch-idle'?'앉아 있기 / 무음':moveMode==='crouch'?'앉아서 이동 / 저소음':moveMode==='sprint'?'달리기 / 큰 발소리':'걷기 / 보통 발소리'}</div>
       <div className="controls">WASD 이동 · Shift 달리기 · Ctrl 누르기 / C 앉기 전환 · Space 점프 · E 줍기 · G 던지기 · F 손전등 · ESC 일시정지</div>
       {started&&locked&&!ending&&<div className="hint">{altered?'출구가 막혔다. 가까이 가서 확인하자.':shifted?'방금 전까지 저 기둥 뒤에 있지 않았나?':near?'기둥 뒤에 누군가 서 있다.':'출구를 찾아라. B2층 끝에 녹색 표시가 보인다.'}</div>}
     </div>
@@ -356,7 +376,7 @@ export default function App(){
       <h1>{caught?'들켰다.':ending?'출구가 없다.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
       <p>{caught?'무언가가 발소리를 듣고 다가왔다. 조용히 이동하면 피할 수 있다.':ending?<>계단도, 출구도 사라졌다.<br/>조금 전 기둥 뒤의 사람은 지금 어디에 있을까?</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.5.1 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.6 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
