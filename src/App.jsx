@@ -5,11 +5,12 @@ import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import Listener from './Listener.jsx';
 import ThrownCan from './ThrownCan.jsx';
-import NoiseHUD from './NoiseHUD.jsx';
+import SurvivalHUD from './SurvivalHUD.jsx';
 import EscapePuzzle from './EscapePuzzle.jsx';
 import DistortedB2 from './DistortedB2.jsx';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
+import { freshSurvival, tickSurvival } from './survival.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const pillars = [];
@@ -91,7 +92,7 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored }) {
+const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, onVitals }) {
   const { camera } = useThree();
   const keys = useRef({});
   const hadLooked = useRef(false);
@@ -102,6 +103,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
   const vertical = useRef(0);
   const velocityY = useRef(0);
   const stepMeter = useRef({meters:0,elapsed:1,moving:false});
+  const survival=useRef(freshSurvival());
+  const breathClock=useRef(0);
+  const vitalsClock=useRef(0);
   const bobClock = useRef(0);
   const jumpQueued = useRef(false);
   const crouchAlpha = useRef(0);
@@ -135,24 +139,30 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     camera.rotation.set(0,0,0);
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
+    survival.current=freshSurvival();
+    breathClock.current=0;vitalsClock.current=0;
+    onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     proximityReported.current=null;
     onPanelProgress(0);
-  },[respawnSignal,camera,checkpoint,onPanelProgress]);
+  },[respawnSignal,camera,checkpoint,onPanelProgress,onVitals]);
   useEffect(()=>{
     if(!floorSignal)return;
     camera.position.set(...SECOND_FLOOR_START);
     camera.rotation.set(0,0,0);
     vertical.current=0;velocityY.current=0;
     stepMeter.current={meters:0,elapsed:1,moving:false};
+    survival.current=freshSurvival();
+    breathClock.current=0;vitalsClock.current=0;
+    onVitals({...survival.current,breath:0,exhausted:false});
     crouchToggle.current=false;
     checkSet.current=true;
     proximityReported.current=null;
     keys.current={};
     panelHeld.current=false;panelTime.current=0;panelUpdate.current=0;
     onPanelProgress(0);
-  },[floorSignal,camera,onPanelProgress]);
+  },[floorSignal,camera,onPanelProgress,onVitals]);
   useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
@@ -212,9 +222,24 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
     if(keys.current.KeyA||keys.current.ArrowLeft)movement.sub(right);
     const dt=Math.min(delta,.05);
     const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
-    const sprinting=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
-    const mode=crouching?'crouch':sprinting?'sprint':'walk';
+    const sprintIntent=Boolean(!crouching&&(keys.current.ShiftLeft||keys.current.ShiftRight));
     const moving=movement.lengthSq()>0;
+    const survivalTick=tickSurvival(survival.current,{
+      dt,wantsSprint:sprintIntent,moving,crouching,airborne:vertical.current>0
+    });
+    survival.current=survivalTick.state;
+    const sprinting=survivalTick.sprinting;
+    const mode=crouching?'crouch':sprinting?'sprint':'walk';
+    vitalsClock.current-=dt;
+    if(vitalsClock.current<=0){
+      onVitals({stamina:survival.current.stamina,exhausted:survivalTick.exhausted,breath:survivalTick.breath});
+      vitalsClock.current=.13;
+    }
+    breathClock.current-=dt;
+    if(survivalTick.breath>=14&&breathClock.current<=0){
+      onNoise({type:'breath',loudness:survivalTick.breath,position:camera.position.toArray()});
+      breathClock.current=1.22;
+    }else if(survivalTick.breath<14){breathClock.current=0;}
     if(jumpQueued.current){
       if(!crouching&&vertical.current===0){velocityY.current=4.5;onNoise({type:'jump',loudness:72,position:camera.position.toArray()});}
       jumpQueued.current=false;
@@ -297,7 +322,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, onWat
   });
   return null;
 });
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, powered, floor, floorSignal, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, onSpatial, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact, onPuzzleProximity, onPanelAttempt, onPanelProgress, onPowerRestored, deathPhase, onDeathComplete, onHorrorCue, onVitals }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -321,7 +346,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} onVitals={onVitals}/>
     <DeathCamera phase={deathPhase} onComplete={onDeathComplete}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
@@ -337,6 +362,9 @@ export default function App(){
   const [audioOn,setAudioOn]=useState(true);
   const [moveMode,setMoveMode]=useState('idle');
   const [airborne,setAirborne]=useState(false);
+  const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
+  const [reducedEffects,setReducedEffects]=useState(false);
+  const [showControls,setShowControls]=useState(false);
   const [latestNoise,setLatestNoise]=useState(null);
   const [canCollected,setCanCollected]=useState(false);
   const [checkpoint,setCheckpoint]=useState(false);
@@ -396,10 +424,22 @@ export default function App(){
     deathPhaseRef.current='dead';
     setDeathPhase('dead');
   },[]);
-  const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0});
-  const onCreatureState=useCallback((mode,excitement,speed)=>{
-    setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed
-      ?old:{mode,excitement,speed});
+  const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0,distance:Infinity});
+  const creatureDistanceRef=useRef(Infinity);
+  const onVitals=useCallback(next=>{
+    const data={stamina:Math.max(0,Math.min(100,Math.round(next.stamina??100))),
+      breath:next.breath||0,exhausted:Boolean(next.exhausted)};
+    setVitals(previous=>previous.stamina===data.stamina&&previous.breath===data.breath&&previous.exhausted===data.exhausted
+      ?previous:data);
+    soundRef.current?.updateVitals?.({
+      active:true,breathLevel:data.breath,creatureDistance:creatureDistanceRef.current
+    });
+  },[]);
+  const onCreatureState=useCallback((mode,excitement,speed,distance=Infinity)=>{
+    creatureDistanceRef.current=distance;
+    const displayDistance=Number.isFinite(distance)?Math.round(distance*2)/2:Infinity;
+    setCreatureInfo(old=>old.mode===mode&&old.excitement===excitement&&old.speed===speed&&old.distance===displayDistance
+      ?old:{mode,excitement,speed,distance:displayDistance});
   },[]);
   const onSpatial=useCallback(data=>{
     soundRef.current?.updateCreature?.(data);
@@ -408,6 +448,7 @@ export default function App(){
     if(deathPhaseRef.current!=='alive')return;
     deathPhaseRef.current='dying';
     soundRef.current?.updateCreature?.({active:false});
+    soundRef.current?.updateVitals?.({active:false});
     soundRef.current?.death?.();
     setCaught(true);
     setDeathPhase('dying');
@@ -421,7 +462,9 @@ export default function App(){
     setCaught(false);
     setAirborne(false);
     setMoveMode('idle');
-    setCreatureInfo({mode:'idle',excitement:0,speed:0});
+    setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
+    creatureDistanceRef.current=Infinity;
+    setVitals({stamina:100,breath:0,exhausted:false});
     soundRef.current?.resume();
     const canvas=document.querySelector('canvas');
     canvas?.requestPointerLock?.();
@@ -432,7 +475,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -451,6 +494,7 @@ export default function App(){
     if(floorRef.current===1){
       floorRef.current=2; // Guard against repeated transitions during the same frame.
       soundRef.current?.updateCreature?.({active:false});
+      soundRef.current?.updateVitals?.({active:false});
       soundRef.current?.loopTransition?.();
       noiseLog.current=[];
       setFloor(2);
@@ -464,6 +508,7 @@ export default function App(){
       return;
     }
     soundRef.current?.updateCreature?.({active:false});
+    soundRef.current?.updateVitals?.({active:false});
     setEnding(true);
   },[canCollected]);
   useEffect(()=>{
@@ -474,7 +519,7 @@ export default function App(){
   const onNear=useCallback(()=>setNear(true),[]);
   const onTurn=useCallback(()=>setAltered(true),[]);
   useEffect(()=>{
-    const key=e=>{if(e.code==='KeyF'&&!e.repeat)setTorch(v=>!v);};
+    const key=e=>{if(e.repeat)return;if(e.code==='KeyF')setTorch(v=>!v);if(e.code==='KeyH')setShowControls(v=>!v);};
     const lock=()=>setLocked(document.pointerLockElement!==null);
     window.addEventListener('keydown',key);document.addEventListener('pointerlockchange',lock);
     return ()=>{window.removeEventListener('keydown',key);document.removeEventListener('pointerlockchange',lock);};
@@ -491,50 +536,68 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} floor={floor} floorSignal={floorSignal} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} onSpatial={onSpatial} checkpoint={checkpoint} powered={gatePowered} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored} deathPhase={deathPhase} onDeathComplete={onDeathComplete} onHorrorCue={onHorrorCue} onVitals={onVitals}/>
     </Canvas>
-    <div className="vignette"/>
-    {floorFlash&&<div className="floor-loop-flash" aria-live="polite">
+    <div className={"vignette "+(reducedEffects?"vignette--reduced":"")}/>
+    {floorFlash&&<div className={'floor-loop-flash '+(reducedEffects?'floor-loop-flash--reduced':'')} aria-live="polite">
       <span>STAIR B2</span><strong>YOU ARE STILL HERE</strong><small>03:17 — AGAIN</small>
     </div>}
-    {deathPhase!=='alive'&&<div className={'death-fx death-fx--'+deathPhase} aria-hidden="true">
+    {deathPhase!=='alive'&&<div className={'death-fx death-fx--'+deathPhase+(reducedEffects?' death-fx--reduced':'')} aria-hidden="true">
       <div className="death-fx__blood"/>
       <div className="death-fx__blackout"/>
     </div>}
-    <div className="hud">
-      <div className="top">B<span>∞</span> / B2 · 03:17</div>
-      <div className="stamp">PROTOTYPE 0.9 / B2 · {floor===2?'LOOP 02':'LOOP 01'}</div>
-      <div className="reticle"/>
-      <div className="audio-toggle" title="청음자의 방향성 숨소리와 발소리는 헤드폰 사용을 권장합니다" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
-      <div className="creature-indicator">{creatureInfo.mode==='investigate'?'청음자가 소리를 향해 다가온다':creatureInfo.mode==='listen'?'청음자가 작은 소리에 귀를 기울인다':creatureInfo.mode==='search'?'무언가가 주변을 수색 중이다':creatureInfo.mode==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
-      {started&&<NoiseHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} creature={creatureInfo}/>}
-      <div className="puzzle-goal">
-        <div className="puzzle-goal__label">OBJECTIVE {floor===2?'02 · BROADCAST RESET':'01 · EMERGENCY EXIT'}</div>
-        <div>{objectiveText(gatePowered,floor)}</div>
-        {puzzleProximity==='panel'&&!gatePowered&&<div className="puzzle-goal__interact">
-          <strong>{floor===2?'[E 누르기 유지] 비상방송 재동기화':'[E 누르기 유지] 배전반 재시동'}</strong>
-          <span>전기 소음 발생. 청음자를 먼저 유인하라.</span>
-          <div className="puzzle-goal__track"><div style={{width:(panelProgress*100)+'%'}}/></div>
+    <div className="hud hud--v092">
+      <header className="game-header">
+        <div className="game-header__brand">B<span>∞</span> <small>THE ENDLESS PARKING GARAGE</small></div>
+        <div className="game-header__location">B2 <span>/</span> {floor===2?'LOOP 02':'LOOP 01'} <span className="game-header__time">03:17</span></div>
+      </header>
+      <div className="reticle" aria-hidden="true"/>
+      <section className="mission-card" aria-label="현재 탈출 목표">
+        <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'BROADCAST':'EMERGENCY EXIT'}</span></div>
+        <div className="mission-card__text">{objectiveText(gatePowered,floor)}</div>
+      </section>
+      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo}/>}
+      <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20)):0}}/>
+      {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
+        <div className="interaction-callout" role="status">
+          <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
+          <span>큰 소음 발생 · 먼저 청음자를 유인하라</span>
+          <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
+            <div style={{width:(panelProgress*100)+'%'}}/>
+          </div>
         </div>}
-        {puzzleProximity==='gate'&&!gatePowered&&<div className="puzzle-goal__interact">
-          {floor===2?'비상방송이 끊겼다. 오른쪽 적색 제어반을 찾아라.':'비상문 잠김 — 왼쪽 벽 적색 배전반에 전력이 필요하다.'}
+      {started&&locked&&puzzleProximity==='gate'&&
+        <div className={'interaction-callout '+(gatePowered?'interaction-callout--ready':'')} role="status">
+          <strong>{gatePowered?'비상문 개방 · 통로로 이동':'비상문 잠김 · 전원 복구 필요'}</strong>
+          {!gatePowered&&<span>{floor===2?'오른쪽 벽의 비상방송 제어반을 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
         </div>}
-        {puzzleProximity==='gate'&&gatePowered&&<div className="puzzle-goal__interact puzzle-goal__interact--success">
-          비상문 열림 — 통로 안으로 들어가라.
-        </div>}
+      <div className="equipment-strip">
+        <span className="equipment-strip__item"><kbd>F</kbd> LIGHT <b>{torch?'ON':'OFF'}</b></span>
+        <span className="equipment-strip__item"><kbd>G</kbd> CAN <b>{canCollected?'READY':canPosition?'ON FLOOR':'AIRBORNE'}</b></span>
+        {checkpoint&&<span className="equipment-strip__checkpoint">CHECKPOINT SAVED</span>}
       </div>
-      <div className="item-indicator">{canCollected?'빈 캔 보유 · G 던지기':canPosition?'바닥에 떨어진 캔 · 가까이 가서 E로 줍기':'캔이 날아가는 중…'}{checkpoint?' · 체크포인트 확보':''}</div>
-      <div className="torch-indicator">손전등 [F] {torch?'ON':'OFF'}</div>
-      <div className="movement-indicator">{airborne?'점프 중 / 착지 소음 주의':moveMode==='idle'?'정지 / 무음':moveMode==='crouch-idle'?'앉아 있기 / 무음':moveMode==='crouch'?'앉아서 이동 / 저소음':moveMode==='sprint'?'달리기 / 큰 발소리':'걷기 / 보통 발소리'}</div>
-      <div className="controls">WASD 이동 · Shift 달리기 · Ctrl 누르기 / C 앉기 전환 · Space 점프 · E 줍기 · G 던지기 · F 손전등 · ESC 일시정지</div>
-      {started&&locked&&!ending&&<div className="hint">{floor===2?(gatePowered?'또 다른 B2의 문이 열린다. 안으로 들어가라.':'방금 빠져나온 곳과 똑같다. 방송 장치만 반대쪽이다.'):powered?'비상문이 열렸다. 이제 나갈 수 있을까?':altered?'EXIT 표지판이 바뀌었다. 비상 전원을 찾아라.':shifted?'방금 전까지 저 기둥 뒤에 있지 않았나?':near?'기둥 뒤에 누군가 서 있다.':'비상문이 잠겨 있다. 근처의 전력실을 찾아라.'}</div>}
+      <div className="helper-bar" aria-label="키보드 도움말">
+        <span>{vitals.exhausted?'숨이 차 달릴 수 없다':vitals.breath>=14?'쉿… 숨소리가 새어 나온다':creatureInfo.mode==='listen'?'청음자가 듣고 있다':floor===2?'이곳도 B2층이다':'작은 소리도 위험하다'}</span>
+        <span><kbd>H</kbd> {showControls?'조작법 닫기':'조작법'}</span>
+      </div>
+      {showControls&&<div className="controls-sheet">
+        <strong>CONTROLS · H로 닫기</strong>
+        <span>WASD 이동 · SHIFT 질주(스태미나 소모) · Ctrl/C 은신</span>
+        <span>SPACE 점프 · E 줍기/장치 조작 · G 캔 던지기</span>
+        <span>F 손전등 · ESC 일시정지 · H 조작법</span>
+      </div>}
     </div>
-    {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel">
+    {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel" role="dialog" aria-modal="true">
       <div className="eyebrow">B∞ / THE ENDLESS PARKING GARAGE</div>
       <h1>{caught?'소리가 끊겼다.':ending?'다시 B2.':!started?'끝나지 않는 주차장':'일시정지'}</h1>
       <p>{caught?'귓가를 찢는 비명, 바닥에 떨어진 손전등. 마지막으로 들린 것은 그놈의 거친 숨소리였다.':ending?<>잠겨 있던 비상문이 열렸다.<br/>하지만 계단 끝에는 또다시 B2라고 적혀 있다.</>:!started?<>차를 찾으러 내려왔을 뿐이다.<br/>하지만 이곳에서 나가는 길은 보이지 않는다.</>:'마우스가 잠금 해제되었습니다. 다시 들어가려면 계속을 누르세요.'}</p>
       <button onClick={()=>{if(caught)respawn();else if(ending)window.location.reload();else begin();}}>{caught?'체크포인트에서 재시작':ending?'처음부터':'들어가기'}</button>
-      {ending&&<p className="red">PROTOTYPE 0.9 — TO BE CONTINUED</p>}
+      {!caught&&!ending&&<div className="pause-settings">
+        <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
+        <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
+        <p>H 조작법 · 헤드폰 권장 · 숨소리는 청음자가 들을 수 있습니다</p>
+      </div>}
+      {ending&&<p className="red">PROTOTYPE 0.9.2 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }

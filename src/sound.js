@@ -1,4 +1,5 @@
 import { createSpatialCreatureAudio } from './spatialAudio.js';
+import { createVitalsAudio } from './vitalsAudio.js';
 
 // Original synthesized footsteps and impacts. No external sound assets.
 export function createSoundEngine() {
@@ -38,6 +39,7 @@ export function createSoundEngine() {
   for (let i = 0; i < values.length; i++) values[i] = Math.random() * 2 - 1;
 
   const creatureAudio = createSpatialCreatureAudio(ctx, master, noiseBuffer);
+  const playerVitalsAudio = createVitalsAudio(ctx, master, noiseBuffer);
 
   function envelope(gain, time, length, peak) {
     const attack = Math.min(.012, length / 6);
@@ -219,6 +221,7 @@ export function createSoundEngine() {
   return {
     step, jump, land, metal, splash, throwCan, flicker, switchStart, powerRestore, loopTransition, horrorCue, death,
     updateCreature: creatureAudio.update,
+    updateVitals: playerVitalsAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();
       return Promise.resolve();
@@ -231,6 +234,7 @@ export function createSoundEngine() {
     },
     dispose() {
       creatureAudio.dispose();
+      playerVitalsAudio.dispose();
       try { hum.stop(); } catch {}
       if (ctx.state !== 'closed') ctx.close();
     }

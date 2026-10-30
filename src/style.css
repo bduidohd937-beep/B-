@@ -78,3 +78,64 @@
 .floor-loop-flash small{font-size:11px;color:#8d696e}
 @keyframes loop-vanish{0%,20%{opacity:1}60%{opacity:.85}100%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.floor-loop-flash{animation:loop-vanish 2.25s linear forwards}}
+
+/* 0.9.2: quiet, cinematic HUD with reactive information hierarchy */
+.hud--v092{color:#dce6dc}
+.game-header{position:absolute;z-index:3;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:16px 27px;background:linear-gradient(#0d1416dd,#0d141600);border-bottom:1px solid #84988c22;letter-spacing:.11em}
+.game-header__brand{font-weight:750;font-size:17px}.game-header__brand span{color:#d5b992;font-size:22px}.game-header__brand small{font-size:9px;font-weight:400;margin-left:16px;color:#9bad9e}
+.game-header__location{font-size:11px;color:#c5d5c7}.game-header__location span{color:#d7b991;margin:0 5px}
+.mission-card{position:absolute;z-index:2;left:26px;top:91px;width:330px;max-width:80vw;padding:12px 16px;border-left:2px solid #b89c77;background:linear-gradient(90deg,#111b1edb,#10171952);text-shadow:0 1px 4px #000}
+.mission-card__index{color:#cdb18b;font-size:10px;letter-spacing:.12em;font-weight:700;margin-bottom:7px}
+.mission-card__index span{color:#a7b5a9;font-weight:400}.mission-card__text{font-size:12px;line-height:1.6;color:#d4ded4}
+.survival-panel{position:absolute;z-index:3;right:24px;top:96px;width:234px;padding:13px 15px;background:#10191de9;border:1px solid #839c886c;border-top:2px solid #8cae9d77;border-radius:3px;font-size:11px;box-shadow:0 12px 28px #0009}
+.survival-panel__title{display:flex;justify-content:space-between;color:#a9b8ad;font-size:9px;letter-spacing:.11em;margin-bottom:13px}.survival-panel__title span{color:#b97576}
+.survival-panel__gauge{padding:0 0 11px;margin:0 0 12px;border-bottom:1px solid #536b6055}
+.survival-panel__caption{display:flex;justify-content:space-between;align-items:baseline;letter-spacing:.1em;color:#9eaea4}
+.survival-panel__caption strong{font-variant-numeric:tabular-nums;font-size:20px;color:#dce6db}.survival-panel__caption small{font-size:10px;margin-left:2px;color:#a9baaf;font-weight:400}
+.survival-panel__track{height:6px;border-radius:2px;overflow:hidden;background:#243336;margin-top:7px}
+.survival-panel__track>div{height:100%;background:#83ac9d;transition:width .16s linear}
+.survival-panel__gauge.is-low .survival-panel__track>div{background:#dfa87c}.survival-panel__gauge.is-low strong{color:#edba8e}
+.survival-panel__gauge.noise-warning .survival-panel__track>div{background:#d4bb86}
+.survival-panel__gauge.noise-danger .survival-panel__track>div{background:#e58579}
+.survival-panel__micro{margin-top:7px;font-size:10px;color:#a9bab0;line-height:1.5}
+.survival-panel__notice{font-size:10px;color:#b1c0b6;min-height:20px}.survival-panel__notice.is-visible{color:#eab18c;font-weight:650}
+.interaction-callout{position:absolute;z-index:5;left:50%;bottom:23%;transform:translateX(-50%);width:max-content;min-width:270px;max-width:90vw;padding:13px 20px;background:#111d20ef;border:1px solid #cbb48b99;border-radius:4px;box-shadow:0 12px 30px #000c;text-align:center}
+.interaction-callout strong{display:block;font-size:14px;color:#eee4d2}.interaction-callout span{display:block;margin-top:6px;font-size:11px;color:#d0b2a2}
+.interaction-callout kbd,.helper-bar kbd,.equipment-strip kbd{font:inherit;border:1px solid #809789;padding:2px 6px;border-radius:2px;color:#eef3ec}
+.interaction-callout__progress{margin-top:11px;height:6px;background:#354043;overflow:hidden;border-radius:2px}.interaction-callout__progress>div{height:100%;background:#d9c69f;transition:width .1s linear}
+.interaction-callout--ready{border-color:#7bc3a077}
+.equipment-strip{position:absolute;z-index:2;left:26px;bottom:67px;display:flex;gap:9px;align-items:center;flex-wrap:wrap;font-size:10px;letter-spacing:.05em}
+.equipment-strip__item,.equipment-strip__checkpoint{padding:7px 9px;background:#111d1fd9;border:1px solid #81948855;border-radius:2px;color:#a9baaf}
+.equipment-strip__item b{color:#e3e9df;margin-left:5px}.equipment-strip__checkpoint{color:#d1b88f}
+.helper-bar{position:absolute;z-index:2;left:0;right:0;bottom:0;display:flex;justify-content:space-between;gap:12px;padding:13px 26px;font-size:11px;color:#b3c1b6;background:linear-gradient(0deg,#0a1217ee,#0a121777);border-top:1px solid #86998c3c}
+.controls-sheet{position:absolute;z-index:4;bottom:58px;left:26px;padding:16px;display:flex;flex-direction:column;gap:8px;background:#111d20ed;border:1px solid #798d8199;border-radius:3px;font-size:12px;max-width:calc(100vw - 40px)}
+.controls-sheet strong{color:#ddc89e}.controls-sheet span{color:#d0dcd2}
+.danger-vignette{position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 25%,#57071c55 65%,#730f2299);transition:opacity .3s}
+.vignette--reduced{background:radial-gradient(ellipse at center,transparent 45%,#04060744)}
+.pause-settings{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:20px}
+.pause-settings button{margin:0;padding:10px 12px;font-size:12px;letter-spacing:0;background:#2b393a;color:#e1e8df;border:1px solid #788c7d;border-radius:3px}
+.pause-settings button[aria-pressed="false"]{opacity:.72}.pause-settings p{width:100%;font-size:11px;color:#9baea2}
+@media(max-width:760px){
+  .game-header{padding:13px}.game-header__brand small{display:none}.game-header__location{font-size:10px}
+  .mission-card{top:74px;left:12px;width:220px;padding:10px;font-size:11px}.mission-card__text{font-size:10px}
+  .survival-panel{top:76px;right:12px;width:180px;padding:9px 10px}
+  .survival-panel__caption strong{font-size:17px}
+  .equipment-strip{left:12px;bottom:62px}.helper-bar{padding:9px 12px;font-size:10px}
+}
+@media(max-width:465px){
+  .mission-card{width:calc(100% - 24px);max-width:none;top:63px}
+  .survival-panel{top:auto;right:9px;bottom:130px;width:168px}
+  .survival-panel__title{margin-bottom:6px}.survival-panel__gauge{padding-bottom:6px;margin-bottom:6px}
+  .survival-panel__micro{font-size:9px}
+  .equipment-strip{left:9px;bottom:64px;max-width:calc(100% - 184px);gap:5px}
+  .equipment-strip__item,.equipment-strip__checkpoint{padding:5px;font-size:9px}.equipment-strip__item b{display:block;margin:3px 0 0}
+  .interaction-callout{bottom:47%;padding:10px 12px;min-width:220px}.interaction-callout strong{font-size:12px}
+  .controls-sheet{bottom:54px;left:9px;font-size:11px}
+}
+@media(prefers-reduced-motion:reduce){.danger-vignette,.survival-panel__track>div,.interaction-callout__progress>div{transition:none}}
+
+/* Screen effects switch: preserve readable death outcome, remove flashing motion. */
+.death-fx--reduced .death-fx__blood{animation:none!important;opacity:.28!important;transform:none!important}
+.death-fx--dying.death-fx--reduced .death-fx__blackout{animation:none!important;opacity:.75!important}
+.death-fx--dead.death-fx--reduced .death-fx__blackout{opacity:1!important}
+.floor-loop-flash--reduced{animation:none!important;opacity:.72}
