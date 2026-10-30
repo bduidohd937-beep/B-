@@ -44,10 +44,14 @@ export function createSoundEngine() {
     pulse(mode==='sprint'?380:270,.085,strength,true);
     pulse(85,.085,strength*.45);
   }
-  function land(){pulse(220,.19,.28,true);pulse(54,.23,.18);}
+  function jump(){pulse(440,.13,.48,true);pulse(92,.18,.33);}
+  function land(){pulse(620,.27,.82,true);pulse(90,.31,.7);pulse(48,.38,.58);}
+  function metal(){pulse(1300,.16,.46,true);pulse(480,.29,.32);}
+  function splash(){pulse(1250,.24,.35,true);}
+  function throwCan(){pulse(1700,.32,.72,true);pulse(780,.25,.38);}
   function flicker(){pulse(1600,.035,.075,true);}
   return {
-    step,land,flicker,
+    step,jump,land,metal,splash,throwCan,flicker,
     resume(){if(ctx.state==='suspended')ctx.resume();},
     setEnabled(v){enabled=v;master.gain.setTargetAtTime(v?.48:0,ctx.currentTime,.03);},
     dispose(){try{humOsc.stop();}catch{}ctx.close();}
