@@ -551,7 +551,9 @@ export default function App(){
   const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0,distance:Infinity});
   const [observerInfo,setObserverInfo]=useState({mode:'scan',alert:0,distance:Infinity});
   const observerModeRef=useRef('scan');
+  const observerDistanceRef=useRef(Infinity);
   const onObserverState=useCallback((mode,alert,distance)=>{
+    observerDistanceRef.current=distance;
     if(observerModeRef.current!==mode){
       if(mode==='chase')soundRef.current?.observerAlert?.();
       observerModeRef.current=mode;
@@ -565,7 +567,7 @@ export default function App(){
     setVitals(previous=>previous.stamina===data.stamina&&previous.breath===data.breath&&previous.exhausted===data.exhausted
       ?previous:data);
     soundRef.current?.updateVitals?.({
-      active:true,breathLevel:data.breath,creatureDistance:creatureDistanceRef.current
+      active:true,breathLevel:data.breath,creatureDistance:Math.min(creatureDistanceRef.current,observerDistanceRef.current)
     });
   },[]);
   const onCreatureState=useCallback((mode,excitement,speed,distance=Infinity)=>{
@@ -598,6 +600,7 @@ export default function App(){
     setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
     setObserverInfo({mode:'scan',alert:0,distance:Infinity});
     observerModeRef.current='scan';
+    observerDistanceRef.current=Infinity;
     creatureDistanceRef.current=Infinity;
     setVitals({stamina:100,breath:0,exhausted:false});
     soundRef.current?.resume();
@@ -642,6 +645,7 @@ export default function App(){
       setSilentFloor(0);
       setObserverInfo({mode:'scan',alert:0,distance:Infinity});
       observerModeRef.current='scan';
+      observerDistanceRef.current=Infinity;
       setFloor(2);
       setFloorSignal(v=>v+1);
       setPanelProgress(0);
