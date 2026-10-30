@@ -147,14 +147,16 @@ export function createSoundEngine() {
       if(action==='use')tone(270,.12,.12);
     }
   }
-  function switchStart() {
-    noise(1900, .38, .65);
-    tone(180, .32, .34, 'sawtooth');
+  function switchStart(lubricated=false) {
+    const scale=lubricated?.40:1;
+    noise(1900,.38,.65*scale);
+    tone(180,.32,.34*scale,'sawtooth');
   }
-  function powerRestore() {
-    noise(750, .62, .75);
-    tone(110, .65, .58);
-    tone(440, .26, .24);
+  function powerRestore(lubricated=false) {
+    const scale=lubricated?.4:1;
+    noise(750,.62,.75*scale);
+    tone(110,.65,.58*scale);
+    tone(440,.26,.24*scale);
   }
   function loopTransition() {
     // Uncanny, descending garage hum and a backwards-feeling ventilation pulse.
