@@ -23,7 +23,7 @@ import DistortedB2 from './DistortedB2.jsx';
 import GarageWorld from './GarageWorld.jsx';
 import VehicleMysteryWorld from './VehicleMysteryWorld.jsx';
 import { initialVehiclePuzzle,reviewCctv,examineVehicle,carObjective,
-  findMysteryInteraction,vehicleGateOpen,CAMERA_LOG,VEHICLES,
+  findMysteryInteraction,vehicleGateOpen,CAMERA_LOG,CCTV_STATION,VEHICLES,
   CAR_ALARM_NOISE,CAR_ALARM_SECONDS,CCTV_READ_NOISE,CORRECT_TRUNK_NOISE
 } from './vehiclePuzzle.js';
 import EmergencyAlarm from './EmergencyAlarm.jsx';
@@ -514,6 +514,13 @@ export default function App(){
   const vehicleStateRef=useRef(vehicleState);
   vehicleStateRef.current=vehicleState;
   const [evidenceOpen,setEvidenceOpen]=useState(false);
+  const [memoOpen,setMemoOpen]=useState(false);
+  const onCctvOutOfRange=useCallback(()=>setEvidenceOpen(false),[]);
+  const [gateAuth,setGateAuth]=useState(freshGateAuthentication);
+  const onGateProgress=useCallback(state=>setGateAuth(old=>
+    old.phase===state.phase&&Math.abs(old.hold-state.hold)<.01&&
+    Math.abs(old.elapsed-state.elapsed)<.01?old:{...state}
+  ),[]);
   const [carAlarm,setCarAlarm]=useState(null);
   const lastCarAlarmRef=useRef(-Infinity);
   useEffect(()=>{
@@ -523,13 +530,13 @@ export default function App(){
     return ()=>clearTimeout(timer);
   },[carAlarm]);
   useEffect(()=>{
-    if(!evidenceOpen)return;
-    const timer=setTimeout(()=>setEvidenceOpen(false),12000);
+    if(!memoOpen)return;
+    const timer=setTimeout(()=>setMemoOpen(false),9000);
     return ()=>clearTimeout(timer);
-  },[evidenceOpen]);
-  // First loop = red power breaker. Second loop = a car RFID transponder;
-  // there is no mandatory second breaker or button for the escape.
-  const gatePowered=vehicleGateOpen(floor,powered,vehicleState);
+  },[memoOpen]);
+  // The recovered vehicle key is NOT a remote door opener.
+  // The second gate only becomes passable once the physical shutter rises.
+  const gatePowered=vehicleGateOpen(floor,powered,vehicleState,gateAuth);
   const [panelProgress,setPanelProgress]=useState(0);
   const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
@@ -638,8 +645,9 @@ export default function App(){
       vehicleStateRef.current=next;
       setVehicleState(next);
       setEvidenceOpen(true);
+      setMemoOpen(false);
       onNoiseRef.current?.({type:'cctv',loudness:CCTV_READ_NOISE,position});
-      notify('CCTV 기록 확보 · J 기록 다시 보기 · 위험 중에도 화면을 닫을 수 있다');
+      notify('CCTV 확보 · 컴퓨터에서 멀어지면 화면 종료 · J는 간략 메모');
       return true;
     }
     if(interaction.kind!=='vehicle')return false;
@@ -680,10 +688,30 @@ export default function App(){
         type:'vehicle',loudness:CORRECT_TRUNK_NOISE,
         position:[...result.car.inspect]
       });
-      notify('317번 차량 인증기 획득 · 중앙 서비스 셔터 자동 개방');
+      notify('317번 차량 출입키 획득 · 중앙 셔터 오른쪽 보안 단말기로 이동');
       return true;
     }
     return false;
+  },[notify]);
+  const onGateEvent=useCallback(event=>{
+    if(floorRef.current!==2)return;
+    const position=[0,1.7,SECURITY_KEY_READER[2]-1.15];
+    if(event==='insert'){
+      // Tactile key insertion sound, audible only to a close Listener.
+      onNoiseRef.current?.({type:'key-insert',loudness:27,
+        position:[...SECURITY_KEY_READER]});
+    }else if(event==='cancel'){
+      notify('인증 중단 · 키를 다시 삽입하고 E를 유지하라');
+    }else if(event==='alarm'){
+      setEvidenceOpen(false);
+      setMemoOpen(false);
+      setAlarmActive(true);
+      soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
+      onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
+      notify('비상 경보 발동! 셔터가 서서히 열린다 · 숨어서 타이밍을 노려라');
+    }else if(event==='open'){
+      notify('서비스 셔터 완전 개방 · 탈출 통로로 이동');
+    }
   },[notify]);
   const onPanelAttempt=useCallback(()=>{
     const lubricated=silentRef.current===floorRef.current;
@@ -784,6 +812,7 @@ export default function App(){
     soundRef.current?.stopCarAlarm?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
+    setMemoOpen(false);
     setAlarmActive(false);
     soundRef.current?.death?.();
     setCaught(true);
@@ -798,6 +827,8 @@ export default function App(){
     soundRef.current?.stopCarAlarm?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
+    setMemoOpen(false);
+    setGateAuth(freshGateAuthentication());
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
@@ -852,6 +883,8 @@ export default function App(){
       soundRef.current?.stopCarAlarm?.();
       setCarAlarm(null);
       setEvidenceOpen(false);
+    setMemoOpen(false);
+    setGateAuth(freshGateAuthentication());
       const clean=initialVehiclePuzzle();
       vehicleStateRef.current=clean;
       setVehicleState(clean);
@@ -886,6 +919,7 @@ export default function App(){
     soundRef.current?.stopCarAlarm?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
+    setMemoOpen(false);
     setAlarmActive(false);
     setEnding(true);
   },[canCollected]);
