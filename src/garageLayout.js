@@ -1,4 +1,4 @@
-import { gateBlocksPlayer } from './puzzle.js';
+import { gateBlocksPlayer,POWER_PANEL } from './puzzle.js';
 
 // V0.11: large, fog-shrouded navigable basement with repeated bays.
 // Gameplay and rendering consume the same solid geometry. No arbitrary
@@ -32,7 +32,10 @@ export function surfaceAt(x,z){
   return 'concrete';
 }
 export function terrainBlocked(x,z,powered=false){
-  return PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
+  // The first-loop electrical cabinet is physically solid. Previously the
+  // player and Listener could stand inside / exploit its rear to dodge pursuit.
+  return (Math.abs(x-POWER_PANEL[0])<1.08&&Math.abs(z-POWER_PANEL[1])<.72)
+    || PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15&&Math.abs(z-pz)<1.15)
     || PARKED_CARS.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7)
     || gateBlocksPlayer(x,z,powered);
 }
