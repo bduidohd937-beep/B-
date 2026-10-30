@@ -935,7 +935,10 @@ export default function App(){
       if(e.repeat)return;
       if(e.code==='KeyH')setShowControls(v=>!v);
       if(e.code==='KeyJ'&&started&&locked&&!caught&&!ending&&floorRef.current===2){
-        if(vehicleStateRef.current.reviewed)setMemoOpen(v=>!v);
+        if(vehicleStateRef.current.reviewed){
+          setEvidenceOpen(false);
+          setMemoOpen(v=>!v);
+        }
         else notify('아직 확보한 CCTV 기록이 없다 · 경비 콘솔을 먼저 찾아라');
         return;
       }
@@ -1025,6 +1028,14 @@ export default function App(){
           <p>{CAMERA_LOG.discrepancy}</p>
           <footer>컴퓨터에서 3.2m 이상 떨어지면 자동 종료 · <kbd>J</kbd> 휴대 메모</footer>
         </aside>}
+      {floor===2&&memoOpen&&vehicleState.reviewed&&started&&!caught&&!ending&&
+        <aside className="cctv-pocket-note" aria-label="CCTV 기록에서 적어 둔 휴대 메모">
+          <strong>개인 메모 · B2</strong>
+          <p>CAM-C / 03:17:17</p>
+          <p>C-17 구역 · 푸른색 세단</p>
+          <p>번호 끝: 17 · 미등록 차량</p>
+          <small><kbd>J</kbd> 닫기 · 9초 후 자동 접힘</small>
+        </aside>}
       {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&floor===1&&puzzleProximity==='panel'&&!gatePowered&&
@@ -1035,20 +1046,45 @@ export default function App(){
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
         </div>}
+      {started&&locked&&floor===2&&puzzleProximity==='key-reader'&&
+        <div className={'interaction-callout'+(gatePowered?' interaction-callout--ready':'')} role="status">
+          <strong>{!vehicleState.solved?'SERVICE AUTH · 출입키가 필요하다':
+            gateAuth.phase==='opening'?'비상경보! 셔터 개방 중':
+            gateAuth.phase==='open'?'서비스 셔터 개방 · 도망쳐라':
+            <><kbd>E</kbd> 누르고 있기 · 인증키 삽입·회전</>}</strong>
+          <span>{!vehicleState.solved?'317번 차량에서 키를 찾아라':
+            gateAuth.phase==='opening'?'청음자가 출입구로 달려온다 · 타이밍을 노려라':
+            gateAuth.phase==='open'?'통과하기 전 시야와 발소리를 확인하라':
+            '키를 약 3초 유지하면 비상 사이렌이 작동한다'}</span>
+          {vehicleState.solved&&gateAuth.phase==='authenticating'&&
+            <div className="interaction-callout__progress" role="progressbar"
+              aria-label="키 인증 진행률" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={Math.round(keyHoldProgress(gateAuth)*100)}>
+              <div style={{width:(keyHoldProgress(gateAuth)*100)+'%'}}/>
+            </div>}
+          {gateAuth.phase==='opening'&&
+            <div className="interaction-callout__progress" role="progressbar"
+              aria-label="셔터 개방 진행률" aria-valuemin={0} aria-valuemax={100}
+              aria-valuenow={Math.round(gateLiftRatio(gateAuth)*100)}>
+              <div style={{width:(gateLiftRatio(gateAuth)*100)+'%'}}/>
+            </div>}
+        </div>}
       {started&&locked&&puzzleProximity==='gate'&&
         <div className={'interaction-callout '+(gatePowered?'interaction-callout--ready':'')} role="status">
-          <strong>{gatePowered?'서비스 셔터 개방 · 통로로 이동':'셔터 잠김 · '+(floor===2?'차량 인증 필요':'전원 복구 필요')}</strong>
-          {!gatePowered&&<span>{floor===2?'CCTV 기록을 찾아 317 차량의 인증기를 회수하라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
+          <strong>{gatePowered?'서비스 셔터 개방 · 통로로 이동':
+            floor===2&&gateAuth.phase==='opening'?'서비스 셔터 상승 중 · 조금만 더 기다려라':
+            '셔터 잠김 · '+(floor===2?'출입키 인증 필요':'전원 복구 필요')}</strong>
+          {!gatePowered&&<span>{floor===2?vehicleState.solved?'우측 보안 단말기에 가서 키를 돌려라':'CCTV 기록과 317번 차량의 출입키를 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
         </div>}
       {started&&locked&&floor===2&&puzzleProximity==='cctv'&&
         <div className="interaction-callout interaction-callout--evidence" role="status">
           <strong><kbd>E</kbd> 경비용 CCTV 기록 열람</strong>
-          <span>기록은 <kbd>J</kbd> 로 다시 확인 · 주변 소음과 움직임 주의</span>
+          <span>컴퓨터에서 3.2m 벗어나면 화면 종료 · <kbd>J</kbd> 간단 메모</span>
         </div>}
       {started&&locked&&floor===2&&puzzleProximity?.startsWith('vehicle:')&&
         <div className="interaction-callout interaction-callout--evidence" role="status">
           <strong><kbd>E</kbd> 차량 번호판 / 트렁크 조사</strong>
-          <span>{vehicleState.reviewed?'틀린 차량을 조작하면 도난 경보 발생':'먼저 경비용 CCTV 기록을 확보하라'}</span>
+          <span>{vehicleState.solved?'출입키 회수 완료 · 중앙 셔터 단말기로 이동':vehicleState.reviewed?'틀린 차량을 조작하면 도난 경보 발생':'먼저 경비용 CCTV 기록을 확보하라'}</span>
         </div>}
       {started&&locked&&puzzleProximity==='can'&&<div className="interaction-callout" role="status">
         <strong><kbd>E</kbd> 빈 캔 줍기</strong><span>회수한 캔은 다시 던질 수 있다</span>
