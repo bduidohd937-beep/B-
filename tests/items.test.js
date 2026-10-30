@@ -5,9 +5,13 @@ test('rare, staged item placement makes loot an earned tactical choice',()=>{
  for(const floor of [1,2]){
   const list=startingPickups(floor);
   assert.equal(list.length,3);
-  assert.equal(new Set(list.map(x=>x.type)).size,5);
+  assert.equal(new Set(list.map(x=>x.type)).size,3);
   assert.ok(list.every(x=>x.position.length===3));
  }
+});
+test('loot across two loops still provides all five tactical types',()=>{
+ const union=new Set([...startingPickups(1),...startingPickups(2)].map(x=>x.type));
+ assert.equal(union.size,5);
 });
 test('can occupies one slot and backpack capacity is three',()=>{
  assert.deepEqual(slots(true,['alarm','glow']),['can','alarm','glow']);
