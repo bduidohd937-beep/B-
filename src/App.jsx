@@ -231,7 +231,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
             nearPanel:floorRef.current===1&&
               canOperatePanel(camera.position.toArray(),
                 (()=>{const dir=new THREE.Vector3();camera.getWorldDirection(dir);return dir.toArray();})(),1),
-            powered:poweredRef.current,
+            powered:floorRef.current===1?firstPowerRef.current:poweredRef.current,
             crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current)
           });
         }
@@ -401,7 +401,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     }
     // The panel makes a loud crackle at the START of a two-second hold.
     // Distracting the nearby listening creature gives enough time to finish.
-    if(!poweredRef.current && nearPanel && keys.current.KeyE){
+    if(!firstPowerRef.current && nearPanel && keys.current.KeyE){
       if(!panelHeld.current){panelHeld.current=true;panelTime.current=0;onPanelAttempt();}
       panelTime.current+=dt;
       panelUpdate.current+=dt;
