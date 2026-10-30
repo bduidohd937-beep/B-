@@ -4,17 +4,21 @@ import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { panelPosition, GATE_Z, GATE_HALF_OPENING } from './puzzle.js';
 import { GARAGE_HEIGHT } from './garageLayout.js';
+import { SECURITY_KEY_READER,gateLiftRatio } from './exitAuthorization.js';
 
 // The security partition is an IN-LEVEL maintenance divider, not an outer boundary.
 // Its collision agrees with the shared world rule even across the wide foggy garage.
-export default function EscapePuzzle({ powered, floor=1 }) {
+export default function EscapePuzzle({ powered, floor=1,hasKey=false,authentication=null }) {
   const second=floor===2;
   const panel=panelPosition(floor);
   const shutter = useRef(null);
   const openHeight = useRef(0);
   useFrame((_, dt) => {
     if (!shutter.current) return;
-    openHeight.current = THREE.MathUtils.damp(openHeight.current, powered ? GARAGE_HEIGHT+.65 : 0, 2.4, Math.min(dt, .06));
+    const target=second
+      ?gateLiftRatio(authentication)*(GARAGE_HEIGHT+.65)
+      :(powered?GARAGE_HEIGHT+.65:0);
+    openHeight.current = THREE.MathUtils.damp(openHeight.current, target, second?11:2.4, Math.min(dt, .06));
     shutter.current.position.y = openHeight.current;
   });
 
@@ -43,7 +47,10 @@ export default function EscapePuzzle({ powered, floor=1 }) {
     {/* Lit gate sign; it changes only after real power restoration. */}
     <group position={[0,GARAGE_HEIGHT-.62,GATE_Z+.3]}>
       <mesh><boxGeometry args={[5.8,.47,.13]}/><meshStandardMaterial color={powered?'#14594c':'#672d2b'} emissive={powered?'#1b7658':'#8d2927'} emissiveIntensity={1.4}/></mesh>
-      <Text position={[0,0,.08]} fontSize={.27} color="#e1e9e0">{powered?(second?'SERVICE PASS — OPEN':'EMERGENCY EXIT — OPEN'):(second?'SERVICE ACCESS — IDENTIFY VEHICLE':'EMERGENCY EXIT — LOCKED')}</Text>
+      <Text position={[0,0,.08]} fontSize={.27} color="#e1e9e0">
+        {second?(powered?'SERVICE EXIT — OPEN':authentication?.phase==='opening'?'SHUTTER OPENING':hasKey?'KEY REQUIRED — RIGHT TERMINAL':'SERVICE ACCESS — LOCKED')
+          :powered?'EMERGENCY EXIT — OPEN':'EMERGENCY EXIT — LOCKED'}
+      </Text>
       <pointLight position={[0,-.5,1]} intensity={powered?1.2:.75} color={powered?'#57bb8c':second?'#e35073':'#de514d'} distance={7}/>
     </group>
     {/* On loop 02 the emergency broadcast breaker is gone. The vehicle
@@ -60,6 +67,39 @@ export default function EscapePuzzle({ powered, floor=1 }) {
       <pointLight position={[0,1.62,.65]} intensity={powered?1.4:1.1} color={powered?'#55bb8e':second?'#d82a72':'#cb4640'} distance={8}/>
     </group>
 
+    </group>}
+    {/* A physical keyed interlock mounted BEFORE the second-loop shutter.
+         Player reaches it from the front side (z > GATE_Z); neither the
+         token nor any UI marker is a magical remote door opener. */}
+    {second&&<group position={SECURITY_KEY_READER}>
+      <mesh position={[0,-.66,0]}>
+        <boxGeometry args={[.88,1.5,.53]}/>
+        <meshStandardMaterial color="#41494d" roughness={.75} metalness={.48}/>
+      </mesh>
+      <mesh position={[0,.22,.29]}>
+        <boxGeometry args={[.68,.52,.12]}/>
+        <meshStandardMaterial color="#202c2e" metalness={.4} roughness={.7}/>
+      </mesh>
+      <mesh position={[0,.24,.36]}>
+        <boxGeometry args={[.26,.07,.015]}/>
+        <meshStandardMaterial color="#b6a277" metalness={.7} roughness={.5}/>
+      </mesh>
+      <mesh position={[-.22,.12,.36]}>
+        <cylinderGeometry args={[.047,.047,.03,12]}/>
+        <meshBasicMaterial color={powered?'#6de3ad':authentication?.phase==='opening'?'#e6a047':hasKey?'#cfb778':'#df504b'}/>
+      </mesh>
+      <mesh position={[.19,.10,.36]}>
+        <boxGeometry args={[.19,.19,.022]}/>
+        <meshStandardMaterial color={hasKey?'#baa476':'#6c7272'} metalness={.68} roughness={.55}/>
+      </mesh>
+      <Text position={[0,.53,.34]} fontSize={.12} color="#d6ded3">
+        SERVICE AUTH
+      </Text>
+      <Text position={[0,-.19,.31]} fontSize={.098} color="#c2d5c5">
+        {authentication?.phase==='opening'?'MOTOR ACTIVE':powered?'ACCESS GRANTED':hasKey?'TURN KEY — HOLD E':'RFID KEY REQUIRED'}
+      </Text>
+      <pointLight position={[0,.25,.45]} intensity={.36} distance={3.7}
+        color={powered?'#5de4b2':authentication?.phase==='opening'?'#f1ab68':'#d65e62'} decay={2}/>
     </group>}
     {/* The impossible corridor: a short visual teaser beyond the barrier. */}
     {[-3.6,3.6].map(x=><mesh key={x} position={[x,GARAGE_HEIGHT/2,-43]}>
