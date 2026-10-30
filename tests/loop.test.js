@@ -47,10 +47,12 @@ test('level two needs its own gate open before the final reveal',()=>{
 });
 
 test('goal text changes visibly upon repeating B2',()=>{
-  assert.match(objectiveText(false,1),/좌측 벽/);
-  assert.match(objectiveText(false,2),/오른쪽 벽/);
-  assert.match(objectiveText(true,2),/방송 복구/);
-  assert.match(objectiveText(true,1),/전력 복구/);
+  assert.match(objectiveText(false,1),/비상 전력 차단/);
+  assert.match(objectiveText(false,2),/보안 기록/);
+  assert.match(objectiveText(true,2),/출입 통제 해제/);
+  assert.match(objectiveText(true,1),/전력 신호 복구/);
+  // No longer spoils exact panel location or the objective solution.
+  assert.doesNotMatch(objectiveText(false,1),/좌측|오른쪽/);
 });
 
 test('existing first B2 interface remains backwards compatible',()=>{
