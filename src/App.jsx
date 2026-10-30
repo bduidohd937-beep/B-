@@ -5,7 +5,8 @@ import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import StageOneWorld from './StageOneWorld.jsx';
 import {freshStageOne,findStageOneInteraction,applyStageOneAction,
-  stageOneObjective,stageOneGateReady,stageOneGateOpen,SAFE_LATCH_HOLD_SECONDS} from './stageOneRules.js';
+  stageOneObjective,stageOneGateReady,stageOneGateOpen,SAFE_LATCH_HOLD_SECONDS,
+  STAGE_ONE_TERMINAL,STAGE_ONE_VEHICLE,STAGE_ONE_SAFE} from './stageOneRules.js';
 import {gatePowerAfterRespawn} from './respawnRules.js';
 import {
  canReadCctv,canUseKeyReader,canStartKeyReader,canHoldKeyReader,freshGateAuthentication,
@@ -741,8 +742,9 @@ export default function App(){
     stageOneRef.current=result.state;
     setStageOne(result.state);
     if(result.noise){
-      onNoiseRef.current?.({type:kind==='record'?'cctv':kind==='vehicle'?'vehicle':'switch',
-        loudness:result.noise,position:position||[0,1.7,17]});
+      onNoiseRef.current?.({type:kind==='record'?'cctv':kind==='vehicle'?'vehicle':'safe',
+        loudness:result.noise,position:kind==='record'?STAGE_ONE_TERMINAL:
+          kind==='vehicle'?STAGE_ONE_VEHICLE:STAGE_ONE_SAFE});
     }
     if(result.event==='record'){
       setEvidenceOpen(true);notify('CAM-C · 03:17 · 317번 차량 기록 확인');
@@ -1022,7 +1024,7 @@ export default function App(){
         lastFootstepHudTick.current=emitted.time;
         setLatestNoise(emitted);
       }
-    }else if(['jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type)){
+    }else if(['jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor','safe'].includes(event.type)){
       setLatestNoise(emitted);
     }
     if(event.type==='jump')setAirborne(true);
@@ -1046,6 +1048,7 @@ export default function App(){
     if(event.type==='car-alarm')sound.startCarAlarm?.(event.position,CAR_ALARM_SECONDS);
     if(event.type==='cctv')sound.cctvRead?.();
     if(event.type==='vehicle')sound.vehicleLatch?.();
+    if(event.type==='safe')sound.vehicleLatch?.();
     if(event.type==='key-insert')sound.securityKeyClick?.();
   },[]);
   onNoiseRef.current=onNoise;
