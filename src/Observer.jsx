@@ -144,7 +144,7 @@ function Observer({active,floor,playerRef,powered=false,onCaught,onState}){
       <mesh position={[0,-.76,.16]}><boxGeometry args={[.15,.58,.16]}/><meshStandardMaterial color="#59626a"/></mesh>
     </group>)}
     {/* Low-opacity cone is a visual tell, not a light or collision volume. */}
-    <mesh ref={beam} position={[0,2.65,5.1]} rotation={[Math.PI/2,0,0]}>
+    <mesh ref={beam} position={[0,2.65,5.1]} rotation={[-Math.PI/2,0,0]}>
       <coneGeometry args={[5.1,10.2,16,1,true]}/>
       <meshBasicMaterial color="#a4bfd1" transparent opacity={.025} depthWrite={false} side={THREE.DoubleSide}/>
     </mesh>
