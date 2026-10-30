@@ -5,7 +5,7 @@ import {terrainBlocked} from '../src/garageLayout.js';
 import {chooseClearStep,FIRST_GUARD_LISTEN_SECONDS,FIRST_GUARD_STUCK_SECONDS} from '../src/firstFloorThreat.js';
 import {readFileSync} from 'node:fs';
 const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8');
-const listener=readFileSync(new URL('../src/Listener.jsx',import.meta.url),'utf8';
+const listener=readFileSync(new URL('../src/Listener.jsx',import.meta.url),'utf8');
 
 test('breaker E prompt is impossible from behind, sideways, or while looking away',()=>{
  const [x,z]=POWER_PANEL;
