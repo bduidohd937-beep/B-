@@ -28,7 +28,7 @@ function Rib({ side, index }) {
 function Claws({ side }) {
   return [-.125,-.043,.045,.13].map((offset,i)=><mesh
     key={i} position={[offset,-1.49,.10+(i%2)*.035]}
-    rotation={[.25,0,offset*.75]}>
+    rotation={[Math.PI-.25,0,offset*.75]}>
     <coneGeometry args={[.036,.30+(i%3)*.085,5]}/>
     <meshStandardMaterial color={i%2?bone:'#7b8179'} roughness={.78}/>
   </mesh>);
