@@ -18,7 +18,7 @@ test('phantom cue is triggered once within range',()=>{
 
 test('staring at the phantom CCTV figure removes it',()=>{
   assert.equal(shadowVisibility(12,1),0);
-  assert.ok(shadowVisibility(12,0)<1);
+  assert.ok(shadowVisibility(12,.6)>0 && shadowVisibility(12,.6)<1);
   assert.ok(shadowVisibility(12,-1)>.95);
   assert.equal(shadowVisibility(1,-1),0);
 });
