@@ -156,7 +156,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, powere
           endZ=clamp(camera.position.z+flat.z*range,-44,38);
           const obstacle=pillars.some(([x,z])=>Math.abs(endX-x)<1.3&&Math.abs(endZ-z)<1.3)
             || parkedCars.some(([x,z])=>Math.abs(endX-x)<1.85&&Math.abs(endZ-z)<2.85)
-            || (alteredRef.current&&Math.abs(endX)<4.2&&Math.abs(endZ+38)<1.05);
+            || gateBlocksPlayer(endX,endZ,poweredRef.current);
           if(!obstacle)break;
           range-=.5;
         }
@@ -284,7 +284,7 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <EscapePuzzle powered={powered} active={active}/>
     <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
-    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} powered={powered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} onPuzzleProximity={onPuzzleProximity} onPanelAttempt={onPanelAttempt} onPanelProgress={onPanelProgress} onPowerRestored={onPowerRestored}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
@@ -381,6 +381,8 @@ export default function App(){
     if(event.type==='throw')sound.throwCan();
     if(event.type==='land')sound.land();
     if(event.type==='electric')sound.flicker();
+    if(event.type==='switch')sound.switchStart();
+    if(event.type==='power')sound.powerRestore();
   },[]);
   onNoiseRef.current=onNoise;
   const onWatcherShift=useCallback(()=>setShifted(true),[]);
