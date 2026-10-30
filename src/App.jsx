@@ -618,11 +618,11 @@ export default function App(){
       const next=result.state;
       vehicleStateRef.current=next;
       setVehicleState(next);
-      const [x,z]=result.car.position;
       setCarAlarm({id:result.car.id,token:Date.now()});
       onNoiseRef.current?.({
         type:'car-alarm',loudness:CAR_ALARM_NOISE,
-        position:[x,1.2,z+2.1]
+        // Rear inspection point is reachable: never ask AI to run INSIDE a car.
+        position:[...result.car.inspect]
       });
       setEvidenceOpen(false);
       notify('틀렸다! 차량 도난 경보 발생 · 청음자가 소리를 듣는다!');
@@ -632,10 +632,9 @@ export default function App(){
       vehicleStateRef.current=result.state;
       setVehicleState(result.state);
       setEvidenceOpen(false);
-      const [x,z]=result.car.position;
       onNoiseRef.current?.({
         type:'vehicle',loudness:CORRECT_TRUNK_NOISE,
-        position:[x,1.2,z+2.1]
+        position:[...result.car.inspect]
       });
       notify('317번 차량 인증기 획득 · 중앙 서비스 셔터 자동 개방');
       return true;
@@ -942,7 +941,7 @@ export default function App(){
           <div className="cctv-evidence__screen">
             <span>▶ CAM C / {CAMERA_LOG.time}</span>
             <strong>ZONE {CAMERA_LOG.bay}</strong>
-            <small>VIDEO FRAME CORRUPTED — 317?</small>
+            <small>PLATE PARTIAL — ??17 · VIDEO FRAME CORRUPTED</small>
           </div>
           <p>{CAMERA_LOG.detail}</p>
           <p>{CAMERA_LOG.discrepancy}</p>
