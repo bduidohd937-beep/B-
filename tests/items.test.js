@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startingPickups,slots,selectSlot,canAddToInventory,pickupRadius,itemEffect,gadgetTiming } from '../src/items.js';
+import { startingPickups,slots,selectSlot,canAddToInventory,pickupRadius,itemEffect,gadgetTiming,gearMakesNoise } from '../src/items.js';
 test('two floors each hold five distinct new items',()=>{
  for(const floor of [1,2]){
   const list=startingPickups(floor);
@@ -31,4 +31,12 @@ test('lube needs panel, gadgets have distinct timing',()=>{
  assert.equal(gadgetTiming('radio',1).loudness,72);
  assert.equal(gadgetTiming('glow',49).end,false);
  assert.equal(gadgetTiming('glow',51).end,true);
+});
+
+test('glowstick and lubricated panel preserve intentional quiet alternatives',()=>{
+ assert.equal(gearMakesNoise('glow'),false);
+ assert.equal(gearMakesNoise('lube'),false);
+ assert.equal(gearMakesNoise('energy'),true);
+ assert.equal(gearMakesNoise('radio'),true);
+ assert.equal(gearMakesNoise('alarm'),true);
 });
