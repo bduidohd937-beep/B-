@@ -28,3 +28,10 @@ test('Suspicion accumulates with movement but decays after stopping',()=>{
  for(let i=0;i<20;i++)alert=tickObservation(alert,0,.08);
  assert.ok(alert<.15);
 });
+
+test('security divider blocks observer vision until central shutter opens',()=>{
+ const a={x:0,z:-31},b={x:0,z:-43};
+ assert.equal(sightBlocked(a,b,[],[],false),true);
+ assert.equal(sightBlocked(a,b,[],[],true),false);
+ assert.equal(sightBlocked({x:10,z:-31},{x:10,z:-43},[],[],true),true);
+});
