@@ -1187,7 +1187,7 @@ export default function App(){
           })}
         </div>
         <div className="inventory-guide">
-          {inventoryControls(selectedType).use&&<span><kbd>G</kbd> {selectedType==='can'?'캔 던지기':'장비 사용'}</span>}
+          {inventoryControls(selectedType).use&&<span><kbd>G</kbd> {isThrowable(selectedType)?'조준 후 놓아 투척':'장비 사용'}</span>}
           {inventoryControls(selectedType).drop&&<span><kbd>Q</kbd> 장비 내려놓기</span>}
           <span className={'flashlight-status'+(flashlightCharge<=18?' is-low':'')}>
             <kbd>F</kbd> 손전등 {torch?'ON':'OFF'}
@@ -1212,7 +1212,8 @@ export default function App(){
         <span>WASD 이동 · SHIFT 질주(스태미나 소모) · Ctrl/C 은신</span>
         <span>F 손전등 딸깍 · 배터리 7분 · 예비 건전지 선택 후 G 충전</span>
         <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
-        <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
+        <span>G 길게 눌러 궤적 확인 후 놓아 던지기 · 짧게 누르면 유인 장비 가까이 놓기</span>
+        <span>F3 성능 진단 FPS / 프레임 시간 · Q 장비 내려놓기</span>
         <span>F 손전등 · ESC 일시정지 · H 조작법 · J 확보한 단서 메모</span>
         {floor===2&&<span>2층: CCTV → 317번 차량 출입키 → 셔터 우측 단말기(E 유지) → 사이렌 도주</span>}
       </div>}
