@@ -357,12 +357,12 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
   return <>
     <color attach="background" args={[floor===2?'#121017':'#101719']}/>
     <fog attach="fog" args={[alarmActive?'#2a0f18':floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
-    <ambientLight intensity={floor===2?.27:.43} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
+    <ambientLight intensity={floor===2?.245:.37} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}/>
     <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor}/>
-    <Flashlight enabled={torch}/>
+    <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
     {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
@@ -376,6 +376,17 @@ export default function App(){
   const [started,setStarted]=useState(false);
   const [locked,setLocked]=useState(false);
   const [torch,setTorch]=useState(true);
+  const torchRef=useRef(true);
+  torchRef.current=torch;
+  const [flashlightCharge,setFlashlightCharge]=useState(100);
+  const flashlightChargeRef=useRef(100);
+  const onBatteryReport=useCallback(value=>{
+    const next=clampCharge(value);
+    flashlightChargeRef.current=next;
+    setFlashlightCharge(old=>Math.ceil(old)===Math.ceil(next)?old:next);
+    if(next<=0)setTorch(false);
+  },[]);
+  const [cameraShake,setCameraShake]=useState(.45);
   const [near,setNear]=useState(false);
   const [altered,setAltered]=useState(false);
   const [ending,setEnding]=useState(false);
@@ -410,6 +421,7 @@ export default function App(){
   const selectedIndex=Math.min(selectedSlot,Math.max(0,bag.length-1));
   const selectedType=bag[selectedIndex]||null;
   const [boostSignal,setBoostSignal]=useState(0);
+  const [rechargeSignal,setRechargeSignal]=useState(0);
   const [silentFloor,setSilentFloor]=useState(0);
   const silentRef=useRef(0);
   silentRef.current=silentFloor;
@@ -509,6 +521,17 @@ export default function App(){
     }else if(effect==='boost'){
       setBoostSignal(v=>v+1);
       notify('스태미나 +48 · 5초 동안 질주 강화 · 개봉 소음 발생');
+    }else if(effect==='recharge'){
+      if(flashlightChargeRef.current>=100){
+        // Restore the held battery rather than wasting it at full power.
+        gearRef.current=[...gearRef.current,type];
+        setGear(gearRef.current);
+        notify('배터리가 이미 가득 차 있다 · 나중에 사용하자');
+        return false;
+      }
+      // The Player owns precise charge; rechargeSignal applies it once.
+      setRechargeSignal(v=>v+1);
+      notify('예비 건전지 교체 · 손전등 +45% · 교체음 발생');
     }else if(effect==='deploy'){
       setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
       notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
@@ -649,7 +672,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item','flashlight'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -664,6 +687,7 @@ export default function App(){
     if(event.type==='decoy')sound.devicePulse?.(event.device,event.position);
     if(event.type==='gear')sound.gearClick?.(event.device);
     if(event.type==='item')sound.itemAction?.(event.item,event.action);
+    if(event.type==='flashlight')sound.flashlightClick?.(event.enabled);
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -710,11 +734,26 @@ export default function App(){
   const onNear=useCallback(()=>setNear(true),[]);
   const onTurn=useCallback(()=>setAltered(true),[]);
   useEffect(()=>{
-    const key=e=>{if(e.repeat)return;if(e.code==='KeyF')setTorch(v=>!v);if(e.code==='KeyH')setShowControls(v=>!v);};
+    const key=e=>{
+      if(e.repeat)return;
+      if(e.code==='KeyH')setShowControls(v=>!v);
+      if(e.code!=='KeyF'||!started||!locked||caught||ending)return;
+      if(!torchRef.current&&flashlightChargeRef.current<=0){
+        notify('손전등 배터리 방전 · 예비 건전지를 찾아야 한다');
+        return;
+      }
+      const next=!torchRef.current;
+      torchRef.current=next;
+      setTorch(next);
+      // The tactile switch is audible to nearby Listener, not omniscient.
+      onNoiseRef.current?.({type:'flashlight',enabled:next,
+        loudness:FLASHLIGHT_CLICK_NOISE,
+        position:[playerRef.current.x,1.5,playerRef.current.z]});
+    };
     const lock=()=>setLocked(document.pointerLockElement!==null);
     window.addEventListener('keydown',key);document.addEventListener('pointerlockchange',lock);
     return ()=>{window.removeEventListener('keydown',key);document.removeEventListener('pointerlockchange',lock);};
-  },[]);
+  },[started,locked,caught,ending,notify]);
   useEffect(()=>()=>soundRef.current?.dispose(),[]);
   useEffect(()=>{soundRef.current?.setEnabled(audioOn);},[audioOn]);
   useEffect(()=>{soundRef.current?.setSirenVolume?.(sirenVolume);},[sirenVolume]);
