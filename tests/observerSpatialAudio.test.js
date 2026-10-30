@@ -24,7 +24,8 @@ test('Observer update path is connected through World into separate persistent W
  assert.match(app,/onSpatialObserver=\{onSpatialObserver\}/);
  assert.match(app,/soundRef\.current\?\.updateObserver\?\.\(data\)/);
  assert.match(sound,/createSpatialObserverAudio\(ctx, master, noiseBuffer\)/);
- assert.match(sound,/updateObserver: observerAudio\.update/);
+ assert.match(sound,/function updateObserver\(data\)/);
+ assert.match(sound,/observerAudio\.update\(data\)/);
  assert.match(sound,/observerAudio\.dispose\(\)/);
  assert.doesNotMatch(app,/if\(mode==='chase'\)soundRef\.current\?\.observerAlert/);
 });

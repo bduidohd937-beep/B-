@@ -46,6 +46,24 @@ export function createSoundEngine() {
   const playerVitalsAudio = createVitalsAudio(ctx, master, noiseBuffer);
   const emergencyAudio = createEmergencyAudio(ctx, master, noiseBuffer);
 
+  let listenerThreat=Infinity,observerThreat=Infinity;
+  const rangeBetween=(data,positionKey)=>{
+    if(!data?.active||!Array.isArray(data.listenerPosition)||
+       !Array.isArray(data[positionKey]))return Infinity;
+    const p=data[positionKey],eye=data.listenerPosition;
+    return Math.hypot(p[0]-eye[0],p[2]-eye[2]);
+  };
+  function updateCreature(data){
+    creatureAudio.update(data);
+    listenerThreat=rangeBetween(data,'creaturePosition');
+    emergencyAudio.setThreatDistance(Math.min(listenerThreat,observerThreat));
+  }
+  function updateObserver(data){
+    observerAudio.update(data);
+    observerThreat=rangeBetween(data,'position');
+    emergencyAudio.setThreatDistance(Math.min(listenerThreat,observerThreat));
+  }
+
   function envelope(gain, time, length, peak) {
     const attack = Math.min(.012, length / 6);
     gain.gain.setValueAtTime(.0001, time);
@@ -410,8 +428,8 @@ export function createSoundEngine() {
 
   return {
     step, jump, land, metal, splash, throwCan, flicker, flashlightClick, switchStart, powerRestore, startSiren, stopSiren, setSirenVolume, startCarAlarm, stopCarAlarm, cctvRead, vehicleLatch, securityKeyClick, startShutterMotor, stopShutterMotor, itemAction, loopTransition, horrorCue, gearClick, devicePulse, observerAlert, death,
-    updateCreature: creatureAudio.update,
-    updateObserver: observerAudio.update,
+    updateCreature,
+    updateObserver,
     updateVitals: playerVitalsAudio.update,
     resume() {
       if (ctx.state === 'suspended') return ctx.resume();

@@ -8,9 +8,9 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
  const panner=ctx.createPanner();
  panner.panningModel='HRTF';
  panner.distanceModel='inverse';
- panner.refDistance=6;
+ panner.refDistance=11;
  panner.maxDistance=OBSERVER_AUDIO_RANGE+8;
- panner.rolloffFactor=.9;
+ panner.rolloffFactor=.72;
 
  // Continuous sawtooth drones sounded like a flying insect.
  // Broadband low mechanical scraping uses NO pitched, sustained oscillator.
@@ -59,14 +59,32 @@ export function createSpatialObserverAudio(ctx,master,sharedNoise){
    transient(240,'lowpass',amount,length,t);
    transient(920,'bandpass',Math.min(.24,amount*.7),length*.55,t,.05);
  }
+ function nearfieldWarning(t,kind){
+   // Important lock-on cues must remain distinct from sirens even if the
+   // monster is 20+ meters away. The low-volume non-positional component is
+   // player feedback only; the direction still comes from the 3D panner.
+   const src=ctx.createBufferSource();src.buffer=sharedNoise;
+   const body=ctx.createBiquadFilter();
+   body.type='lowpass';body.frequency.value=kind==='lock'?610:880;
+   const env=ctx.createGain();
+   const peak=kind==='lock'?.095:.065;
+   env.gain.setValueAtTime(.0001,t);
+   env.gain.exponentialRampToValueAtTime(peak,t+.018);
+   env.gain.exponentialRampToValueAtTime(.0001,t+(kind==='lock'?.36:.18));
+   src.connect(body);body.connect(env);env.connect(master);
+   src.start(t,.035);src.stop(t+(kind==='lock'?.38:.20));
+   src.onended=()=>clean(src,body,env);
+ }
  function cue(kind,t){
    if(disposed)return;
    if(kind==='detected'){
+     nearfieldWarning(t,'detected');
      // Mechanical iris snaps shut. Two dry catches; no rising electronic bee.
      transient(970,'bandpass',.20,.095,t);
      transient(1250,'bandpass',.16,.072,t,.095);
      hydraulicBurst(t,.18,.20);
    }else if(kind==='lock'){
+     nearfieldWarning(t,'lock');
      // Heavy industrial impact + a low-frequency hydraulic deceleration.
      transient(510,'lowpass',.32,.24,t);
      transient(890,'bandpass',.26,.21,t,.055);

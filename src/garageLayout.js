@@ -1,4 +1,4 @@
-import { gateBlocksPlayer,POWER_PANEL } from './puzzle.js';
+import { gateBlocksPlayer,POWER_PANEL,GATE_Z,GATE_HALF_OPENING } from './puzzle.js';
 
 // V0.11: large, fog-shrouded navigable basement with repeated bays.
 // Gameplay and rendering consume the same solid geometry. No arbitrary
@@ -39,6 +39,30 @@ export function terrainBlocked(x,z,powered=false){
     || PARKED_CARS.some(([cx,cz])=>Math.abs(x-cx)<1.7&&Math.abs(z-cz)<2.7)
     || gateBlocksPlayer(x,z,powered);
 }
+// Physical footprint used by BOTH monsters and the first-person capsule.
+// The old single-point checks let a fast creature embed its body through
+// parked cars and the security divider without crossing its center.
+export const PLAYER_COLLISION_RADIUS=.34;
+export const LISTENER_COLLISION_RADIUS=.58;
+export const OBSERVER_COLLISION_RADIUS=.55;
+export function terrainBlockedRadius(x,z,radius=0,powered=false){
+  const r=Math.max(0,Math.min(2,Number.isFinite(radius)?radius:0));
+  if(!Number.isFinite(x)||!Number.isFinite(z))return true;
+  if(x-r<WALK_BOUNDS.minX||x+r>WALK_BOUNDS.maxX||
+     z-r<WALK_BOUNDS.minZ||z+r>WALK_BOUNDS.maxZ)return true;
+  if(Math.abs(x-POWER_PANEL[0])<1.08+r&&Math.abs(z-POWER_PANEL[1])<.72+r)
+    return true;
+  if(PILLARS.some(([px,pz])=>Math.abs(x-px)<1.15+r&&Math.abs(z-pz)<1.15+r))
+    return true;
+  if(PARKED_CARS.some(([cx,cz])=>Math.abs(x-cx)<1.7+r&&Math.abs(z-cz)<2.7+r))
+    return true;
+  // Shutter and its adjacent concrete walls are both solid, at the same
+  // corridor depth as the physical mesh. No side slip while raised.
+  if(Math.abs(z-GATE_Z)<.85+r &&
+     (Math.abs(x)+r>=GATE_HALF_OPENING||!powered))return true;
+  return false;
+}
+
 export function clampWalkPosition(x,z){
   return [
     Math.max(WALK_BOUNDS.minX,Math.min(WALK_BOUNDS.maxX,x)),

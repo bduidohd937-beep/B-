@@ -2,18 +2,19 @@ import React, { useEffect, useRef } from 'react';
 import { useFrame,useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { motionExposure,sightBlocked,tickObservation,OBSERVER_VIEW_DISTANCE,OBSERVER_DOT_THRESHOLD,OBSERVER_LOSE_SIGHT_SECONDS,OBSERVER_PURSUIT_SPEED,patrolWaypoint } from './observerRules.js';
-import { PILLARS,PARKED_CARS,terrainBlocked } from './garageLayout.js';
+import { PILLARS,PARKED_CARS,OBSERVER_COLLISION_RADIUS } from './garageLayout.js';
+import {sweepMove} from './movementCollision.js';
 
 const HOME=new THREE.Vector3(...[14,0,-12]);
 const CARS=PARKED_CARS;
-const blocked=(x,z,powered)=>terrainBlocked(x,z,powered);
 function moveSafely(pos,target,speed,dt,powered){
   const dx=target.x-pos.x,dz=target.z-pos.z,range=Math.hypot(dx,dz);
   if(range<.35)return false;
   const mx=dx/range*speed*dt,mz=dz/range*speed*dt;
   for(const [sx,sz] of [[mx,mz],[-mz,mx],[mz,-mx],[mx,0],[0,mz]]){
-    if(!blocked(pos.x+sx,pos.z+sz,powered)){
-      pos.x+=sx;pos.z+=sz;
+    const moved=sweepMove(pos.x,pos.z,sx,sz,OBSERVER_COLLISION_RADIUS,powered);
+    if(moved.moved>.001){
+      pos.x=moved.x;pos.z=moved.z;
       return true;
     }
   }

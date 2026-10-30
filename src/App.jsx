@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
 import {gatePowerAfterRespawn} from './respawnRules.js';
 import {
- canReadCctv,canUseKeyReader,freshGateAuthentication,
- advanceGateAuthentication,gateLiftRatio,keyHoldProgress,
+ canReadCctv,canUseKeyReader,canStartKeyReader,canHoldKeyReader,freshGateAuthentication,
+ advanceGateAuthentication,gateLiftRatio,gatePassableForActor,keyHoldProgress,
  SECURITY_KEY_READER,EXIT_ALARM_SECONDS,EXIT_ALARM_LOUDNESS,SHUTTER_RAISE_SECONDS
 } from './exitAuthorization.js';
 import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
@@ -31,8 +31,9 @@ import { initialVehiclePuzzle,reviewCctv,examineVehicle,carObjective,
   CAR_ALARM_NOISE,CAR_ALARM_SECONDS,CCTV_READ_NOISE,CORRECT_TRUNK_NOISE
 } from './vehiclePuzzle.js';
 import EmergencyAlarm from './EmergencyAlarm.jsx';
-import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FOG_NEAR,FOG_FAR,terrainBlocked,clampWalkPosition,surfaceAt,WALK_BOUNDS } from './garageLayout.js';
+import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FOG_NEAR,FOG_FAR,terrainBlocked,clampWalkPosition,surfaceAt,WALK_BOUNDS,PLAYER_COLLISION_RADIUS } from './garageLayout.js';
 import { SIREN_LOUDNESS,SIREN_SECONDS,canTriggerSiren,sirenPosition } from './alarmRules.js';
+import {sweepMove} from './movementCollision.js';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
@@ -183,7 +184,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         const nearBreaker=floorRef.current===1&&
           canOperatePanel(eye,looking,1);
         const nearKeyReader=floorRef.current===2&&
-          canUseKeyReader(camera.position.x,camera.position.z);
+          canStartKeyReader(eye,looking);
         const mystery=floorRef.current===2
           ?findMysteryInteraction(eye,looking,{floor:2,solved:vehicleSolvedRef.current})
           :null;
@@ -339,12 +340,10 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     if(moving){
       const beforeX=camera.position.x,beforeZ=camera.position.z;
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
-      let nx=clamp(camera.position.x+movement.x,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
-      let nz=clamp(camera.position.z+movement.z,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
-      const blocked=(x,z)=>terrainBlocked(x,z,poweredRef.current);
-      if(!blocked(nx,camera.position.z))camera.position.x=nx;
-      if(!blocked(camera.position.x,nz))camera.position.z=nz;
-      movedDistance=Math.hypot(camera.position.x-beforeX,camera.position.z-beforeZ);
+      const move=sweepMove(beforeX,beforeZ,movement.x,movement.z,
+        PLAYER_COLLISION_RADIUS,poweredRef.current);
+      camera.position.x=move.x;camera.position.z=move.z;
+      movedDistance=move.moved;
     }
     if(vertical.current>0||velocityY.current>0){
       vertical.current=Math.max(0,vertical.current+velocityY.current*dt);
@@ -357,7 +356,10 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       (panelHeld.current&&keys.current.KeyE
         ?canHoldPanel(camera.position.x,camera.position.z,1)
         :canOperatePanel(camera.position.toArray(),direction.toArray(),1));
-    const nearKeyReader=floorRef.current===2&&canUseKeyReader(camera.position.x,camera.position.z);
+    const nearKeyReader=floorRef.current===2&&
+      (gateAuthRef.current.phase==='authenticating'&&keys.current.KeyE
+        ?canHoldKeyReader(camera.position.x,camera.position.z)
+        :canStartKeyReader(camera.position.toArray(),direction.toArray()));
     if(floorRef.current===2&&screenOpenRef.current&&
        !canReadCctv(camera.position.x,camera.position.z,CCTV_STATION)&&!cctvRangeReported.current){
        cctvRangeReported.current=true;
@@ -471,9 +473,9 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
     <EscapePuzzle key={floor} powered={powered} floor={floor} hasKey={vehicleState.solved} authentication={gateAuth}/>
     <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
-    {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={powered} onCaught={onCaught} onState={onObserverState} onSpatial={onSpatialObserver}/>}
+    {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={floor===2?gatePassableForActor(gateAuth,3.2):powered} onCaught={onCaught} onState={onObserverState} onSpatial={onSpatialObserver}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
-    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={floor===2?gatePassableForActor(gateAuth,4.25):powered} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <ThrowGuide aimRef={throwAimRef}/>
     <PerformanceSampler enabled={perfVisible} onSample={onPerformance}/>

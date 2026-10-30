@@ -1,6 +1,7 @@
+import {sirenDuckedGain} from '../src/emergencyAudio.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canTriggerSiren,sirenPosition,sirenPulse,rushSpeed,SIREN_SECONDS,SIREN_HEARING_RADIUS,RUSH_SPEED} from '../src/alarmRules.js';
+import {canTriggerSiren,sirenPosition,sirenPulse,rushSpeed,SIREN_SECONDS,SIREN_HEARING_RADIUS,RUSH_SPEED,SECOND_FLOOR_RUSH_SPEED,LISTENER_REACTION_SECONDS} from '../src/alarmRules.js';
 test('first unpowered hold triggers the siren even when lubricated',()=>{
  assert.equal(canTriggerSiren(),true);
  assert.equal(canTriggerSiren({silent:true}),true);
@@ -13,9 +14,12 @@ test('alarm is tied to breaker position, not player position',()=>{
 });
 test('loud alarm travels widely and triggers genuinely rapid Listener rush',()=>{
  assert.equal(SIREN_HEARING_RADIUS>=80,true);
- assert.equal(RUSH_SPEED>6.2,true);
+ assert.ok(RUSH_SPEED>=5.8&&RUSH_SPEED<=6.2);
+ assert.ok(SECOND_FLOOR_RUSH_SPEED<6.2);
+ assert.ok(LISTENER_REACTION_SECONDS>=.65&&LISTENER_REACTION_SECONDS<=1);
  assert.equal(SIREN_SECONDS>=8,true);
  assert.equal(rushSpeed(6),RUSH_SPEED);
+ assert.equal(rushSpeed(6,100,2),SECOND_FLOOR_RUSH_SPEED);
  assert.ok(rushSpeed(0,100)<RUSH_SPEED);
 });
 test('reduced-motion pulse is steady, normal siren pulsing varies',()=>{
@@ -24,4 +28,12 @@ test('reduced-motion pulse is steady, normal siren pulsing varies',()=>{
  assert.equal(sirenPulse(.25,true,true),.75);
  assert.notEqual(sirenPulse(0),sirenPulse(.25));
  for(const t of [0,.1,1,4,10])assert.ok(sirenPulse(t)>=.4 && sirenPulse(t)<=1);
+});
+
+test('siren masks less of close-by monster contact while remaining prominent',()=>{
+ assert.equal(sirenDuckedGain(.8,Infinity),.8);
+ assert.equal(sirenDuckedGain(.8,15),.8);
+ assert.ok(sirenDuckedGain(.8,3)<.8);
+ assert.ok(sirenDuckedGain(.8,0)>=.8*.75);
+ assert.ok(sirenDuckedGain(.8,0)>.5);
 });

@@ -31,6 +31,6 @@ test('scanning is quiet, lost search falls off, invalid distances never amplify'
  assert.equal(observerSoundProfile('patrol',1).gain,0);
  assert.ok(observerSoundProfile('alert',7,1).gain>0);
  assert.ok(observerSoundProfile('search',7).gain<observerSoundProfile('chase',7).gain);
- assert.equal(observerSoundProfile('chase',Infinity).gain,.065);
+ assert.equal(observerSoundProfile('chase',Infinity).gain,.10);
  assert.ok(observerSoundProfile('chase',NaN).gain<=OBSERVER_AUDIO_MAX_GAIN);
 });

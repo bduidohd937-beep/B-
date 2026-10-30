@@ -5,6 +5,13 @@ export const DEFAULT_SIREN_VOLUME=.68;
 export function clampSirenVolume(value){
   return Math.min(1,Math.max(0,Number.isFinite(value)?value:DEFAULT_SIREN_VOLUME));
 }
+// The siren stays imposing, but when a monster is within arm's reach
+// a small level carve stops its metallic footsteps from being buried.
+export function sirenDuckedGain(userVolume,distance=Infinity){
+ const d=Number.isFinite(distance)?Math.max(0,distance):Infinity;
+ const close=Math.max(0,Math.min(1,(13-d)/11));
+ return clampSirenVolume(userVolume)*(1-.25*close);
+}
 export function createEmergencyAudio(ctx,master,noiseBuffer){
   const bus=ctx.createGain();
   bus.gain.value=DEFAULT_SIREN_VOLUME;
@@ -15,10 +22,16 @@ export function createEmergencyAudio(ctx,master,noiseBuffer){
   compressor.attack.value=.004;
   compressor.release.value=.17;
   bus.connect(compressor);compressor.connect(master);
-  let active=null;
-  function setVolume(value){
-    const next=clampSirenVolume(value);
-    if(ctx.state!=='closed')bus.gain.setTargetAtTime(next,ctx.currentTime,.045);
+  let active=null,volume=DEFAULT_SIREN_VOLUME,threatDistance=Infinity;
+  function refreshMix(){
+    if(ctx.state!=='closed')
+      bus.gain.setTargetAtTime(sirenDuckedGain(volume,threatDistance),ctx.currentTime,.12);
+  }
+  function setVolume(value){volume=clampSirenVolume(value);refreshMix();}
+  function setThreatDistance(distance){
+    const next=Number.isFinite(distance)?Math.max(0,distance):Infinity;
+    if(Math.abs(next-threatDistance)<.45||next===Infinity&&threatDistance===Infinity)return;
+    threatDistance=next;refreshMix();
   }
   function stop(){
     if(!active)return;
@@ -133,5 +146,5 @@ export function createEmergencyAudio(ctx,master,noiseBuffer){
     stop();
     try{bus.disconnect();compressor.disconnect();}catch{}
   }
-  return {start,stop,setVolume,dispose};
+  return {start,stop,setVolume,setThreatDistance,dispose};
 }

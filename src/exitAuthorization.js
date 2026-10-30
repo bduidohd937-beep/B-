@@ -19,6 +19,24 @@ export function canUseKeyReader(x,z){
  return Number.isFinite(x)&&Number.isFinite(z)&&
    Math.hypot(x-SECURITY_KEY_READER[0],z-SECURITY_KEY_READER[2])<=SECURITY_READER_RADIUS;
 }
+// A real keyed reader faces +Z. Starting a turn requires looking at the
+// lock on its front, but once inserted the player may watch for the Listener.
+export const READER_FRONT_Z=.22;
+export const READER_FACING_DOT=.67;
+export function canHoldKeyReader(x,z){
+ return canUseKeyReader(x,z)&&z>=SECURITY_KEY_READER[2]+READER_FRONT_Z
+   &&Math.abs(x-SECURITY_KEY_READER[0])<=1.9;
+}
+export function canStartKeyReader(eye,look){
+ if(!Array.isArray(eye)||!Array.isArray(look)||eye.length<3||look.length<3)return false;
+ const [x,y,z]=eye;
+ if(!canHoldKeyReader(x,z)||!Number.isFinite(y))return false;
+ const [px,py,pz]=SECURITY_KEY_READER;
+ const vx=px-x,vy=(py+.25)-y,vz=(pz+.36)-z;
+ const len=Math.hypot(vx,vy,vz)*Math.hypot(look[0],look[1],look[2]);
+ return len>.001&&Number.isFinite(len)&&
+   (vx*look[0]+vy*look[1]+vz*look[2])/len>=READER_FACING_DOT;
+}
 export function freshGateAuthentication(){
  return {phase:'locked',hold:0,elapsed:0,alarmRaised:false};
 }
@@ -52,6 +70,13 @@ export function advanceGateAuthentication(previous,{
 export function gatePassable(state){
  return Boolean(state&&(state.phase==='open'||
    state.phase==='opening'&&state.elapsed>=SHUTTER_PASS_SECONDS));
+}
+// A 3.9m ear-headed Listener should not physically clip a shutter merely
+// because the 1.7m human has enough clearance to slip underneath it.
+// Use the same visible lift ratio as EscapePuzzle, with actor height limits.
+export const SHUTTER_FULL_LIFT=6.8;
+export function gatePassableForActor(state,height=2.05){
+ return gatePassable(state)&&gateLiftRatio(state)*SHUTTER_FULL_LIFT>=height+.18;
 }
 export function gateLiftRatio(state){
  if(!state)return 0;
