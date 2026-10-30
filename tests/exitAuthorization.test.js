@@ -4,7 +4,7 @@ import {
  SECURITY_KEY_READER,KEY_HOLD_SECONDS,SHUTTER_RAISE_SECONDS,
  SHUTTER_PASS_SECONDS,CCTV_MAX_DISTANCE,EXIT_ALARM_LOUDNESS,
  canReadCctv,canUseKeyReader,canStartKeyReader,canHoldKeyReader,freshGateAuthentication,
- advanceGateAuthentication,gatePassable,gateLiftRatio,keyHoldProgress
+ advanceGateAuthentication,gatePassable,gateLiftRatio,gatePassableForActor,keyHoldProgress
 } from '../src/exitAuthorization.js';
 import {CCTV_STATION,initialVehiclePuzzle,vehicleGateOpen,reviewCctv,examineVehicle} from '../src/vehiclePuzzle.js';
 import {terrainBlocked} from '../src/garageLayout.js';
@@ -105,4 +105,14 @@ test('shutter passable only AFTER opening duration threshold, not at initial sir
  assert.equal(gatePassable(almost.state),false);
  const open=step(almost.state,.35,{holding:false,near:false});
  assert.equal(gatePassable(open.state),true);
+});
+
+test('shutter actually lifts high enough for a human BEFORE a 4.25m monster can cross',()=>{
+ const entered=step(freshGateAuthentication(),KEY_HOLD_SECONDS+.2).state;
+ const human=step(entered,SHUTTER_PASS_SECONDS+.25,{holding:false,near:false}).state;
+ assert.equal(gatePassable(human),true);
+ assert.equal(gatePassableForActor(human,2.05),true);
+ assert.equal(gatePassableForActor(human,4.25),false);
+ const later=step(human,SHUTTER_RAISE_SECONDS-SHUTTER_PASS_SECONDS,{holding:false,near:false}).state;
+ assert.equal(gatePassableForActor(later,4.25),true);
 });
