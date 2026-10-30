@@ -8,6 +8,7 @@ export const STAGE_ONE_VEHICLE=Object.freeze([-34,1.15,-12.7]);
 export const STAGE_ONE_SAFE=Object.freeze([-22,1.45,13.7]);
 export const STAGE_ONE_SAFE_CENTER=Object.freeze([-22,13]);
 export const STAGE_ONE_SAFE_STEPS=3;
+export const SAFE_LATCH_HOLD_SECONDS=1.65;
 const LOCATIONS=Object.freeze([
   {kind:'record',position:STAGE_ONE_TERMINAL},
   {kind:'vehicle',position:STAGE_ONE_VEHICLE},
