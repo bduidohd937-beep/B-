@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {canTriggerSiren,sirenPosition,sirenPulse,rushSpeed,SIREN_SECONDS,SIREN_HEARING_RADIUS,RUSH_SPEED} from '../src/alarmRules.js';
-test('only an unlubricated, unpowered, first hold starts a siren',()=>{
+test('first unpowered hold triggers the siren even when lubricated',()=>{
  assert.equal(canTriggerSiren(),true);
- assert.equal(canTriggerSiren({silent:true}),false);
+ assert.equal(canTriggerSiren({silent:true}),true);
  assert.equal(canTriggerSiren({powered:true}),false);
  assert.equal(canTriggerSiren({alreadyTriggered:true}),false);
 });
