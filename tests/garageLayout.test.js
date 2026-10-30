@@ -22,7 +22,11 @@ test('cars and pillars have matching gameplay collision',()=>{
  assert.equal(terrainBlocked(PARKED_CARS[0][0],PARKED_CARS[0][1],false),true);
 });
 test('both breakers are accessible, and gate cannot be bypassed from far side',()=>{
- for(const [x,z] of [POWER_PANEL,ECHO_PANEL])assert.equal(terrainBlocked(x,z),false);
+ // V0.12.7 physical first breaker cannot be phased through. A player
+ // operates from its FRONT, while stage-2 mirrored legacy location stays free.
+ assert.equal(terrainBlocked(...POWER_PANEL),true);
+ assert.equal(terrainBlocked(POWER_PANEL[0],POWER_PANEL[1]+1.5),false);
+ assert.equal(terrainBlocked(...ECHO_PANEL),false);
  assert.equal(terrainBlocked(40,GATE_Z,false),true);
  assert.equal(terrainBlocked(40,GATE_Z,true),true);
  assert.equal(terrainBlocked(0,GATE_Z,false),true);
