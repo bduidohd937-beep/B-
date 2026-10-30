@@ -4,7 +4,9 @@ const LABELS = {
   step: '발소리',
   jump: '점프 · 이륙 소음!',
   land: '착지 충격 · 큰 소음!',
-  throw: '캔 충돌 · 소음 발생!'
+  throw: '캔 충돌 · 소음 발생!',
+  switch: '배전반 가동 · 전기 소음!',
+  power: '전력 복구 · 큰 경보음!'
 };
 const SURFACES = {concrete:'콘크리트',metal:'금속판',water:'물웅덩이'};
 const MOVEMENTS = {idle:'정지', 'crouch-idle':'앉아서 정지', crouch:'앉아서 이동',walk:'걷기',sprint:'달리기',jump:'점프 중'};
@@ -21,7 +23,7 @@ export default function NoiseHUD({ latestNoise, moveMode, airborne, creature }) 
   useEffect(() => {
     if (!latestNoise) return;
     setLevel(Math.round(Math.min(100, Math.max(0, latestNoise.loudness || 0))));
-    if (latestNoise.type === 'jump' || latestNoise.type === 'land' || latestNoise.type === 'throw') {
+    if (latestNoise.type === 'jump' || latestNoise.type === 'land' || latestNoise.type === 'throw' || latestNoise.type === 'switch' || latestNoise.type === 'power') {
       setAlert({ id: latestNoise.id, text: LABELS[latestNoise.type] });
     }
   }, [latestNoise]);
