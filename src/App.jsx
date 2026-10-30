@@ -550,7 +550,12 @@ export default function App(){
   },[]);
   const [creatureInfo,setCreatureInfo]=useState({mode:'idle',excitement:0,speed:0,distance:Infinity});
   const [observerInfo,setObserverInfo]=useState({mode:'scan',alert:0,distance:Infinity});
+  const observerModeRef=useRef('scan');
   const onObserverState=useCallback((mode,alert,distance)=>{
+    if(observerModeRef.current!==mode){
+      if(mode==='chase')soundRef.current?.observerAlert?.();
+      observerModeRef.current=mode;
+    }
     setObserverInfo(old=>old.mode===mode&&old.alert===alert&&old.distance===distance?old:{mode,alert,distance});
   },[]);
   const creatureDistanceRef=useRef(Infinity);
@@ -592,6 +597,7 @@ export default function App(){
     setMoveMode('idle');
     setCreatureInfo({mode:'idle',excitement:0,speed:0,distance:Infinity});
     setObserverInfo({mode:'scan',alert:0,distance:Infinity});
+    observerModeRef.current='scan';
     creatureDistanceRef.current=Infinity;
     setVitals({stamina:100,breath:0,exhausted:false});
     soundRef.current?.resume();
@@ -635,6 +641,7 @@ export default function App(){
       silentRef.current=0;
       setSilentFloor(0);
       setObserverInfo({mode:'scan',alert:0,distance:Infinity});
+      observerModeRef.current='scan';
       setFloor(2);
       setFloorSignal(v=>v+1);
       setPanelProgress(0);
@@ -696,9 +703,10 @@ export default function App(){
       <section className="mission-card" aria-label="현재 탈출 목표">
         <div className="mission-card__index">OBJECTIVE {floor===2?'02':'01'} <span>· {floor===2?'BROADCAST':'EMERGENCY EXIT'}</span></div>
         <div className="mission-card__text">{objectiveText(gatePowered,floor)}</div>
+        {floor===2&&<div className="mission-card__rule">귀 달린 놈 = 소리 · 관조자 = 움직임</div>}
       </section>
-      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo}/>}
-      <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20)):0}}/>
+      {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2}/>}
+      <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
           <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
@@ -712,20 +720,47 @@ export default function App(){
           <strong>{gatePowered?'비상문 개방 · 통로로 이동':'비상문 잠김 · 전원 복구 필요'}</strong>
           {!gatePowered&&<span>{floor===2?'오른쪽 벽의 비상방송 제어반을 찾아라':'왼쪽 벽의 비상 배전반을 찾아라'}</span>}
         </div>}
-      <div className="equipment-strip">
-        <span className="equipment-strip__item"><kbd>F</kbd> LIGHT <b>{torch?'ON':'OFF'}</b></span>
-        <span className="equipment-strip__item"><kbd>G</kbd> CAN <b>{canCollected?'READY':canPosition?'ON FLOOR':'AIRBORNE'}</b></span>
-        {checkpoint&&<span className="equipment-strip__checkpoint">CHECKPOINT SAVED</span>}
+      {started&&locked&&puzzleProximity==='can'&&<div className="interaction-callout" role="status">
+        <strong><kbd>E</kbd> 빈 캔 줍기</strong><span>회수한 캔은 다시 던질 수 있다</span>
+      </div>}
+      {started&&locked&&puzzleProximity?.startsWith('item:')&&<div className="interaction-callout" role="status">
+        <strong><kbd>E</kbd> {ITEM_TYPES[puzzleProximity.slice(5)]?.label} 줍기</strong>
+        <span>보유 {bag.length}/3 · 가득 차면 Q로 내려놓기</span>
+      </div>}
+      {itemNotice&&<div className="item-toast" role="status">{itemNotice.text}</div>}
+      <div className="equipment-strip equipment-strip--v010">
+        <div className="inventory-quickbar" role="group" aria-label="장비 3칸">
+          {[0,1,2].map(index=>{
+            const type=bag[index];
+            return <div key={index} className={'inventory-slot'+(type&&index===selectedIndex?' is-selected':'')}>
+              <kbd>{index+1}</kbd>
+              <span>{type?ITEM_TYPES[type].label:'비어 있음'}</span>
+              <small>{type?ITEM_TYPES[type].key:'EMPTY'}</small>
+            </div>;
+          })}
+        </div>
+        <div className="inventory-guide">
+          <span><kbd>G</kbd> {selectedType==='can'?'던지기':'사용'}</span>
+          <span><kbd>Q</kbd> 내려놓기</span>
+          <span><kbd>F</kbd> 손전등 {torch?'ON':'OFF'}</span>
+          {checkpoint&&<span className="equipment-strip__checkpoint">SAVE ✓</span>}
+        </div>
       </div>
       <div className="helper-bar" aria-label="키보드 도움말">
-        <span>{vitals.exhausted?'숨이 차 달릴 수 없다':vitals.breath>=14?'쉿… 숨소리가 새어 나온다':creatureInfo.mode==='listen'?'청음자가 듣고 있다':floor===2?'이곳도 B2층이다':'작은 소리도 위험하다'}</span>
+        <span>{observerInfo.mode==='chase'&&floor===2?'관조자 포착! 움직임을 멈추고 시야를 끊어라':
+          vitals.exhausted?'숨이 차 달릴 수 없다':
+          vitals.breath>=14?'쉿… 숨소리가 새어 나온다':
+          creatureInfo.mode==='listen'?'청음자가 듣고 있다':
+          floor===2?'소리와 움직임을 모두 조심하라':'작은 소리도 위험하다'}</span>
         <span><kbd>H</kbd> {showControls?'조작법 닫기':'조작법'}</span>
       </div>
       {showControls&&<div className="controls-sheet">
         <strong>CONTROLS · H로 닫기</strong>
         <span>WASD 이동 · SHIFT 질주(스태미나 소모) · Ctrl/C 은신</span>
-        <span>SPACE 점프 · E 줍기/장치 조작 · G 캔 던지기</span>
+        <span>SPACE 점프 · E 줍기/장치 조작 · 1/2/3 장비 선택</span>
+        <span>G 장비 사용·던지기 · Q 장비 내려놓기</span>
         <span>F 손전등 · ESC 일시정지 · H 조작법</span>
+        {floor===2&&<span>청음자: 소리 감지 · 관조자: 움직임 감지</span>}
       </div>}
     </div>
     {(!started||(!locked&&deathPhase==='alive')||ending||deathPhase==='dead')&&<div className="overlay"><section className="panel" role="dialog" aria-modal="true">
@@ -738,7 +773,7 @@ export default function App(){
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
         <p>H 조작법 · 헤드폰 권장 · 숨소리는 청음자가 들을 수 있습니다</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.9.2 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.10 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
