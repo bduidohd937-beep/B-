@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canTriggerSiren,sirenPosition,sirenPulse,rushSpeed,SIREN_SECONDS,SIREN_HEARING_RADIUS,RUSH_SPEED} from '../src/alarmRules.js';
+import {canTriggerSiren,sirenPosition,sirenPulse,rushSpeed,SIREN_SECONDS,SIREN_HEARING_RADIUS,RUSH_SPEED,SECOND_FLOOR_RUSH_SPEED,LISTENER_REACTION_SECONDS} from '../src/alarmRules.js';
 test('first unpowered hold triggers the siren even when lubricated',()=>{
  assert.equal(canTriggerSiren(),true);
  assert.equal(canTriggerSiren({silent:true}),true);
@@ -13,9 +13,12 @@ test('alarm is tied to breaker position, not player position',()=>{
 });
 test('loud alarm travels widely and triggers genuinely rapid Listener rush',()=>{
  assert.equal(SIREN_HEARING_RADIUS>=80,true);
- assert.equal(RUSH_SPEED>6.2,true);
+ assert.ok(RUSH_SPEED>=5.8&&RUSH_SPEED<=6.2);
+ assert.ok(SECOND_FLOOR_RUSH_SPEED<6.2);
+ assert.ok(LISTENER_REACTION_SECONDS>=.65&&LISTENER_REACTION_SECONDS<=1);
  assert.equal(SIREN_SECONDS>=8,true);
  assert.equal(rushSpeed(6),RUSH_SPEED);
+ assert.equal(rushSpeed(6,100,2),SECOND_FLOOR_RUSH_SPEED);
  assert.ok(rushSpeed(0,100)<RUSH_SPEED);
 });
 test('reduced-motion pulse is steady, normal siren pulsing varies',()=>{
