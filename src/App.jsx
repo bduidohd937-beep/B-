@@ -482,30 +482,39 @@ export default function App(){
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
   const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
   const onPanelAttempt=useCallback(()=>{
-    if(!canTriggerSiren({
-      silent:silentRef.current===floorRef.current,
-      alreadyTriggered:alarmFiredRef.current
-    }))return;
-    alarmFiredRef.current=true;
+    const lubricated=silentRef.current===floorRef.current;
     const position=sirenPosition(floorRef.current);
+    // EVERY attempt still moves metal; lube only reduces the impact and friction.
+    onNoiseRef.current?.({
+      type:'switch',position,lubricated,
+      loudness:mechanicalNoise(86,lubricated)
+    });
+    if(!canTriggerSiren({alreadyTriggered:alarmFiredRef.current}))return;
+    alarmFiredRef.current=true;
     setAlarmActive(true);
-    soundRef.current?.switchStart?.();
     soundRef.current?.startSiren?.(position,SIREN_SECONDS);
-    // Sound AI receives the BREAKER's position, never player tracking.
+    // The alarm circuit is electronic: even lubricated panels summon the
+    // Listener. A future *separate* wiring puzzle may disable this.
     onNoiseRef.current?.({type:'siren',loudness:SIREN_LOUDNESS,position});
   },[]);
   const onPowerRestored=useCallback(()=>{
     const position=panelPosition(floorRef.current);
     if(floorRef.current===2)setEchoRestored(true);
     else setPowered(true);
-    if(silentRef.current!==floorRef.current)onNoiseRef.current?.({type:'power',loudness:92,position:[position[0],1.5,position[1]]});
+    const lubricated=silentRef.current===floorRef.current;
+    onNoiseRef.current?.({
+      type:'power',lubricated,
+      loudness:mechanicalNoise(92,lubricated),
+      position:[position[0],1.5,position[1]]
+    });
   },[]);
   const onThrowCan=useCallback(({start,end})=>{
+    emitItemNoise('can','use',start,false);
     canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
     setProjectile({id:++projectileId.current,start,end});
-  },[]);
+  },[emitItemNoise]);
   const onProjectileImpact=useCallback(end=>{
     setCanPosition(end);
     setProjectile(null);
@@ -601,7 +610,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -611,10 +620,11 @@ export default function App(){
     if(event.type==='throw')sound.throwCan();
     if(event.type==='land')sound.land();
     if(event.type==='electric')sound.flicker();
-    if(event.type==='switch')sound.switchStart();
-    if(event.type==='power')sound.powerRestore();
+    if(event.type==='switch')sound.switchStart(Boolean(event.lubricated));
+    if(event.type==='power')sound.powerRestore(Boolean(event.lubricated));
     if(event.type==='decoy')sound.devicePulse?.(event.device,event.position);
     if(event.type==='gear')sound.gearClick?.(event.device);
+    if(event.type==='item')sound.itemAction?.(event.item,event.action);
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -711,7 +721,7 @@ export default function App(){
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
           <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
-          <span>{silentFloor===floor?'윤활 완료 · 사이렌 없이 작동 가능':'경보 발생 시 붉은 비상등과 청음자 긴급 추적'}</span>
+          <span>{silentFloor===floor?'윤활 완료 · 금속음 감소, 사이렌은 작동!':'작동 시 붉은 비상등 · 청음자 긴급 추적'}</span>
           <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
