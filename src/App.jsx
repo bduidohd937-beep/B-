@@ -555,7 +555,6 @@ export default function App(){
   const vehicleStateRef=useRef(vehicleState);
   vehicleStateRef.current=vehicleState;
   const [evidenceOpen,setEvidenceOpen]=useState(false);
-  const [memoOpen,setMemoOpen]=useState(false);
   const onCctvOutOfRange=useCallback(()=>setEvidenceOpen(false),[]);
   const [gateAuth,setGateAuth]=useState(freshGateAuthentication);
   const onGateProgress=useCallback(state=>setGateAuth(old=>
@@ -570,11 +569,6 @@ export default function App(){
       CAR_ALARM_SECONDS*1000);
     return ()=>clearTimeout(timer);
   },[carAlarm]);
-  useEffect(()=>{
-    if(!memoOpen)return;
-    const timer=setTimeout(()=>setMemoOpen(false),9000);
-    return ()=>clearTimeout(timer);
-  },[memoOpen]);
   // The recovered vehicle key is NOT a remote door opener.
   // The second gate only becomes passable once the physical shutter rises.
   const gatePowered=vehicleGateOpen(floor,powered,vehicleState,gateAuth);
@@ -698,7 +692,6 @@ export default function App(){
       vehicleStateRef.current=next;
       setVehicleState(next);
       setEvidenceOpen(true);
-      setMemoOpen(false);
       onNoiseRef.current?.({type:'cctv',loudness:CCTV_READ_NOISE,position});
       notify('CCTV 확보 · 컴퓨터에서 멀어지면 화면 종료 · J는 간략 메모');
       return true;
@@ -762,7 +755,6 @@ export default function App(){
       onNoiseRef.current?.({type:'key-insert',loudness:27,
         position:[...SECURITY_KEY_READER]});
       setEvidenceOpen(false);
-      setMemoOpen(false);
       setAlarmActive(true);
       soundRef.current?.startSiren?.(position,EXIT_ALARM_SECONDS);
       onNoiseRef.current?.({type:'siren',loudness:EXIT_ALARM_LOUDNESS,position});
@@ -900,7 +892,6 @@ export default function App(){
     soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
-    setMemoOpen(false);
     setAlarmActive(false);
     soundRef.current?.death?.();
     setCaught(true);
@@ -919,7 +910,6 @@ export default function App(){
     soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
-    setMemoOpen(false);
     setGateAuth(freshGateAuthentication());
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
@@ -990,7 +980,6 @@ export default function App(){
     soundRef.current?.stopShutterMotor?.();
       setCarAlarm(null);
       setEvidenceOpen(false);
-    setMemoOpen(false);
     setGateAuth(freshGateAuthentication());
       const clean=initialVehiclePuzzle();
       vehicleStateRef.current=clean;
@@ -1029,7 +1018,6 @@ export default function App(){
     soundRef.current?.stopShutterMotor?.();
     setCarAlarm(null);
     setEvidenceOpen(false);
-    setMemoOpen(false);
     setAlarmActive(false);
     setEnding(true);
   },[canCollected]);
@@ -1049,14 +1037,6 @@ export default function App(){
         return;
       }
       if(e.code==='KeyH')setShowControls(v=>!v);
-      if(e.code==='KeyJ'&&started&&locked&&!caught&&!ending&&floorRef.current===2){
-        if(vehicleStateRef.current.reviewed){
-          setEvidenceOpen(false);
-          setMemoOpen(v=>!v);
-        }
-        else notify('아직 확보한 CCTV 기록이 없다 · 경비 콘솔을 먼저 찾아라');
-        return;
-      }
       if(e.code!=='KeyF'||!started||!locked||caught||ending)return;
       if(!torchRef.current&&flashlightChargeRef.current<=0){
         notify('손전등 배터리 방전 · 예비 건전지를 찾아야 한다');
@@ -1153,14 +1133,6 @@ export default function App(){
           <p>{CAMERA_LOG.detail}</p>
           <p>{CAMERA_LOG.discrepancy}</p>
           <footer>컴퓨터에서 3.2m 이상 떨어지면 자동 종료 · <kbd>J</kbd> 휴대 메모</footer>
-        </aside>}
-      {floor===2&&memoOpen&&vehicleState.reviewed&&started&&!caught&&!ending&&
-        <aside className="cctv-pocket-note" aria-label="CCTV 기록에서 적어 둔 휴대 메모">
-          <strong>개인 메모 · B2</strong>
-          <p>CAM-C / 03:17:17</p>
-          <p>C-17 구역 · 푸른색 세단</p>
-          <p>번호 끝: 17 · 미등록 차량</p>
-          <small><kbd>J</kbd> 닫기 · 9초 후 자동 접힘</small>
         </aside>}
       {started&&<SurvivalHUD latestNoise={latestNoise} moveMode={moveMode} airborne={airborne} vitals={vitals} creature={creatureInfo} observer={observerInfo} secondFloor={floor===2} reducedEffects={reducedEffects} active={started&&locked&&!ending&&!caught}/>}
       <div className="danger-vignette" aria-hidden="true" style={{opacity:started&&!ending&&!reducedEffects?Math.max(observerInfo.mode==='chase'?.44:0,Math.max(0,Math.min(.57,(14-creatureInfo.distance)/20))):0}}/>
