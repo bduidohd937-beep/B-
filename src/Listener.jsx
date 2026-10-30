@@ -73,7 +73,7 @@ function buildRoute(from,to,powered){
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-export default function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,floor=1,levelSignal=0,deathPhase='alive'}) {
+function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,floor=1,levelSignal=0,deathPhase='alive'}) {
   const {camera}=useThree();
   const home=floor===2?LOOP_BASE:BASE;
   const group=useRef(null);
@@ -238,3 +238,5 @@ export default function Listener({active,events,playerRef,onCaught,onState,onSpa
     <ListenerModel motionRef={modelMotion}/>
   </group>;
 }
+
+export default React.memo(Listener);
