@@ -250,8 +250,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
           });
           if(launch){
             if(type==='can'){
-              canRef.current=false;
-              onThrowCan({start:launch.start,end:launch.end});
+              if(onThrowCan({start:launch.start,end:launch.end})){
+                canRef.current=false;
+              }
             }else{
               onUseGear(type,{
                 position:camera.position.toArray(),
@@ -577,6 +578,7 @@ export default function App(){
   const [puzzleProximity,setPuzzleProximity]=useState(null);
   const [canPosition,setCanPosition]=useState([2,.18,12]);
   const [projectile,setProjectile]=useState(null);
+  const projectileRef=useRef(null);
   const throwAimRef=useRef(null);
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
@@ -639,6 +641,10 @@ export default function App(){
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const effect=itemEffect(type,nearPanel);
+    if(effect==='deploy'&&projectileRef.current){
+      notify('아직 날아가는 장비가 있다 · 착지한 뒤 다시 던지자');
+      return false;
+    }
     if(effect==='requires-panel'||(effect==='attenuate'&&alreadyPowered)){
       notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
       return false;
@@ -665,7 +671,9 @@ export default function App(){
       notify('예비 건전지 교체 · 손전등 +45% · 교체음 발생');
     }else if(effect==='deploy'){
       if(start&&end){
-        setProjectile({id:++projectileId.current,type,start,end});
+        const next={id:++projectileId.current,type,start,end};
+        projectileRef.current=next;
+        setProjectile(next);
       }else{
         setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end||position}]);
       }
@@ -794,20 +802,28 @@ export default function App(){
     });
   },[]);
   const onThrowCan=useCallback(({start,end})=>{
+    if(projectileRef.current){
+      notify('아직 투척 중이다 · 착지한 뒤 다시 던지자');
+      return false;
+    }
     emitItemNoise('can','use',start,false);
     canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
-    setProjectile({id:++projectileId.current,type:'can',start,end});
-  },[emitItemNoise]);
+    const next={id:++projectileId.current,type:'can',start,end};
+    projectileRef.current=next;
+    setProjectile(next);
+    return true;
+  },[emitItemNoise,notify]);
   const onProjectileImpact=useCallback((end,type='can')=>{
+    projectileRef.current=null;
     setProjectile(null);
     if(type==='can'){
       setCanPosition(end);
-      onNoiseRef.current?.({type:'throw',loudness:100,position:end});
+      onNoiseRef.current?.({type:'throw',item:'can',loudness:100,position:end});
     }else{
       setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
-      onNoiseRef.current?.({type:'throw',loudness:type==='alarm'?34:type==='radio'?31:16,
+      onNoiseRef.current?.({type:'throw',item:type,loudness:type==='alarm'?34:type==='radio'?31:16,
         position:end});
     }
   },[]);
@@ -921,7 +937,10 @@ export default function App(){
     if(!sound)return;
     if(event.type==='step'){sound.step(event.mode);if(event.surface==='metal')sound.metal();if(event.surface==='water')sound.splash();}
     if(event.type==='jump')sound.jump();
-    if(event.type==='throw')sound.throwCan();
+    if(event.type==='throw'){
+      if(event.item&&event.item!=='can')sound.itemAction?.(event.item,'drop');
+      else sound.throwCan();
+    }
     if(event.type==='land')sound.land();
     if(event.type==='electric')sound.flicker();
     if(event.type==='switch')sound.switchStart(Boolean(event.lubricated));
