@@ -9,9 +9,9 @@ const fixture=readFileSync(new URL('../src/GarageFixtures.jsx',import.meta.url),
 const garage=readFileSync(new URL('../src/GarageWorld.jsx',import.meta.url),'utf8');
 const ordinary=readFileSync(new URL('../src/InstancedCars.jsx',import.meta.url),'utf8');
 test('batched garage still includes every light fixture and all lane/bay stripes',()=>{
- assert.match(fixture,/\[-62,-46,-30,-14,2,18,34,50,66\]/);
- assert.match(fixture,/\[-37,-19,0,19,37\]/);
- assert.match(fixture,/Array\.from\(\{length:36\}/);
+ assert.match(fixture,/\[-27,-18,-9,0,9,18\]/);
+ assert.match(fixture,/\[-17,-8,1,10,18\]/);
+ assert.match(fixture,/Array\.from\(\{length:20\}/);
  assert.match(fixture,/mesh\.instanceMatrix\.needsUpdate=true/);
  assert.match(fixture,/mesh\.computeBoundingSphere\(\)/);
  assert.match(garage,/<GarageFixtures flicker=\{flicker\}/);

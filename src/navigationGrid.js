@@ -16,13 +16,14 @@ const coords=(x,z)=>[
 ];
 const id=(x,z)=>x+z*NAV_COLS;
 const world=(x,z)=>[WALK_BOUNDS.minX+x*NAV_STEP,WALK_BOUNDS.minZ+z*NAV_STEP];
-export function navigationGrid(powered=false){
- const key=Boolean(powered);
+export function navigationGrid(powered=false,shortcutOpen=false){
+ const key=`${Boolean(powered)}:${Boolean(shortcutOpen)}`;
  if(grids.has(key))return grids.get(key);
  const blocked=new Uint8Array(SIZE);
  for(let gz=0;gz<NAV_ROWS;gz++)for(let gx=0;gx<NAV_COLS;gx++){
    const [x,z]=world(gx,gz);
-   blocked[id(gx,gz)]=terrainBlockedRadius(x,z,LISTENER_COLLISION_RADIUS,key)?1:0;
+   blocked[id(gx,gz)]=terrainBlockedRadius(x,z,LISTENER_COLLISION_RADIUS,
+     Boolean(powered),Boolean(shortcutOpen))?1:0;
  }
  grids.set(key,blocked);
  builds++;
@@ -44,9 +45,9 @@ function nearestFree(gx,gz,blocked){
  }
  return -1;
 }
-export function buildRoute(from,to,powered=false){
+export function buildRoute(from,to,powered=false,shortcutOpen=false){
  if(!from||!to)return [];
- const blocked=navigationGrid(powered);
+ const blocked=navigationGrid(powered,shortcutOpen);
  const [sx,sz]=coords(from.x,from.z),[tx,tz]=coords(to.x,to.z);
  const start=nearestFree(sx,sz,blocked),goal=nearestFree(tx,tz,blocked);
  if(start<0||goal<0||start===goal)return [];

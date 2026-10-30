@@ -3,13 +3,13 @@ import {POWER_PANEL} from './puzzle.js';
 // The old 34m-away static Listener left the emergency breaker unguarded.
 // A short four-point walk near the machinery makes listening, distraction
 // and timing matter. No player-position tracking or teleportation.
-export const FIRST_GUARD_HOME=Object.freeze([-21,-18]);
+export const FIRST_GUARD_HOME=Object.freeze([11,-18]);
 export const FIRST_GUARD_PATROL=Object.freeze([
   FIRST_GUARD_HOME,
-  Object.freeze([-25,-24]),
-  Object.freeze([-18,-32]),
-  Object.freeze([-11,-25]),
-  Object.freeze([-20,-11])
+  Object.freeze([17,-18]),
+  Object.freeze([17,-27]),
+  Object.freeze([7,-25]),
+  Object.freeze([5,-14])
 ]);
 export const FIRST_GUARD_WALK_SPEED=1.15;
 // A listening pause + wider patrol loop creates a fair opening at the panel.

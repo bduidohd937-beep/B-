@@ -1,9 +1,9 @@
 // B∞ first escape puzzle — shared gameplay geometry and testable rules.
-export const POWER_PANEL = Object.freeze([-16, -25]);
+export const POWER_PANEL = Object.freeze([17, -22]);
 export const ECHO_PANEL = Object.freeze([16, -25]);
 export const SECOND_FLOOR = 2;
 export const SECOND_FLOOR_START = Object.freeze([0, 1.7, 17]);
-export const GATE_Z = -38;
+export const GATE_Z = -32;
 export const GATE_HALF_OPENING = 3.1;
 export const POWER_HOLD_SECONDS = 2.2;
 
@@ -54,7 +54,7 @@ export function gateIsPowered(floor, firstPowered, secondPowered) {
 
 export function canEnterNextArea(x, z, floor, gatePowered) {
   return Boolean(gatePowered) && (floor === 1 || floor === SECOND_FLOOR)
-    && z < -43 && Math.abs(x) < 3;
+    && z < GATE_Z-5 && Math.abs(x) < 3;
 }
 
 export function isNearGate(x, z) {

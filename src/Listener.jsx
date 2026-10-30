@@ -25,7 +25,8 @@ const BASE = new THREE.Vector3(FIRST_GUARD_HOME[0],0,FIRST_GUARD_HOME[1]);
 const LOOP_BASE = new THREE.Vector3(-14,0,-7);
 const PATROL = FIRST_GUARD_PATROL.map(([x,z])=>new THREE.Vector3(x,0,z));
 const CARS=PARKED_CARS;
-const obstructed=(x,z,powered=false)=>terrainBlockedRadius(x,z,LISTENER_COLLISION_RADIUS,powered);
+const obstructed=(x,z,powered=false,shortcutOpen=false)=>
+  terrainBlockedRadius(x,z,LISTENER_COLLISION_RADIUS,powered,shortcutOpen);
 const dist=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 
 // Approximate sound obstruction by columns and cars, without a physics dependency.
@@ -60,7 +61,7 @@ function blockedToListener(creature,viewer){
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,floor=1,levelSignal=0,deathPhase='alive'}) {
+function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,shortcutOpen=false,floor=1,levelSignal=0,deathPhase='alive'}) {
   const {camera}=useThree();
   const home=floor===2?LOOP_BASE:BASE;
   const group=useRef(null);
@@ -201,7 +202,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(state.current==='investigate'||state.current==='return'||state.current==='patrol'){
       routeTime.current-=dt;
       if(routeTime.current<=0){
-        route.current=buildRoute(pos,destination,powered);
+        route.current=buildRoute(pos,destination,powered,shortcutOpen);
         // Cached occupancy eliminates recurring grid collision checks; avoid
         // repathing every second unless a new noise resets routeTime to zero.
         routeTime.current=state.current==='patrol'?FIRST_GUARD_ROUTE_REPLAN_SECONDS:2.3;
@@ -223,10 +224,10 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       const dx=(waypoint.x-pos.x)/range*dt*speed;
       const dz=(waypoint.z-pos.z)/range*dt*speed;
       const [stepX,stepZ]=chooseClearStep(pos.x,pos.z,dx,dz,
-        (x,z)=>obstructed(x,z,powered));
+        (x,z)=>obstructed(x,z,powered,shortcutOpen));
       // Sweep the entire physical creature footprint, preventing 3D body
       // phasing through concrete, parked cars, gate or breaker at high speed.
-      const moved=sweepMove(pos.x,pos.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered);
+      const moved=sweepMove(pos.x,pos.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered,shortcutOpen);
       pos.x=moved.x;pos.z=moved.z;
       // If the obstacle-grid path is stale, recalculate to a FREE cell
       // instead of endlessly leaning into a car, column or breaker cabinet.
@@ -287,8 +288,8 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     const player=playerRef.current;
     let capturedNow=false;
     if(player&&cooldown.current===0&&
-       canListenerCatch(pos,player,(x,z)=>terrainBlockedRadius(x,z,0,powered))&&
-       !segmentCrossesSolid(pos,player,powered)){
+       canListenerCatch(pos,player,(x,z)=>terrainBlockedRadius(x,z,0,powered,shortcutOpen))&&
+       !segmentCrossesSolid(pos,player,powered,.15,shortcutOpen)){
       cooldown.current=4;
       state.current='return';target.current.copy(home);
       capturedNow=true;

@@ -17,13 +17,13 @@ test('stage-one Listener actually uses breaker-side HOME, not only an unused con
   assert.match(listener,/state\.current==='patrol'/);
   assert.match(listener,/nextFirstGuardWaypoint\(patrolIndex\.current,pos\)/);
   assert.equal(breakerThreatDistance(FIRST_GUARD_HOME)<11,true);
-  assert.deepEqual(POWER_PANEL,[-16,-25]);
+  assert.deepEqual(POWER_PANEL,[17,-22]);
 });
 test('patrol has motion and occluded footsteps, not a silent moving sculpture',()=>{
   assert.match(model,/m\.state==='patrol'/);
   assert.match(spatial,/state === 'patrol'/);
   assert.match(listener,/onSpatial\?\.\(\{/);
-  assert.match(listener,/buildRoute\(pos,destination,powered\)/);
+  assert.match(listener,/buildRoute\(pos,destination,powered,shortcutOpen\)/);
 });
 test('monster still investigates actual sound events, never omniscient player targeting',()=>{
   assert.match(listener,/target\.current\.copy\(point\)/);

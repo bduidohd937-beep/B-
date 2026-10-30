@@ -140,7 +140,7 @@ function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehic
    })}
    <GarageFixtures flicker={flicker}/>
    <MaintenanceSurfaces/>
-   <group position={[0,4.93,-32.3]}>
+   <group position={[0,4.93,-30.3]}>
      <mesh><boxGeometry args={[4.25,1.04,.26]}/><meshStandardMaterial color={altered?'#5e272f':'#225a47'} emissive={altered?'#63212b':'#185b43'} emissiveIntensity={1.15}/></mesh>
      <Text position={[0,0,.17]} fontSize={.47} color="#e4eadd">{altered?'B ∞':'EXIT ↑'}</Text>
    </group>

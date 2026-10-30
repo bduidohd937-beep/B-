@@ -10,8 +10,8 @@ test('three grounded candidate cars actually exist on the shared basement layout
  assert.equal(VEHICLES.length,3);
  assert.ok(VEHICLES.every(c=>PARKED_CARS.some(([x,z])=>c.position[0]===x&&c.position[1]===z)));
  assert.equal(VEHICLES.filter(c=>c.correct).length,1);
- assert.equal(CCTV_STATION[0],-18);
- assert.equal(terrainBlocked(-18,12.8,false),false);
+ assert.equal(CCTV_STATION[0],-14);
+ assert.equal(terrainBlocked(-14,12.8,false),false);
  for(const car of VEHICLES)assert.equal(terrainBlocked(car.inspect[0],car.inspect[2]+.9,false),false);
 });
 test('CCTV evidence uniquely determines the correct vehicle, not random guessing',()=>{

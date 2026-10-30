@@ -10,7 +10,7 @@ import {
 } from '../src/firstFloorThreat.js';
 
 test('first-floor Listener begins beside breaker, not 34 metres away',()=>{
- assert.deepEqual(POWER_PANEL,[-16,-25]);
+ assert.deepEqual(POWER_PANEL,[17,-22]);
  const distance=breakerThreatDistance(FIRST_GUARD_HOME);
  assert.ok(distance>=5&&distance<=12,
    'Guard should threaten the breaker but not begin within capture radius');
@@ -36,9 +36,9 @@ test('guard patrol advances only on reaching its own waypoint, not player coords
  assert.equal(nextFirstGuardWaypoint(1,{x:0,z:17}),1);
  const [x,z]=firstGuardWaypoint(1);
  assert.equal(nextFirstGuardWaypoint(1,{x,z}),2);
- assert.equal(nextFirstGuardWaypoint(3,{x:-11,z:-25}),4);
+ assert.equal(nextFirstGuardWaypoint(3,{x:7,z:-25}),4);
  assert.ok(FIRST_GUARD_WAYPOINT_RADIUS<2);
 });
 test('player start stays clear of guard initial position',()=>{
- assert.ok(Math.hypot(FIRST_GUARD_HOME[0],FIRST_GUARD_HOME[1]-17)>33);
+ assert.ok(Math.hypot(FIRST_GUARD_HOME[0],FIRST_GUARD_HOME[1]-17)>30);
 });

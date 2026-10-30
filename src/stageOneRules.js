@@ -3,10 +3,10 @@ import {gatePassable} from './exitAuthorization.js';
 
 // Chapter 1 / Stage 01 vertical slice. Coordinates deliberately reuse the
 // current garage rather than breaking the tested 0.12 collision grid.
-export const STAGE_ONE_TERMINAL=Object.freeze([-18,1.65,11]);
-export const STAGE_ONE_VEHICLE=Object.freeze([-34,1.15,-12.7]);
-export const STAGE_ONE_SAFE=Object.freeze([-22,1.45,13.7]);
-export const STAGE_ONE_SAFE_CENTER=Object.freeze([-22,13]);
+export const STAGE_ONE_TERMINAL=Object.freeze([-14,1.65,12]);
+export const STAGE_ONE_VEHICLE=Object.freeze([-8,1.15,-2.7]);
+export const STAGE_ONE_SAFE=Object.freeze([-18,1.45,16.6]);
+export const STAGE_ONE_SAFE_CENTER=Object.freeze([-18,15.9]);
 export const STAGE_ONE_SAFE_STEPS=3;
 export const SAFE_LATCH_HOLD_SECONDS=1.65;
 export const SAFE_METAL_HEARING_RADIUS=42;
