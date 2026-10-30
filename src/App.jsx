@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import {gatePowerAfterRespawn} from './respawnRules.js';
 import {
  canReadCctv,canUseKeyReader,freshGateAuthentication,
  advanceGateAuthentication,gateLiftRatio,keyHoldProgress,
@@ -915,7 +916,7 @@ export default function App(){
     setGateAuth(freshGateAuthentication());
     // Death resets the unfinished stage: the first-floor shutter must NOT
     // remain open after a caught player respawns at their checkpoint.
-    if(floorRef.current===1)setPowered(false);
+    setPowered(old=>gatePowerAfterRespawn(floorRef.current,old));
     setPanelProgress(0);
     setPuzzleProximity(null);
     deathPhaseRef.current='alive';
