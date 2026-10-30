@@ -7,6 +7,7 @@ import { breathHearingRadius } from './survival.js';
 import ListenerModel from './ListenerModel.jsx';
 import { PILLARS,PARKED_CARS,WALK_BOUNDS,terrainBlocked } from './garageLayout.js';
 import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed } from './alarmRules.js';
+import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 
 // Alarm rush starts far enough from each circuit to leave a genuine escape window.
 const BASE = new THREE.Vector3(14,0,-8);
@@ -138,12 +139,12 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(recent.length)lastEvent.current=recent[recent.length-1].id;
     let heardSomething=false;
     for(const event of recent){
-      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item','flashlight'].includes(event.type))continue;
+      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
       const distanceToSound=dist(pos,point);
-      const reaction=event.type==='siren'
-        ? (distanceToSound<=SIREN_HEARING_RADIUS?'investigate':'none')
+      const reaction=event.type==='siren'||event.type==='car-alarm'
+        ? (distanceToSound<=(event.type==='siren'?SIREN_HEARING_RADIUS:CAR_ALARM_HEARING_RADIUS)?'investigate':'none')
         : event.type==='breath'
           ? (distanceToSound<=breathHearingRadius(event.loudness)
             ? (distanceToSound<=1.7?'investigate':'listen')
@@ -152,6 +153,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
             : (distanceToSound <= (event.type==='horn'?44:Math.max(1.4,event.loudness*.28)) ? 'investigate' : 'none');
       if(reaction!=='none'){
         if(event.type==='siren')rushTime.current=RUSH_SECONDS;
+        if(event.type==='car-alarm')rushTime.current=Math.max(rushTime.current,5.8);
         target.current.copy(point); // Only sound-event position, never player tracking.
         state.current=reaction==='listen'?'listen':'investigate';
         searchTime.current=0;
