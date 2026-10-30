@@ -8,16 +8,14 @@ import { SECURITY_KEY_READER,gateLiftRatio,SHUTTER_FULL_LIFT } from './exitAutho
 
 // The security partition is an IN-LEVEL maintenance divider, not an outer boundary.
 // Its collision agrees with the shared world rule even across the wide foggy garage.
-export default function EscapePuzzle({ powered, floor=1,hasKey=false,authentication=null }) {
+export default function EscapePuzzle({ powered, panelPowered=powered, floor=1,hasKey=false,authentication=null }) {
   const second=floor===2;
   const panel=panelPosition(floor);
   const shutter = useRef(null);
   const openHeight = useRef(0);
   useFrame((_, dt) => {
     if (!shutter.current) return;
-    const target=second
-      ?gateLiftRatio(authentication)*SHUTTER_FULL_LIFT
-      :(powered?SHUTTER_FULL_LIFT:0);
+    const target=gateLiftRatio(authentication)*SHUTTER_FULL_LIFT;
     openHeight.current = THREE.MathUtils.damp(openHeight.current, target, second?11:2.4, Math.min(dt, .06));
     shutter.current.position.y = openHeight.current;
   });
@@ -59,11 +57,11 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
     <group position={[panel[0],0,panel[1]]}>
       <mesh position={[0,.91,.18]}><boxGeometry args={[1.15,1.85,.65]}/><meshStandardMaterial color="#495355" metalness={.45} roughness={.6}/></mesh>
       <mesh position={[0,1.53,.53]}><boxGeometry args={[.82,.54,.05]}/><meshStandardMaterial color="#101719" roughness={.45}/></mesh>
-      <mesh position={[0,1.52,.565]}><boxGeometry args={[.36,.25,.025]}/><meshBasicMaterial color={powered?'#4fcc9d':'#d6453e'}/></mesh>
-      <mesh position={[0,.85,.57]}><boxGeometry args={[.46,.16,.13]}/><meshStandardMaterial color={powered?'#54b894':'#b14d44'} emissive={powered?'#296e50':'#5d1b1b'} emissiveIntensity={.7}/></mesh>
+      <mesh position={[0,1.52,.565]}><boxGeometry args={[.36,.25,.025]}/><meshBasicMaterial color={panelPowered?'#4fcc9d':'#d6453e'}/></mesh>
+      <mesh position={[0,.85,.57]}><boxGeometry args={[.46,.16,.13]}/><meshStandardMaterial color={panelPowered?'#54b894':'#b14d44'} emissive={panelPowered?'#296e50':'#5d1b1b'} emissiveIntensity={.7}/></mesh>
       <Text position={[0,1.94,.55]} fontSize={.18} color="#f3d0b0">EMERGENCY POWER</Text>
-      <Text position={[0,1.20,.57]} fontSize={.15} color="#d8e3dc">{powered?'POWER ONLINE':'NO SIGNAL'}</Text>
-      <pointLight position={[0,1.62,.65]} intensity={powered?1.4:1.1} color={powered?'#55bb8e':second?'#d82a72':'#cb4640'} distance={8}/>
+      <Text position={[0,1.20,.57]} fontSize={.15} color="#d8e3dc">{panelPowered?'POWER ONLINE':'NO SIGNAL'}</Text>
+      <pointLight position={[0,1.62,.65]} intensity={panelPowered?1.4:1.1} color={panelPowered?'#55bb8e':second?'#d82a72':'#cb4640'} distance={8}/>
     </group>
 
     </group>}
@@ -87,7 +85,7 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
     {/* A physical keyed interlock mounted BEFORE the second-loop shutter.
          Player reaches it from the front side (z > GATE_Z); neither the
          token nor any UI marker is a magical remote door opener. */}
-    {second&&<group position={SECURITY_KEY_READER}>
+    <group position={SECURITY_KEY_READER}>
       <mesh position={[0,-.66,0]}>
         <boxGeometry args={[.88,1.5,.53]}/>
         <meshStandardMaterial color="#41494d" roughness={.75} metalness={.48}/>
@@ -112,7 +110,7 @@ export default function EscapePuzzle({ powered, floor=1,hasKey=false,authenticat
            instructional text that gives away the puzzle. */}
       <pointLight position={[0,.25,.45]} intensity={.36} distance={3.7}
         color={powered?'#5de4b2':authentication?.phase==='opening'?'#f1ab68':'#d65e62'} decay={2}/>
-    </group>}
+    </group>
     {/* The impossible corridor: a short visual teaser beyond the barrier. */}
     {[-3.6,3.6].map(x=><mesh key={x} position={[x,GARAGE_HEIGHT/2,-43]}>
       <boxGeometry args={[.20,GARAGE_HEIGHT+.1,11]}/>

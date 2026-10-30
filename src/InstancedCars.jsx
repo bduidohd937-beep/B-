@@ -87,7 +87,7 @@ function setInstances(meshes,cars){
 // geometry/material allocations. Special 317/371/713 cars remain fully modeled.
 export default React.memo(function InstancedCars({floor=1}){
  const ordinary=useMemo(()=>PARKED_CARS.map((location,index)=>({location,index}))
-   .filter(c=>floor!==2||!VEHICLES.some(v=>v.position[0]===c.location[0]&&v.position[1]===c.location[1])),
+   .filter(c=>!VEHICLES.some(v=>v.position[0]===c.location[0]&&v.position[1]===c.location[1]&&(floor===2||v.correct))),
  [floor]);
  const meshes={body:useRef(),roof:useRef(),wheels:useRef(),tail:useRef()};
  const atlas=useMemo(()=>createAtlas(ordinary),[ordinary]);

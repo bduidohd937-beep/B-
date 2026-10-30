@@ -119,7 +119,7 @@ function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehic
    {/* Most identical cars are now GPU-instanced. The three investigation
        vehicles remain independent so their plates/trunk can show clues. */}
    <InstancedCars floor={floor}/>
-   {floor===2&&VEHICLES.map(v=>{
+   {VEHICLES.filter(v=>floor===2||(floor===1&&v.correct)).map(v=>{
      const index=PARKED_CARS.findIndex(([x,z])=>x===v.position[0]&&z===v.position[1]);
      return <group key={v.id}>
        <Car x={v.position[0]} z={v.position[1]}

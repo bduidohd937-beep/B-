@@ -5,6 +5,7 @@ import { gateBlocksPlayer } from './puzzle.js';
 import { crouchReaction } from './stealth.js';
 import { breathHearingRadius } from './survival.js';
 import ListenerModel from './ListenerModel.jsx';
+import {SAFE_METAL_HEARING_RADIUS} from './stageOneRules.js';
 import { PILLARS,PARKED_CARS,terrainBlockedRadius,LISTENER_COLLISION_RADIUS } from './garageLayout.js';
 import {sweepMove,segmentCrossesSolid} from './movementCollision.js';
 import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed,LISTENER_REACTION_SECONDS } from './alarmRules.js';
@@ -145,7 +146,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     for(let i=0;i<log.length;i++){
       const event=log[i];
       if(event.id<=newest)continue;
-      if(!['step','jump','land','throw','horn','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))continue;
+      if(!['step','jump','land','throw','horn','safe','switch','power','breath','decoy','gear','siren','item','flashlight','car-alarm','cctv','vehicle','key-insert','gate-motor'].includes(event.type))continue;
       const point=new THREE.Vector3(event.position[0],0,event.position[2]);
       const softStep=event.type==='step' && event.mode==='crouch';
       const distanceToSound=dist(pos,point); // Physical hearing still tests actual sound.
@@ -157,7 +158,9 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
       }
       const reaction=event.type==='siren'||event.type==='car-alarm'
         ? (distanceToSound<=(event.type==='siren'?SIREN_HEARING_RADIUS:CAR_ALARM_HEARING_RADIUS)?'investigate':'none')
-        : event.type==='breath'
+        : event.type==='safe'
+           ?(distanceToSound<=SAFE_METAL_HEARING_RADIUS?'investigate':'none')
+           : event.type==='breath'
           ? (distanceToSound<=breathHearingRadius(event.loudness)
             ? (distanceToSound<=1.7?'investigate':'listen')
             : 'none')

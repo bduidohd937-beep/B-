@@ -66,7 +66,7 @@ const ParkingAlarm=React.memo(function ParkingAlarm({car,active=false,reducedEff
 export default React.memo(function VehicleMysteryWorld({
  floor=1,reviewed=false,alarmId=null,reducedEffects=false
 }){
- if(floor!==2)return null;
+ if(floor!==1&&floor!==2)return null;
  const car=VEHICLES.find(v=>v.id===alarmId)||null;
  return <group>
    <SecurityDesk reviewed={reviewed}/>
