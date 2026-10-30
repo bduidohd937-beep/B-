@@ -19,7 +19,7 @@ function Car({ x, z, color = '#303b3e' }) {
     {[-.8,.8].map(x=><mesh key={x} position={[x,.64,2.26]}><boxGeometry args={[.45,.2,.04]}/><meshBasicMaterial color="#842d2b"/></mesh>)}
   </group>;
 }
-function Garage({ altered, flicker, canCollected, canUsed }) {
+function Garage({ altered, flicker, canPosition }) {
   return <group>
     <mesh rotation={[-Math.PI/2,0,0]} receiveShadow><planeGeometry args={[42,92]}/><meshStandardMaterial color="#32383a" roughness={.97}/></mesh>
     <mesh position={[0,4.7,-4]} receiveShadow><boxGeometry args={[42,.45,92]}/><meshStandardMaterial color="#3a4042" roughness={1}/></mesh>
@@ -45,7 +45,16 @@ function Garage({ altered, flicker, canCollected, canUsed }) {
     {Array.from({length:10},(_,i)=><mesh key={'bay'+i} position={[i%2===0?-13.7:13.7,.018,-35+i*6]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[.11,4.8]}/><meshBasicMaterial color="#9c9b76" transparent opacity={.48}/></mesh>)}
     <mesh position={[0,.023,-6]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshStandardMaterial color="#657176" metalness={.72}/></mesh>
     <mesh position={[2,.028,-14]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,3]}/><meshStandardMaterial color="#273f46" metalness={.62}/></mesh>
-    {!canCollected&&!canUsed&&<mesh position={[2,.15,12]} rotation={[Math.PI/2,0,0]}><cylinderGeometry args={[.12,.12,.31,12]}/><meshStandardMaterial color="#b1b6b0" metalness={.8}/></mesh>}
+    {canPosition&&<group position={canPosition} rotation={[0,0,-.12]}>
+      <mesh rotation={[Math.PI/2,0,0]}>
+        <cylinderGeometry args={[.16,.16,.38,16]}/>
+        <meshStandardMaterial color="#c6d0cd" roughness={.3} metalness={.7}/>
+      </mesh>
+      <mesh position={[0,0,.012]} rotation={[Math.PI/2,0,0]}>
+        <cylinderGeometry args={[.163,.163,.12,16]}/>
+        <meshStandardMaterial color="#b44e42" roughness={.5}/>
+      </mesh>
+    </group>}
     <mesh position={[0,.05,-32]} rotation={[-Math.PI/2,0,0]}><planeGeometry args={[5,5]}/><meshBasicMaterial color="#22272b" transparent opacity={.5}/></mesh>
   </group>;
 }
@@ -76,7 +85,7 @@ function Flashlight({ enabled }) {
     angle={Math.PI/6} penumbra={.65} distance={32} decay={1.6} color="#f2f0d8"/>;
 }
 
-function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canUsed, onPickCan, onThrowCan, onCheckpoint, checkpoint }) {
+function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFinish, onNoise, onMoveMode, playerRef, respawnSignal, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint }) {
   const { camera } = useThree();
   const keys = useRef({});
   const hadLooked = useRef(false);
@@ -94,9 +103,11 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   const lastActive = useRef(false);
   const canRef=useRef(false);
   canRef.current=canCollected;
+  const groundCanRef=useRef(null);
+  groundCanRef.current=canPosition;
+  const activeRef=useRef(false);
+  activeRef.current=active;
   const checkSet=useRef(false);
-  const canUsedRef=useRef(false);
-  canUsedRef.current=canUsed;
   const forward = useMemo(()=>new THREE.Vector3(),[]);
   const right = useMemo(()=>new THREE.Vector3(),[]);
   const movement = useMemo(()=>new THREE.Vector3(),[]);
@@ -110,16 +121,34 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   useEffect(()=>{
     camera.position.set(0,1.7,17);
     const down=e=>{
+      if(!activeRef.current)return;
       if(e.code==='KeyC'&&!e.repeat)crouchToggle.current=!crouchToggle.current;
       if(e.code==='Space'&&!e.repeat)jumpQueued.current=true;
-      if(e.code==='KeyE'&&!e.repeat&&!canUsedRef.current&&!canRef.current&&Math.hypot(camera.position.x-2,camera.position.z-12)<2.6){canRef.current=true;onPickCan();}
+      if(e.code==='KeyE'&&!e.repeat&&!canRef.current&&groundCanRef.current){
+        const ground=groundCanRef.current;
+        if(Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
+          canRef.current=true;
+          groundCanRef.current=null;
+          onPickCan();
+        }
+      }
       if(e.code==='KeyG'&&!e.repeat&&canRef.current){
         canRef.current=false;const look=new THREE.Vector3();camera.getWorldDirection(look);
         const flat = new THREE.Vector3(look.x, 0, look.z);
         if (flat.lengthSq()<.001) flat.set(0,0,-1);
         flat.normalize();
-        const range=clamp(8-look.y*4,4,11);
-        const end=[clamp(camera.position.x+flat.x*range,-18,18),.18,clamp(camera.position.z+flat.z*range,-44,38)];
+        let range=clamp(8-look.y*4,4,11);
+        let endX,endZ;
+        while(range>2.5){
+          endX=clamp(camera.position.x+flat.x*range,-18,18);
+          endZ=clamp(camera.position.z+flat.z*range,-44,38);
+          const obstacle=pillars.some(([x,z])=>Math.abs(endX-x)<1.3&&Math.abs(endZ-z)<1.3)
+            || parkedCars.some(([x,z])=>Math.abs(endX-x)<1.85&&Math.abs(endZ-z)<2.85)
+            || (altered&&Math.abs(endX)<4.2&&Math.abs(endZ+38)<1.05);
+          if(!obstacle)break;
+          range-=.5;
+        }
+        const end=[endX,.18,endZ];
         const origin=camera.position.clone().addScaledVector(look,.6);
         onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
       }
@@ -194,7 +223,7 @@ function Player({ active, torch, onNear, onTurn, onWatcherShift, altered, onFini
   });
   return null;
 }
-function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, canCollected, canUsed, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact }) {
+function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted, onFinish, onNoise, onMoveMode, playerRef, noiseEvents, onCaught, respawnSignal, onCreatureState, canCollected, canPosition, onPickCan, onThrowCan, onCheckpoint, checkpoint, projectile, onProjectileImpact }) {
   const [flicker,setFlicker]=useState(false);
   useEffect(()=>{
     if(!active)return;
@@ -211,12 +240,12 @@ function World({ active, torch, onNear, onTurn, onWatcherShift, altered, shifted
     <color attach="background" args={['#101719']}/>
     <fog attach="fog" args={['#101719',9,49]}/>
     <ambientLight intensity={.43} color="#9cadad"/>
-    <Garage altered={altered} flicker={flicker} canCollected={canCollected} canUsed={canUsed}/>
+    <Garage altered={altered} flicker={flicker} canPosition={canPosition}/>
     <Flashlight enabled={torch}/>
     <Watcher shifted={shifted}/>
     <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
-    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canUsed={canUsed} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint}/>
+    <Player active={active} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} respawnSignal={respawnSignal} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint}/>
     <PointerLockControls makeDefault onLock={()=>{}} onUnlock={()=>{}} />
   </>;
 }
@@ -232,18 +261,23 @@ export default function App(){
   const [moveMode,setMoveMode]=useState('walk');
   const [canCollected,setCanCollected]=useState(false);
   const [checkpoint,setCheckpoint]=useState(false);
-  const [canUsed,setCanUsed]=useState(false);
+  const [canPosition,setCanPosition]=useState([2,.18,12]);
   const [projectile,setProjectile]=useState(null);
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
-  const onPickCan=useCallback(()=>setCanCollected(true),[]);
+  const onPickCan=useCallback(()=>{
+    setCanCollected(true);
+    setCanPosition(null);
+  },[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
   const onThrowCan=useCallback(({start,end})=>{
     setCanCollected(false);
-    setCanUsed(true);
+    setCanPosition(null);
     setProjectile({id:++projectileId.current,start,end});
   },[]);
   const onProjectileImpact=useCallback(end=>{
+    setCanPosition(end);
+    setProjectile(null);
     onNoiseRef.current?.({type:'throw',loudness:100,position:end});
   },[]);
   const soundRef=useRef(null);
@@ -302,7 +336,7 @@ export default function App(){
   };
   return <>
     <Canvas shadows={false} camera={{fov:74,near:.08,far:90,position:[0,1.7,17]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} checkpoint={checkpoint} canCollected={canCollected} canUsed={canUsed} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact}/>
+      <World active={started&&locked&&!ending&&!caught} torch={torch} onNear={onNear} onTurn={onTurn} onWatcherShift={onWatcherShift} altered={altered} shifted={shifted} onFinish={onFinish} onNoise={onNoise} onMoveMode={onMoveMode} playerRef={playerRef} noiseEvents={noiseLog} onCaught={onCaught} respawnSignal={respawnSignal} onCreatureState={onCreatureState} checkpoint={checkpoint} canCollected={canCollected} canPosition={canPosition} onPickCan={onPickCan} onThrowCan={onThrowCan} onCheckpoint={onCheckpoint} projectile={projectile} onProjectileImpact={onProjectileImpact}/>
     </Canvas>
     <div className="vignette"/>
     <div className="hud">
@@ -311,7 +345,7 @@ export default function App(){
       <div className="reticle"/>
       <div className="audio-toggle" onClick={()=>setAudioOn(v=>!v)} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')setAudioOn(v=>!v)}}>{audioOn?'환경음 ON':'환경음 OFF'}</div>
       <div className="creature-indicator">{creatureState==='investigate'?'어딘가에서 긁는 소리가 들린다':creatureState==='search'?'무언가가 주변을 수색 중이다':creatureState==='return'?'발소리가 멀어진다':'소리를 죽여라'}</div>
-      <div className="item-indicator">{canCollected?'빈 캔 보유 · G 던지기':canUsed?'빈 캔 사용 완료':'빈 캔: 시작 위치 근처 · E 줍기'}{checkpoint?' · 체크포인트 확보':''}</div>
+      <div className="item-indicator">{canCollected?'빈 캔 보유 · G 던지기':canPosition?'바닥에 떨어진 캔 · 가까이 가서 E로 줍기':'캔이 날아가는 중…'}{checkpoint?' · 체크포인트 확보':''}</div>
       <div className="torch-indicator">손전등 [F] {torch?'ON':'OFF'}</div>
       <div className="movement-indicator">{moveMode==='crouch'?'앉기 / 저소음':moveMode==='sprint'?'달리기 / 큰 발소리':'걷기 / 보통 발소리'}</div>
       <div className="controls">WASD 이동 · Shift 달리기 · Ctrl 누르기 / C 앉기 전환 · Space 점프 · E 줍기 · G 던지기 · F 손전등 · ESC 일시정지</div>
