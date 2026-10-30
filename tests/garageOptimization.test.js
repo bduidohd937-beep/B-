@@ -29,8 +29,8 @@ test('all three CCTV clue cars retain physical plates and bay identifiers',()=>{
  assert.match(garage,/\{identified\.plate\}/);
  assert.match(garage,/\{v\.bay\}/);
  // Stage 01 shows the real 317 clue, loop 02 retains all three candidates.
- assert.match(garage,/VEHICLES\\.filter\\(v=>floor===2\\|\\|\\(floor===1&&v\\.correct\\)\\)\\.map/);
- assert.match(ordinary,/floor===2\\|\\|v\\.correct/);
+ assert.ok(garage.includes('VEHICLES.filter(v=>floor===2||(floor===1&&v.correct)).map'));
+ assert.ok(ordinary.includes('(floor===2||v.correct)'));
 });
 test('Listener collision occlusion and audiopanning do not track the player omnisciently',()=>{
  const listener=readFileSync(new URL('../src/Listener.jsx',import.meta.url),'utf8');
