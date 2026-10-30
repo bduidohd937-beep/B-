@@ -509,6 +509,10 @@ export default function App(){
       notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
       return false;
     }
+    if(effect==='recharge'&&flashlightChargeRef.current>=100){
+      notify('배터리가 이미 가득 차 있다 · 나중에 사용하자');
+      return false;
+    }
     const updated=gearRef.current.filter((_,i)=>i!==index);
     gearRef.current=updated;
     setGear(updated);
@@ -522,13 +526,6 @@ export default function App(){
       setBoostSignal(v=>v+1);
       notify('스태미나 +48 · 5초 동안 질주 강화 · 개봉 소음 발생');
     }else if(effect==='recharge'){
-      if(flashlightChargeRef.current>=100){
-        // Restore the held battery rather than wasting it at full power.
-        gearRef.current=[...gearRef.current,type];
-        setGear(gearRef.current);
-        notify('배터리가 이미 가득 차 있다 · 나중에 사용하자');
-        return false;
-      }
       // The Player owns precise charge; rechargeSignal applies it once.
       setRechargeSignal(v=>v+1);
       notify('예비 건전지 교체 · 손전등 +45% · 교체음 발생');
@@ -653,6 +650,8 @@ export default function App(){
     deathPhaseRef.current='alive';
     setDeathPhase('alive');
     setRespawnSignal(n=>n+1);
+    setTorch(true);
+    torchRef.current=true;
     setCaught(false);
     setAirborne(false);
     setMoveMode('idle');
