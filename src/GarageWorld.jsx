@@ -114,7 +114,7 @@ function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehic
      return <Car key={v.id} x={v.position[0]} z={v.position[1]}
        index={index} identified={v} solved={vehicleSolved}/>;
    })}
-   <GarageFixtures/>
+   <GarageFixtures flicker={flicker}/>
    <MaintenanceSurfaces/>
    <group position={[0,4.93,-32.3]}>
      <mesh><boxGeometry args={[4.25,1.04,.26]}/><meshStandardMaterial color={altered?'#5e272f':'#225a47'} emissive={altered?'#63212b':'#185b43'} emissiveIntensity={1.15}/></mesh>
