@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { createSoundEngine } from './sound.js';
+import { DEFAULT_SIREN_VOLUME } from './emergencyAudio.js';
 import Listener from './Listener.jsx';
 import Observer from './Observer.jsx';
 import ItemsWorld from './ItemsWorld.jsx';
@@ -19,7 +20,8 @@ import { SIREN_LOUDNESS,SIREN_SECONDS,canTriggerSiren,sirenPosition } from './al
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
-import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect,gearMakesNoise } from './items.js';
+import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
+import { itemActionNoise,mechanicalNoise,nearestLookedAtPickup } from './interactions.js';
 import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const clamp = THREE.MathUtils.clamp;
@@ -127,18 +129,18 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       if(e.code==='Space'&&!e.repeat)jumpQueued.current=true;
       if(/^Digit[123]$/.test(e.code)&&!e.repeat)onSelectSlot(Number(e.code.slice(-1))-1);
       if(e.code==='KeyE'&&!e.repeat && !canUsePanel(camera.position.x,camera.position.z,floorRef.current)){
-        const ground=groundCanRef.current;
-        if(!canRef.current&&ground&&Math.hypot(camera.position.x-ground[0],camera.position.z-ground[2])<2.5){
-          if(onPickCan()){
-            canRef.current=true;
-            groundCanRef.current=null;
-          }
-        } else {
-          const candidate=groundPickupsRef.current
-            .filter(item=>pickupRadius([camera.position.x,0,camera.position.z],item.position))
-            .sort((a,b)=>Math.hypot(camera.position.x-a.position[0],camera.position.z-a.position[2])
-              -Math.hypot(camera.position.x-b.position[0],camera.position.z-b.position[2]))[0];
-          if(candidate)onPickupGear(candidate.id);
+        const look=new THREE.Vector3();
+        camera.getWorldDirection(look);
+        const focused=nearestLookedAtPickup(
+          camera.position.toArray(),look.toArray(),groundPickupsRef.current,
+          canRef.current?null:groundCanRef.current
+        );
+        const crouching=Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current);
+        const context={position:camera.position.toArray(),crouching};
+        if(focused?.kind==='can'){
+          if(onPickCan(context)){canRef.current=true;groundCanRef.current=null;}
+        }else if(focused?.kind==='item'){
+          onPickupGear(focused.id,context);
         }
       }
       if(e.code==='KeyG'&&!e.repeat){
@@ -164,8 +166,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
           onThrowCan({start:[origin.x,Math.max(.95,origin.y-.15),origin.z],end});
         }else if(type){
           onUseGear(type,{
-            position:camera.position.toArray(),
-            end,
+            position:camera.position.toArray(),end,
+            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current),
             nearPanel:canUsePanel(camera.position.x,camera.position.z,floorRef.current),
             powered:poweredRef.current
           });
@@ -177,7 +179,9 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
           const look=new THREE.Vector3();camera.getWorldDirection(look);
           const xx=clamp(camera.position.x+look.x*.8,WALK_BOUNDS.minX,WALK_BOUNDS.maxX);
           const zz=clamp(camera.position.z+look.z*.8,WALK_BOUNDS.minZ,WALK_BOUNDS.maxZ);
-          onDropGear(type,[xx,.24,zz]);
+          onDropGear(type,[xx,.24,zz],{
+            crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current)
+          });
         }
       }
       keys.current[e.code]=true;
@@ -252,12 +256,12 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
     const nearPanel=canUsePanel(camera.position.x,camera.position.z,floorRef.current);
-    const canClose=groundCanRef.current&&
-      Math.hypot(camera.position.x-groundCanRef.current[0],camera.position.z-groundCanRef.current[2])<2.5;
-    const closeItem=groundPickupsRef.current.find(it=>pickupRadius(
-      [camera.position.x,0,camera.position.z],it.position));
+    const focused=nearestLookedAtPickup(
+      camera.position.toArray(),direction.toArray(),groundPickupsRef.current,
+      canRef.current?null:groundCanRef.current
+    );
     const nextProximity=nearPanel?'panel':isNearGate(camera.position.x,camera.position.z)?'gate':
-      canClose?'can':closeItem?'item:'+closeItem.type:null;
+      focused?.kind==='can'?'can':focused?.kind==='item'?'item:'+focused.type:null;
     if(nextProximity!==proximityReported.current){
       proximityReported.current=nextProximity;
       onPuzzleProximity(nextProximity);
@@ -315,8 +319,8 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
   const {camera}=useThree();
   return <>
     <color attach="background" args={[floor===2?'#121017':'#101719']}/>
-    <fog attach="fog" args={[floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
-    <ambientLight intensity={floor===2?.27:.43} color={floor===2?'#ae8e98':'#9cadad'}/>
+    <fog attach="fog" args={[alarmActive?'#2a0f18':floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
+    <ambientLight intensity={floor===2?.27:.43} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}/>
     <EmergencyAlarm active={alarmActive} floor={floor} reducedEffects={reducedEffects}/>
     {floor===2&&<DistortedB2 onEvent={onHorrorCue}/>}
@@ -339,6 +343,7 @@ export default function App(){
   const [altered,setAltered]=useState(false);
   const [ending,setEnding]=useState(false);
   const [audioOn,setAudioOn]=useState(true);
+  const [sirenVolume,setSirenVolume]=useState(DEFAULT_SIREN_VOLUME);
   const [moveMode,setMoveMode]=useState('idle');
   const [airborne,setAirborne]=useState(false);
   const [vitals,setVitals]=useState({stamina:100,breath:0,exhausted:false});
@@ -392,7 +397,13 @@ export default function App(){
   const [projectile,setProjectile]=useState(null);
   const projectileId=useRef(0);
   const onNoiseRef=useRef(null);
-  const onPickCan=useCallback(()=>{
+  const emitItemNoise=useCallback((item,action,position,crouching=false)=>{
+    onNoiseRef.current?.({
+      type:'item',item,action,position,
+      crouching,loudness:itemActionNoise(item,action,{crouching})
+    });
+  },[]);
+  const onPickCan=useCallback(({position=[0,1.7,17],crouching=false}={})=>{
     if(!canAddToInventory(canHeldRef.current,gearRef.current)){
       notify('가방이 꽉 찼다 · Q로 장비를 내려놓자');
       return false;
@@ -401,10 +412,11 @@ export default function App(){
     setCanCollected(true);
     setCanPosition(null);
     setSelectedSlot(0);
+    emitItemNoise('can','pickup',position,crouching);
     notify('빈 캔 확보 · [1] 선택 후 G로 던지기');
     return true;
-  },[notify]);
-  const onPickupGear=useCallback(id=>{
+  },[notify,emitItemNoise]);
+  const onPickupGear=useCallback((id,{position=[0,1.7,17],crouching=false}={})=>{
     const item=pickupItemsRef.current.find(it=>it.id===id);
     if(!item)return false;
     if(!canAddToInventory(canHeldRef.current,gearRef.current)){
@@ -418,14 +430,15 @@ export default function App(){
     pickupItemsRef.current=remaining;
     setPickupItems(remaining);
     setSelectedSlot(Math.min(2,slots(canHeldRef.current,next).length-1));
+    emitItemNoise(item.type,'pickup',position,crouching);
     notify(ITEM_TYPES[item.type].label+' 획득');
     return true;
-  },[notify]);
+  },[notify,emitItemNoise]);
   const onSelectSlot=useCallback(index=>{
     const available=slots(canHeldRef.current,gearRef.current);
     if(available[index])setSelectedSlot(index);
   },[]);
-  const onDropGear=useCallback((type,position)=>{
+  const onDropGear=useCallback((type,position,{crouching=false}={})=>{
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const updated=gearRef.current.filter((_,i)=>i!==index);
@@ -435,14 +448,15 @@ export default function App(){
     pickupItemsRef.current=world;
     setPickupItems(world);
     setSelectedSlot(0);
-    notify(ITEM_TYPES[type].label+' 내려놓음');
+    emitItemNoise(type,'drop',position,crouching);
+    notify(ITEM_TYPES[type].label+' 내려놓음 · 주변 소음 주의');
     return true;
-  },[notify]);
-  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered})=>{
+  },[notify,emitItemNoise]);
+  const onUseGear=useCallback((type,{position,end,nearPanel,powered:alreadyPowered,crouching=false})=>{
     const index=gearRef.current.indexOf(type);
     if(index<0)return false;
     const effect=itemEffect(type,nearPanel);
-    if(effect==='requires-panel'||(effect==='silence'&&alreadyPowered)){
+    if(effect==='requires-panel'||(effect==='attenuate'&&alreadyPowered)){
       notify('윤활 스프레이는 잠긴 배전반 앞에서만 사용 가능');
       return false;
     }
@@ -450,51 +464,59 @@ export default function App(){
     gearRef.current=updated;
     setGear(updated);
     setSelectedSlot(0);
-    if(effect==='silence'){
+    emitItemNoise(type,'use',position,crouching);
+    if(effect==='attenuate'){
       silentRef.current=floorRef.current;
       setSilentFloor(floorRef.current);
-      notify('배전반 윤활 완료 · 이번 층은 소음 없이 조작');
+      notify('윤활 완료 · 기계음 감소 · 비상 사이렌은 그대로 작동!');
     }else if(effect==='boost'){
       setBoostSignal(v=>v+1);
-      onNoiseRef.current?.({type:'gear',device:'energy',loudness:37,position});
-      notify('스태미나 +48 · 5초 동안 질주 강화');
+      notify('스태미나 +48 · 5초 동안 질주 강화 · 개봉 소음 발생');
     }else if(effect==='deploy'){
       setDeployed(old=>[...old,{id:'gadget-'+(++gadgetId.current),type,position:end}]);
-      if(gearMakesNoise(type))onNoiseRef.current?.({type:'gear',device:type,loudness:17,position});
       notify(type==='alarm'?'4초 후 알람 작동 · 8초간 유인':
         type==='radio'?'무전기 잡음 유인 · 약 9초': '야광봉 설치 · 50초간 유지');
     }
     return true;
-  },[notify]);
+  },[notify,emitItemNoise]);
   const onGadgetExpired=useCallback(id=>setDeployed(old=>old.filter(g=>g.id!==id)),[]);
   const onCheckpoint=useCallback(()=>setCheckpoint(true),[]);
   const onPanelProgress=useCallback(value=>setPanelProgress(value),[]);
   const onPuzzleProximity=useCallback(value=>setPuzzleProximity(old=>old===value?old:value),[]);
   const onPanelAttempt=useCallback(()=>{
-    if(!canTriggerSiren({
-      silent:silentRef.current===floorRef.current,
-      alreadyTriggered:alarmFiredRef.current
-    }))return;
-    alarmFiredRef.current=true;
+    const lubricated=silentRef.current===floorRef.current;
     const position=sirenPosition(floorRef.current);
+    // EVERY attempt still moves metal; lube only reduces the impact and friction.
+    onNoiseRef.current?.({
+      type:'switch',position,lubricated,
+      loudness:mechanicalNoise(86,lubricated)
+    });
+    if(!canTriggerSiren({alreadyTriggered:alarmFiredRef.current}))return;
+    alarmFiredRef.current=true;
     setAlarmActive(true);
-    soundRef.current?.switchStart?.();
     soundRef.current?.startSiren?.(position,SIREN_SECONDS);
-    // Sound AI receives the BREAKER's position, never player tracking.
+    // The alarm circuit is electronic: even lubricated panels summon the
+    // Listener. A future *separate* wiring puzzle may disable this.
     onNoiseRef.current?.({type:'siren',loudness:SIREN_LOUDNESS,position});
   },[]);
   const onPowerRestored=useCallback(()=>{
     const position=panelPosition(floorRef.current);
     if(floorRef.current===2)setEchoRestored(true);
     else setPowered(true);
-    if(silentRef.current!==floorRef.current)onNoiseRef.current?.({type:'power',loudness:92,position:[position[0],1.5,position[1]]});
+    const lubricated=silentRef.current===floorRef.current;
+    onNoiseRef.current?.({
+      type:'power',lubricated,
+      loudness:mechanicalNoise(92,lubricated),
+      position:[position[0],1.5,position[1]]
+    });
   },[]);
   const onThrowCan=useCallback(({start,end})=>{
+    emitItemNoise('can','use',start,false);
     canHeldRef.current=false;
     setCanCollected(false);
     setCanPosition(null);
     setProjectile({id:++projectileId.current,start,end});
-  },[]);
+  },[emitItemNoise]);
   const onProjectileImpact=useCallback(end=>{
     setCanPosition(end);
     setProjectile(null);
@@ -590,7 +612,7 @@ export default function App(){
     const emitted={...event,id:++noiseId.current,time:performance.now()};
     noiseLog.current.push(emitted);
     if(noiseLog.current.length>32)noiseLog.current.shift();
-    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren'].includes(event.type))setLatestNoise(emitted);
+    if(['step','jump','land','throw','switch','power','breath','decoy','gear','siren','item'].includes(event.type))setLatestNoise(emitted);
     if(event.type==='jump')setAirborne(true);
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
@@ -600,10 +622,11 @@ export default function App(){
     if(event.type==='throw')sound.throwCan();
     if(event.type==='land')sound.land();
     if(event.type==='electric')sound.flicker();
-    if(event.type==='switch')sound.switchStart();
-    if(event.type==='power')sound.powerRestore();
+    if(event.type==='switch')sound.switchStart(Boolean(event.lubricated));
+    if(event.type==='power')sound.powerRestore(Boolean(event.lubricated));
     if(event.type==='decoy')sound.devicePulse?.(event.device,event.position);
     if(event.type==='gear')sound.gearClick?.(event.device);
+    if(event.type==='item')sound.itemAction?.(event.item,event.action);
   },[]);
   onNoiseRef.current=onNoise;
   const onFinish=useCallback(()=>{
@@ -657,10 +680,12 @@ export default function App(){
   },[]);
   useEffect(()=>()=>soundRef.current?.dispose(),[]);
   useEffect(()=>{soundRef.current?.setEnabled(audioOn);},[audioOn]);
+  useEffect(()=>{soundRef.current?.setSirenVolume?.(sirenVolume);},[sirenVolume]);
   const begin=()=>{
     setStarted(true);
     if(!soundRef.current)soundRef.current=createSoundEngine();
     soundRef.current?.setEnabled(audioOn);
+    soundRef.current?.setSirenVolume?.(sirenVolume);
     soundRef.current?.resume();
     const canvas=document.querySelector('canvas');
     canvas?.requestPointerLock?.();
@@ -680,9 +705,14 @@ export default function App(){
       <div className="death-fx__blood"/>
       <div className="death-fx__blackout"/>
     </div>}
+    {alarmActive&&<div className={'emergency-dread'+(reducedEffects?' emergency-dread--reduced':'')} aria-hidden="true">
+      <div className="emergency-dread__blackout"/>
+      <div className="emergency-dread__red"/>
+    </div>}
     {alarmActive&&<div className="siren-indicator" role="status" aria-live="polite">
-      <strong>EMERGENCY ALARM</strong>
-      <span>경보 발생 · 청음자가 배전반으로 돌진한다</span>
+      <strong>EMERGENCY PROTOCOL · B2</strong>
+      <span>위이이잉— · 전자 사이렌 가동 · 청음자가 배전반으로 돌진</span>
+      <small>비상 방송 신호 왜곡 · 즉시 이동 또는 은폐</small>
     </div>}
     <div className="hud hud--v092">
       <header className="game-header">
@@ -700,7 +730,7 @@ export default function App(){
       {started&&locked&&puzzleProximity==='panel'&&!gatePowered&&
         <div className="interaction-callout" role="status">
           <strong><kbd>E</kbd> 누르고 있기 · {floor===2?'비상방송 재동기화':'배전반 재시동'}</strong>
-          <span>{silentFloor===floor?'윤활 완료 · 사이렌 없이 작동 가능':'경보 발생 시 붉은 비상등과 청음자 긴급 추적'}</span>
+          <span>{silentFloor===floor?'윤활 완료 · 금속음 감소, 사이렌은 작동!':'작동 시 붉은 비상등 · 청음자 긴급 추적'}</span>
           <div className="interaction-callout__progress" role="progressbar" aria-label="장치 재시동 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(panelProgress*100)}>
             <div style={{width:(panelProgress*100)+'%'}}/>
           </div>
@@ -764,9 +794,16 @@ export default function App(){
       {!caught&&!ending&&<div className="pause-settings">
         <button type="button" aria-pressed={audioOn} onClick={()=>setAudioOn(v=>!v)}>{audioOn?'사운드 켜짐':'사운드 꺼짐'}</button>
         <button type="button" aria-pressed={!reducedEffects} onClick={()=>setReducedEffects(v=>!v)}>{reducedEffects?'화면 효과 줄임':'화면 효과 켜짐'}</button>
-        <p>H 조작법 · 헤드폰 권장 · 숨소리는 청음자가 들을 수 있습니다</p>
+        <label className="siren-volume-control" htmlFor="siren-volume">
+          <span>비상 사이렌 음량 · {Math.round(sirenVolume*100)}%</span>
+          <input id="siren-volume" type="range" min="0" max="100" step="5"
+            value={Math.round(sirenVolume*100)}
+            onChange={e=>setSirenVolume(Number(e.target.value)/100)}
+            aria-label="사이렌 음량"/>
+        </label>
+        <p>처음은 낮은 음량으로 테스트 권장 · 헤드폰 사용자 주의 · ESC 일시정지</p>
       </div>}
-      {ending&&<p className="red">PROTOTYPE 0.10.1 — TO BE CONTINUED</p>}
+      {ending&&<p className="red">PROTOTYPE 0.11.1 — TO BE CONTINUED</p>}
     </section></div>}
   </>;
 }
