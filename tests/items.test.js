@@ -26,7 +26,7 @@ test('items require proximity',()=>{
 });
 test('lube needs panel, gadgets have distinct timing',()=>{
  assert.equal(itemEffect('lube',false),'requires-panel');
- assert.equal(itemEffect('lube',true),'silence');
+ assert.equal(itemEffect('lube',true),'attenuate');
  assert.equal(itemEffect('energy',false),'boost');
  assert.equal(itemEffect('radio',false),'deploy');
  assert.equal(gadgetTiming('alarm',3.9).active,false);
@@ -37,9 +37,9 @@ test('lube needs panel, gadgets have distinct timing',()=>{
  assert.equal(gadgetTiming('glow',51).end,true);
 });
 
-test('glowstick and lubricated panel preserve intentional quiet alternatives',()=>{
- assert.equal(gearMakesNoise('glow'),false);
- assert.equal(gearMakesNoise('lube'),false);
+test('every gear use makes physical handling sound',()=>{
+ assert.equal(gearMakesNoise('glow'),true);
+ assert.equal(gearMakesNoise('lube'),true);
  assert.equal(gearMakesNoise('energy'),true);
  assert.equal(gearMakesNoise('radio'),true);
  assert.equal(gearMakesNoise('alarm'),true);
