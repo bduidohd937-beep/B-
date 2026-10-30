@@ -37,7 +37,7 @@ import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
 import { ITEM_TYPES,startingPickups,slots,canAddToInventory,pickupRadius,itemEffect } from './items.js';
 import { itemActionNoise,mechanicalNoise,nearestLookedAtPickup } from './interactions.js';
-import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
+import { panelPosition, POWER_HOLD_SECONDS, SECOND_FLOOR_START, canUsePanel, canOperatePanel, isNearGate, gateBlocksPlayer, gateIsPowered, canEnterNextArea, objectiveText } from './puzzle.js';
 
 const clamp = THREE.MathUtils.clamp;
 function Flashlight({enabled,charge=100,reducedEffects=false}){
@@ -180,7 +180,7 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
         camera.getWorldDirection(look);
         const eye=camera.position.toArray(),looking=look.toArray();
         const nearBreaker=floorRef.current===1&&
-          canUsePanel(camera.position.x,camera.position.z,1);
+          canOperatePanel(eye,looking,1);
         const nearKeyReader=floorRef.current===2&&
           canUseKeyReader(camera.position.x,camera.position.z);
         const mystery=floorRef.current===2
@@ -215,7 +215,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
           onUseGear(type,{
             position:camera.position.toArray(),
             nearPanel:floorRef.current===1&&
-              canUsePanel(camera.position.x,camera.position.z,1),
+              canOperatePanel(camera.position.toArray(),
+                (()=>{const dir=new THREE.Vector3();camera.getWorldDirection(dir);return dir.toArray();})(),1),
             powered:poweredRef.current,
             crouching:Boolean(keys.current.ControlLeft||keys.current.ControlRight||crouchToggle.current)
           });
@@ -351,7 +352,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
     }
     crouchAlpha.current=THREE.MathUtils.damp(crouchAlpha.current,crouching?1:0,12,dt);
     if(camera.position.z < -9&&!checkSet.current){checkSet.current=true;onCheckpoint();}
-    const nearPanel=floorRef.current===1&&canUsePanel(camera.position.x,camera.position.z,1);
+    const nearPanel=floorRef.current===1&&
+      canOperatePanel(camera.position.toArray(),direction.toArray(),1);
     const nearKeyReader=floorRef.current===2&&canUseKeyReader(camera.position.x,camera.position.z);
     if(floorRef.current===2&&screenOpenRef.current&&
        !canReadCctv(camera.position.x,camera.position.z,CCTV_STATION)&&!cctvRangeReported.current){
@@ -958,7 +960,7 @@ export default function App(){
     if(event.type==='land')setAirborne(false);
     const sound=soundRef.current;
     if(!sound)return;
-    if(event.type==='step'){sound.step(event.mode);if(event.surface==='metal')sound.metal();if(event.surface==='water')sound.splash();}
+    if(event.type==='step')sound.step(event.mode,event.surface);
     if(event.type==='jump')sound.jump();
     if(event.type==='throw'){
       if(event.item&&event.item!=='can')sound.itemAction?.(event.item,'drop');
