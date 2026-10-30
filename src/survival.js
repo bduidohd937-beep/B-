@@ -9,7 +9,7 @@ export function clamp(value,min=0,max=100){
   return Math.max(min,Math.min(max,value));
 }
 export function freshSurvival(){
-  return { stamina:100, lockout:0, recentlyRan:0 };
+  return { stamina:100, lockout:0, recentlyRan:0, running:false };
 }
 export function breathLoudness(stamina) {
   if(stamina <= 8) return 24;
@@ -32,7 +32,7 @@ export function tickSurvival(previous, {dt=0, wantsSprint=false, moving=false, c
   lockout=Math.max(0,lockout-seconds);
   recentlyRan=Math.max(0,recentlyRan-seconds);
   const canSprint=wantsSprint && moving && !crouching && !airborne &&
-    lockout<=0 && stamina>0 && (old.lockout<=0 || stamina>=RESUME_SPRINT_THRESHOLD);
+    lockout<=0 && stamina>0 && (Boolean(old.running) || stamina>=RESUME_SPRINT_THRESHOLD);
   if(canSprint){
     stamina=clamp(stamina- SPRINT_DRAIN_PER_SECOND*seconds);
     recentlyRan=.62;
@@ -42,7 +42,7 @@ export function tickSurvival(previous, {dt=0, wantsSprint=false, moving=false, c
     const recovery=crouching ? (moving?16:25) : (moving?10:21);
     stamina=clamp(stamina+recovery*seconds);
   }
-  const next={stamina,lockout,recentlyRan};
+  const next={stamina,lockout,recentlyRan,running:canSprint};
   return {
     state:next,
     sprinting:canSprint,
