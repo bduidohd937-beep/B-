@@ -21,3 +21,8 @@ test('shutter blocks entry until opened and grid is independent', () => {
   assert.equal(grid.blocked.length, grid.cols * grid.rows);
   assert.equal(B2_BOUNDS.minX, -22);
 });
+test('every unlocked connector has a physical opening for the actor footprint', () => {
+  for (const door of B2_DOORS.filter(d => !d.locked)) {
+    assert.equal(b2Blocked(door.x, door.z, .34, { shutterOpen: true }), false, door.id);
+  }
+});

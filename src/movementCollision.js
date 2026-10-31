@@ -4,11 +4,13 @@ import {terrainBlockedRadius} from './garageLayout.js';
 // thin obstacles / big frame delta. Sweep the actor's whole footprint in
 // <= 0.16m slices and allow controlled axis sliding. Used by player + AI.
 export const MAX_COLLISION_STEP=.16;
-export function sweepMove(x,z,dx,dz,radius=.34,powered=false,shortcutOpen=false){
+export function sweepMove(x,z,dx,dz,radius=.34,powered=false,shortcutOpen=false,customBlocked=null){
  const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/MAX_COLLISION_STEP));
  const sx=dx/steps,sz=dz/steps;
  let nx=x,nz=z,collisions=0;
- const blocked=(px,pz)=>terrainBlockedRadius(px,pz,radius,powered,shortcutOpen);
+ const blocked=(px,pz)=>customBlocked
+   ? customBlocked(px,pz,radius)
+   : terrainBlockedRadius(px,pz,radius,powered,shortcutOpen);
  for(let i=0;i<steps;i++){
    if(!blocked(nx+sx,nz+sz)){nx+=sx;nz+=sz;continue;}
    let moved=false;

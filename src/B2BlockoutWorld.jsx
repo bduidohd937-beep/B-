@@ -10,7 +10,7 @@ export default function B2BlockoutWorld({ shortcutOpen = false, shutterOpen = fa
       <boxGeometry args={[w.halfX*2, B2_CEILINGS.general, w.halfZ*2]}/><meshStandardMaterial {...material}/>
     </mesh>)}
     {B2_DOORS.map(d => {
-      const open = d.locked ? shortcutOpen : d.id === 'C-F' || d.id === 'D-F' ? shutterOpen || true : true;
+      const open = d.locked ? shortcutOpen : d.id === 'C-F' || d.id === 'D-F' ? shutterOpen : true;
       return <group key={d.id} position={[d.x, open ? B2_CEILINGS.general+.4 : B2_CEILINGS.general/2, d.z]}>
         {!open && <mesh><boxGeometry args={[d.halfX*2, B2_CEILINGS.general, d.halfZ*2]}/><meshStandardMaterial color="#596467" metalness={.55} roughness={.6}/></mesh>}
         <Text position={[0, .18, 0]} rotation={[-Math.PI/2,0,0]} fontSize={.18} color="#b7bcae">{d.id}</Text>

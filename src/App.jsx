@@ -38,6 +38,8 @@ import EmergencyAlarm from './EmergencyAlarm.jsx';
 import { PILLARS,PARKED_CARS,GARAGE_HEIGHT,FOG_NEAR,FOG_FAR,terrainBlocked,clampWalkPosition,surfaceAt,WALK_BOUNDS,PLAYER_COLLISION_RADIUS } from './garageLayout.js';
 import { SIREN_LOUDNESS,SIREN_SECONDS,canTriggerSiren,sirenPosition } from './alarmRules.js';
 import {sweepMove} from './movementCollision.js';
+import {b2Blocked} from './b2Blockout.js';
+import B2BlockoutWorld from './B2BlockoutWorld.jsx';
 import DeathCamera from './DeathCamera.jsx';
 import { tickFootsteps, footstepLoudness } from './stealth.js';
 import { freshSurvival, tickSurvival, applyEnergyDrink } from './survival.js';
@@ -359,7 +361,8 @@ const Player = React.memo(function Player({ active, torch, onNear, onTurn, alter
       movement.normalize().multiplyScalar(dt*(crouching?1.45:sprinting?6.2:3.35));
       const move=sweepMove(beforeX,beforeZ,movement.x,movement.z,
         PLAYER_COLLISION_RADIUS,poweredRef.current,
-        floorRef.current===2||Boolean(stageOneRef.current?.key));
+        floorRef.current===2||Boolean(stageOneRef.current?.key),
+        floorRef.current===1 ? (x,z,r)=>b2Blocked(x,z,r,{shortcutOpen:Boolean(stageOneRef.current?.key),shutterOpen:gateAuthRef.current.phase==='open'}) || terrainBlocked(x,z,poweredRef.current,Boolean(stageOneRef.current?.key)) : null);
       camera.position.x=move.x;camera.position.z=move.z;
       movedDistance=move.moved;
     }
@@ -506,6 +509,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <color attach="background" args={[floor===2?'#121017':'#101719']}/>
     <fog attach="fog" args={[alarmActive?'#2a0f18':floor===2?'#1b1018':'#101719',FOG_NEAR,FOG_FAR]}/>
     <ambientLight intensity={floor===2?.245:.37} color={alarmActive?'#cf7d7d':floor===2?'#ae8e98':'#9cadad'}/>
+    {floor===1&&<B2BlockoutWorld shortcutOpen={Boolean(stageOne?.key)} shutterOpen={gateAuth.phase==='open'}/>} 
     <GarageWorld altered={altered} flicker={flicker} canPosition={canPosition}
       floor={floor} vehicleSolved={vehicleState.solved}/>
     <StageOneWorld floor={floor} state={stageOne}/>

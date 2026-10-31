@@ -13,22 +13,27 @@ export const B2_ZONES = Object.freeze({
 const wall = (x, z, halfX, halfZ, id) => Object.freeze({ x, z, halfX, halfZ, id });
 export const B2_WALLS = Object.freeze([
   wall(-20, 16, .18, 4.5, 'A-west'), wall(-15, 20.5, 5, .18, 'A-north'),
-  wall(-10, 16, .18, 4.5, 'A-east-upper'), wall(-15, 11.5, 5, .18, 'A-south'),
-  wall(-8.5, 6, .18, 7, 'B-west'), wall(8.5, 6, .18, 7, 'B-east'),
-  wall(-15, -6, 5, .18, 'C-north'), wall(-20, -11, .18, 5, 'C-west'),
+  wall(-10, 17.5, .18, 3, 'A-east-upper'), wall(-10, 11.5, .18, .3, 'A-east-lower'), wall(-15, 11.5, 5, .18, 'A-south'),
+  // B's side walls are split at the actual door openings. A doorway is an
+  // absence of a solid, not a decorative marker placed on top of one.
+  wall(-8.5, 8.5, .18, 4.5, 'B-west-upper'), wall(-8.5, 2.5, .18, 3.5, 'B-west-lower'),
+  wall(8.5, 8.5, .18, 4.5, 'B-east-upper'), wall(8.5, 2.5, .18, 3.5, 'B-east-lower'),
+  wall(-15, -6, 2.8, .18, 'C-north-west'), wall(-11.2, -6, 1.2, .18, 'C-north-east'),
+  wall(-20, -11, .18, 5, 'C-west'),
   wall(-15, -16, 5, .18, 'C-south'), wall(-10, -11, .18, 5, 'C-east'),
-  wall(10, -19, .18, 4.5, 'D-west'), wall(20, -19, .18, 4.5, 'D-east'),
+  wall(10, -19, .18, 3.8, 'D-west-upper'), wall(10, -25, .18, 1.5, 'D-west-lower'), wall(20, -19, .18, 4.5, 'D-east'),
   wall(15, -23.5, 5, .18, 'D-south'), wall(-17.5, 4, .18, 8.5, 'E-west'),
   wall(-14.5, 12.5, .18, 3.5, 'E-east-upper'), wall(-14.5, -4.5, .18, 3.5, 'E-east-lower'),
-  wall(-4, -31, .18, 2, 'F-west'), wall(4, -31, .18, 2, 'F-east'),
+  wall(-4, -28.8, .18, 1.1, 'F-west-upper'), wall(-4, -35.3, .18, .3, 'F-west-lower'),
+  wall(4, -28.8, .18, 1.1, 'F-east-upper'), wall(4, -35.3, .18, .3, 'F-east-lower'),
   wall(-4, -35, 4, .18, 'F-south'), wall(4, -35, 4, .18, 'F-south-2')
 ]);
 export const B2_DOORS = Object.freeze([
-  { id: 'A-B', x: -8.5, z: 12, halfX: .7, halfZ: 1.1, connects: ['A','B'], locked: false },
+  { id: 'A-B', x: -10, z: 13, halfX: .7, halfZ: 1.1, connects: ['A','B'], locked: false },
   { id: 'B-C', x: -5, z: -6, halfX: 1.2, halfZ: .7, connects: ['B','C'], locked: false },
-  { id: 'B-D', x: 8.5, z: -5, halfX: .7, halfZ: 1.2, connects: ['B','D'], locked: false },
-  { id: 'C-F', x: -5, z: -31, halfX: 1.2, halfZ: .7, connects: ['C','F'], locked: false },
-  { id: 'D-F', x: 8, z: -31, halfX: 1.2, halfZ: .7, connects: ['D','F'], locked: false },
+  { id: 'B-D', x: 10, z: -5, halfX: .7, halfZ: 1.2, connects: ['B','D'], locked: false },
+  { id: 'C-F', x: -4, z: -31, halfX: 1.2, halfZ: .7, connects: ['C','F'], locked: false },
+  { id: 'D-F', x: 4, z: -31, halfX: 1.2, halfZ: .7, connects: ['D','F'], locked: false },
   { id: 'A-E', x: -14.5, z: 8, halfX: .7, halfZ: 1.1, connects: ['A','E'], locked: true },
   { id: 'E-C', x: -14.5, z: -7, halfX: .7, halfZ: 1.1, connects: ['E','C'], locked: true }
 ]);
