@@ -11,6 +11,7 @@ import {sweepMove,segmentCrossesSolid} from './movementCollision.js';
 import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed,LISTENER_REACTION_SECONDS } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 import {buildRoute} from './navigationGrid.js';
+import {B2_WALLS,b2Blocked,b2SegmentCrossesSolid,buildB2Route} from './b2Blockout.js';
 import {passesParkedCar} from './chaseAudioRules.js';
 import {canListenerCatch,reachableSoundTarget,shouldReplanOnStall} from './listenerContactRules.js';
 import {
@@ -54,14 +55,16 @@ function lineCrossesBox(from,to,cx,cz,halfX,halfZ){
  }
  return exit>.03&&enter<.97;
 }
-function blockedToListener(creature,viewer){
-  return PILLARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,.85,.85))
-    || CARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,1.45,2.4));
+function blockedToListener(creature,viewer,b2=false){
+  return b2
+    ? B2_WALLS.some(w=>lineCrossesBox(creature,viewer,w.x,w.z,w.halfX,w.halfZ))
+    : PILLARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,.85,.85))
+      || CARS.some(([x,z])=>lineCrossesBox(creature,viewer,x,z,1.45,2.4));
 }
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,shortcutOpen=false,floor=1,levelSignal=0,deathPhase='alive'}) {
+function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,shortcutOpen=false,shutterOpen=false,floor=1,levelSignal=0,deathPhase='alive'}) {
   const {camera}=useThree();
   const home=floor===2?LOOP_BASE:BASE;
   const group=useRef(null);
@@ -202,7 +205,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(state.current==='investigate'||state.current==='return'||state.current==='patrol'){
       routeTime.current-=dt;
       if(routeTime.current<=0){
-        route.current=buildRoute(pos,destination,powered,shortcutOpen);
+        route.current=floor===1 ? buildB2Route(pos,destination,{shortcutOpen,shutterOpen}) : buildRoute(pos,destination,powered,shortcutOpen);
         // Cached occupancy eliminates recurring grid collision checks; avoid
         // repathing every second unless a new noise resets routeTime to zero.
         routeTime.current=state.current==='patrol'?FIRST_GUARD_ROUTE_REPLAN_SECONDS:2.3;
@@ -227,7 +230,9 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         (x,z)=>obstructed(x,z,powered,shortcutOpen));
       // Sweep the entire physical creature footprint, preventing 3D body
       // phasing through concrete, parked cars, gate or breaker at high speed.
-      const moved=sweepMove(pos.x,pos.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered,shortcutOpen);
+      const moved=floor===1
+        ? sweepMove(pos.x,pos.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered,shortcutOpen,(x,z,r)=>b2Blocked(x,z,r,{shortcutOpen,shutterOpen}))
+        : sweepMove(pos.x,pos.z,stepX,stepZ,LISTENER_COLLISION_RADIUS,powered,shortcutOpen);
       pos.x=moved.x;pos.z=moved.z;
       // If the obstacle-grid path is stale, recalculate to a FREE cell
       // instead of endlessly leaning into a car, column or breaker cabinet.
@@ -288,8 +293,8 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     const player=playerRef.current;
     let capturedNow=false;
     if(player&&cooldown.current===0&&
-       canListenerCatch(pos,player,(x,z)=>terrainBlockedRadius(x,z,0,powered,shortcutOpen))&&
-       !segmentCrossesSolid(pos,player,powered,.15,shortcutOpen)){
+       canListenerCatch(pos,player,(x,z)=>floor===1?b2Blocked(x,z,0,{shortcutOpen,shutterOpen}):terrainBlockedRadius(x,z,0,powered,shortcutOpen))&&
+       !(floor===1?b2SegmentCrossesSolid(pos,player,0,{shortcutOpen,shutterOpen}):segmentCrossesSolid(pos,player,powered,.15,shortcutOpen))){
       cooldown.current=4;
       state.current='return';target.current.copy(home);
       capturedNow=true;
@@ -308,7 +313,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
         listenerPosition:[viewer.x,viewer.y,viewer.z],
         forward:listenerDirection.current.toArray(),
         creaturePosition:[pos.x,1.3,pos.z],
-        occluded:blockedToListener(pos,viewer),
+        occluded:blockedToListener(pos,viewer,floor===1),
         nearCar:passesParkedCar(pos.x,pos.z,CARS),
         state:state.current,
         speed:currentSpeed.current,

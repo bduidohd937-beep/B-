@@ -38,7 +38,7 @@ export default React.memo(function StageOneWorld({floor=1,state=null}){
   const [x,z]=STAGE_ONE_SAFE_CENTER;
   const shortcutOpen=floor===2||Boolean(state?.key);
   return <group>
-   <GarageStructures shortcutOpen={shortcutOpen}/>
+   {floor===2&&<GarageStructures shortcutOpen={shortcutOpen}/>} 
    <group position={[x,0,z]}>
     <mesh position={[0,.82,0]}>
       <boxGeometry args={[1.42,1.62,1.08]}/>
