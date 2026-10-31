@@ -1,6 +1,7 @@
 import React from 'react';
 import { Text } from '@react-three/drei';
 import { B2_CEILINGS, B2_DOORS, B2_WALLS, B2_ZONES } from './b2Blockout.js';
+import { VEHICLES } from './vehiclePuzzle.js';
 
 const material = { color: '#465154', roughness: .94, metalness: .08 };
 export default function B2BlockoutWorld({ shortcutOpen = false, shutterOpen = false }) {
@@ -9,6 +10,11 @@ export default function B2BlockoutWorld({ shortcutOpen = false, shutterOpen = fa
     {B2_WALLS.map(w => <mesh key={w.id} position={[w.x, B2_CEILINGS.general/2, w.z]}>
       <boxGeometry args={[w.halfX*2, B2_CEILINGS.general, w.halfZ*2]}/><meshStandardMaterial {...material}/>
     </mesh>)}
+    {VEHICLES.filter(v=>v.id==='c17').map(v=><group key={v.id} position={[v.position[0],0,v.position[1]]}>
+      <mesh position={[0,.72,0]}><boxGeometry args={[2.25,1.05,4.5]}/><meshStandardMaterial color="#39484d" roughness={.78} metalness={.32}/></mesh>
+      <mesh position={[0,1.29,-.32]}><boxGeometry args={[1.75,.32,1.65]}/><meshStandardMaterial color="#1d292e" roughness={.7}/></mesh>
+      <Text position={[0,.12,2.28]} rotation={[-Math.PI/2,0,0]} fontSize={.24} color="#c1c3b5">317 · C-17</Text>
+    </group>)}
     {B2_DOORS.map(d => {
       const open = d.locked ? shortcutOpen : d.id === 'C-F' || d.id === 'D-F' ? shutterOpen : true;
       return <group key={d.id} position={[d.x, open ? B2_CEILINGS.general+.4 : B2_CEILINGS.general/2, d.z]}>

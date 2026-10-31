@@ -95,3 +95,14 @@ export function buildB2Route(from, to, options = {}) {
   }
   return route.reverse();
 }
+export function b2SegmentCrossesSolid(from, to, radius = 0, options = {}, step = .15) {
+  if (!from || !to) return true;
+  const length = Math.hypot(to.x - from.x, to.z - from.z);
+  if (!Number.isFinite(length)) return true;
+  const samples = Math.max(1, Math.ceil(length / Math.max(.06, step)));
+  for (let i = 1; i < samples; i++) {
+    const t = i / samples;
+    if (b2Blocked(from.x + (to.x - from.x) * t, from.z + (to.z - from.z) * t, radius, options)) return true;
+  }
+  return false;
+}

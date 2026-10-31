@@ -106,6 +106,7 @@ function MaintenanceSurfaces(){
 }
 
 function GarageWorld({altered=false,flicker=false,canPosition=null,floor=1,vehicleSolved=false}){
+ if(floor===1)return null;
  return <group>
    <mesh rotation={[-Math.PI/2,0,0]} position={[0,0,0]} receiveShadow>
      <planeGeometry args={FLOOR_SIZE}/><meshStandardMaterial color="#303738" roughness={.98}/>

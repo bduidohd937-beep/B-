@@ -20,15 +20,16 @@ export function sweepMove(x,z,dx,dz,radius=.34,powered=false,shortcutOpen=false,
  }
  return {x:nx,z:nz,moved:Math.hypot(nx-x,nz-z),collisions};
 }
-export function segmentCrossesSolid(from,to,powered=false,step=.15,shortcutOpen=false){
+export function segmentCrossesSolid(from,to,powered=false,step=.15,shortcutOpen=false,customBlocked=null){
  if(!from||!to)return true;
  const length=Math.hypot(to.x-from.x,to.z-from.z);
  if(!Number.isFinite(length))return true;
  const samples=Math.max(1,Math.ceil(length/Math.max(.06,step)));
  for(let i=1;i<samples;i++){
    const t=i/samples;
-   if(terrainBlockedRadius(from.x+(to.x-from.x)*t,
-     from.z+(to.z-from.z)*t,0,powered,shortcutOpen))return true;
+   if(customBlocked
+     ? customBlocked(from.x+(to.x-from.x)*t,from.z+(to.z-from.z)*t,0)
+     : terrainBlockedRadius(from.x+(to.x-from.x)*t,from.z+(to.z-from.z)*t,0,powered,shortcutOpen))return true;
  }
  return false;
 }
