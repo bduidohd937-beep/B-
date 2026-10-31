@@ -521,7 +521,7 @@ function World({ active, torch, onNear, onTurn, altered, powered, floor, floorSi
     <Flashlight enabled={torch} charge={flashlightCharge} reducedEffects={reducedEffects}/>
     {floor===2&&<Observer key={floorSignal+'-'+respawnSignal} active={active} floor={floor} playerRef={playerRef} powered={floor===2?gatePassableForActor(gateAuth,3.2):powered} onCaught={onCaught} onState={onObserverState} onSpatial={onSpatialObserver}/>}
     <ItemsWorld pickups={pickupItems} deployed={deployed} active={active} onNoise={onNoise} onExpire={onGadgetExpired}/>
-    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={gatePassableForActor(gateAuth,4.25)} shortcutOpen={floor===2||stageOne.key} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
+    <Listener active={active} events={noiseEvents} playerRef={playerRef} onCaught={onCaught} onState={onCreatureState} onSpatial={onSpatial} powered={gatePassableForActor(gateAuth,4.25)} shortcutOpen={floor===2||stageOne.key} shutterOpen={gateAuth.phase==='open'} floor={floor} levelSignal={floorSignal} deathPhase={deathPhase}/>
     <ThrownCan projectile={projectile} active={active} onImpact={onProjectileImpact}/>
     <ThrowGuide aimRef={throwAimRef}/>
     <PerformanceSampler enabled={perfVisible} onSample={onPerformance}/>

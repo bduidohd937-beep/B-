@@ -11,6 +11,7 @@ import {sweepMove,segmentCrossesSolid} from './movementCollision.js';
 import { SIREN_HEARING_RADIUS,RUSH_SECONDS,rushSpeed,LISTENER_REACTION_SECONDS } from './alarmRules.js';
 import { CAR_ALARM_HEARING_RADIUS } from './vehiclePuzzle.js';
 import {buildRoute} from './navigationGrid.js';
+import {buildB2Route} from './b2Blockout.js';
 import {passesParkedCar} from './chaseAudioRules.js';
 import {canListenerCatch,reachableSoundTarget,shouldReplanOnStall} from './listenerContactRules.js';
 import {
@@ -61,7 +62,7 @@ function blockedToListener(creature,viewer){
 
 // Hearing-only finite-state machine. It never reads the player's location to select a target:
 // only explicit sound events provide destinations. Player position is checked for contact.
-function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,shortcutOpen=false,floor=1,levelSignal=0,deathPhase='alive'}) {
+function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=false,shortcutOpen=false,shutterOpen=false,floor=1,levelSignal=0,deathPhase='alive'}) {
   const {camera}=useThree();
   const home=floor===2?LOOP_BASE:BASE;
   const group=useRef(null);
@@ -202,7 +203,7 @@ function Listener({active,events,playerRef,onCaught,onState,onSpatial,powered=fa
     if(state.current==='investigate'||state.current==='return'||state.current==='patrol'){
       routeTime.current-=dt;
       if(routeTime.current<=0){
-        route.current=buildRoute(pos,destination,powered,shortcutOpen);
+        route.current=floor===1 ? buildB2Route(pos,destination,{shortcutOpen,shutterOpen}) : buildRoute(pos,destination,powered,shortcutOpen);
         // Cached occupancy eliminates recurring grid collision checks; avoid
         // repathing every second unless a new noise resets routeTime to zero.
         routeTime.current=state.current==='patrol'?FIRST_GUARD_ROUTE_REPLAN_SECONDS:2.3;
