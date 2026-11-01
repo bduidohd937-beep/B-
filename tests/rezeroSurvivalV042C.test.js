@@ -41,7 +41,7 @@ test('sprinting can be heard farther than quiet movement and never through the o
 test('player spotted in corridor is chased, and can run faster than the threat',()=>{
   const p=createPresence(),r=createResponse();beginPresence(p);
   run(p,r,8);
-  const pl={x:10.3,z:1.48};
+  const pl={x:8.6,z:1.48};
   const result=run(p,r,.04,{player:pl});
   assert.equal(p.phase,'chase');
   assert.ok(result.some(e=>e.type==='alert'));
@@ -80,7 +80,7 @@ test('crouching behind the physical locker hides only from the obstructed side',
 test('line of sight loss leads to last-known-position search, not omniscience',()=>{
   const p=createPresence(),r=createResponse();beginPresence(p);
   run(p,r,7);
-  const player={x:10.8,z:1.48};
+  const player={x:9.2,z:1.48};
   run(p,r,.04,{player});
   assert.equal(p.phase,'chase');
   run(p,r,1.04,{player:{x:-.2,z:0}});
