@@ -35,8 +35,10 @@ test('seated mode frees pointer lock, supports right-drag and remounts FPS contr
   assert.match(src,/flushSync\(\(\)=>setPanel\(null\)\)/);
 });
 
-test('first incident content remains out of scope in patch A',()=>{
+test('seated controls remain intact when the next B patch adds its presence',()=>{
   const src=readFileSync('src/rezero/FirstRoom.jsx','utf8');
-  assert.match(src,/V0\.4\.2-A/);
-  assert.match(src,/공포 사건 미구현/);
+  assert.match(src,/function Surveillance\(/);
+  assert.match(src,/id: 'chair'/);
+  assert.match(src,/onSelected=\{setSelectedFeed\}/);
+  assert.match(src,/aimCameraAt\(seatPosition,seatTarget,seatQuaternion\)/);
 });
