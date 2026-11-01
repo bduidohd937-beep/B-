@@ -280,7 +280,10 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
       response:response.current,
       noise:noise.current
     });
-    if(response.current.speakerCooldown===0)onSpeakerReady();
+    if(response.current.speakerCooldown===0 && !response.current.reportedReady){
+      response.current.reportedReady=true;
+      onSpeakerReady();
+    }
     for(const ev of events){
       if(ev.type==='step'){
         audio.current?.soundAt(ev.x,ev.z, ev.x<6?260:320, .17);
