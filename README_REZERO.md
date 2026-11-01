@@ -105,3 +105,26 @@ Manual audio, framerate and mouse-feel validation on a real PC are still require
 - Field investigation, logbook completion and proper checkpoint (V0.4.2-D).
 - Real captured replay on CAM02 instead of one frozen still.
 - Full browser click/visual audio quality and FPS inspection by the user on their own PC.
+
+
+## V0.4.2-C — Security Response & Survival (2026-11-01)
+
+**Status:** Survival-system prototype only. It does not close the first case or implement the final horror asset pass.
+
+### Controls and strategy
+
+1. Inspect L-07 and record the CAM 02 discrepancy; the actual corridor entity starts its approach as in B.
+2. While seated in the physical CCTV console, use **경비실 문 잠그기** only when the office door is fully closed.
+3. Once the presence is moving towards the office, use **복도 스피커 유인** to draw it toward the real speaker near the corridor far end. Broadcast cooldown is 16 seconds.
+4. Unlocked office door can be opened using E. The locked door refuses E and makes a short latch sound.
+5. In the corridor use **Shift** to sprint or hold **C** to crouch (left Ctrl also supported, but Ctrl+W can conflict with Chrome shortcuts). Walking and sprinting create positional sound events.
+6. A metal locker near x=8.9 in the corridor is physical solid cover. Crouch to its office-side corner near x=8.0,z=2.3 to evade a creature on the far side; once the enemy passes the cover, it can spot you again.
+7. If spotted the creature chases at about 2.28 m/s, slower than the player's 3.55 m/s sprint. It searches your last known position on losing sight.
+8. Being caught in the corridor shows a retry screen. Click **CCTV 조사 이후부터 재시도**. The CCTV evidence remains saved; the creature and devices reset.
+
+### Limitations
+
+- Detection and patrol are designed for this **straight corridor only**, not general 3D pathfinding.
+- The current speaker is temporary 3D geometry; effects are synthesized, not professional Foley.
+- No complete safe exit, first incident resolution, story ending or multi-stage game yet (deferred to V0.4.2-D).
+- GitHub build and unit tests are distinct from physical gameplay, sound and scare quality validation.
