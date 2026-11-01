@@ -9,7 +9,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         legacy: fileURLToPath(new URL('./index.html', import.meta.url)),
-        rezero: fileURLToPath(new URL('./rezero.html', import.meta.url))
+        rezero: fileURLToPath(new URL('./rezero.html', import.meta.url)),
+        survive: fileURLToPath(new URL('./survive.html', import.meta.url))
       }
     }
   }
