@@ -1,20 +1,21 @@
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {createRoot} from 'react-dom/client';
 import * as THREE from 'three';
 import {Canvas,useFrame,useThree} from '@react-three/fiber';
 import {PointerLockControls} from '@react-three/drei';
-import {AREAS,WALLS,OBSTACLES,STOPS,AREA_BY_ID,DEMO_ROUTE,walkable,stepMove,floorHeight,getArea} from './level.js';
+import {AREAS,WALLS,OBSTACLES,AREA_BY_ID,stepMove,floorHeight,getArea} from './level.js';
+import {cameraMovement} from './controls.js';
+import {createChase,wakeChase,advanceChase,canOperateBreaker,canUseHiding,spotted,HIDE_POS} from './chase.js';
 import './style.css';
 
 const CUBE=new THREE.BoxGeometry(1,1,1);
 const EYE=1.68;
-const OBJECTIVE_STEPS=[
-  '계단을 내려가 지하 전기실을 찾아가자',
-  '전기실 확인 완료 — 우회통로를 통해 정비실로 이동',
-  '정비실 통과 — 관리 창고로 이동',
-  '창고 확인 완료 — 중앙복도를 통해 경비실로 복귀',
-  '이동 동선 검증 성공 · 현재는 괴물과 정전 이벤트 미구현'
-];
+const MISSION={
+  seekBreaker:'B1 전기실로 내려가 보조 제어반을 조사하자. 가까이 가서 E키.',
+  escaping:'뒤쪽 정비 통로에서 온다! 복도로 되돌아가거나 빈틈을 이용해 관리 창고까지 도망쳐!',
+  atStorage:'관리 창고에서 선반 뒤 은신 지점을 찾아 E키로 숨자.',
+  hidden:'조용히 숨자. 발소리가 멀어질 때까지 기다려…',
+  survived:'첫 추격 생존 성공! 다음 패치에서 전원 복구와 최종 탈출 진행 예정.'
+};
 
 function proceduralTexture(base,seed){
   const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
@@ -113,7 +114,7 @@ function RoomArchitecture({m}){
     </group>)}
   </>;
 }
-function WorldProps({m}){
+function WorldProps({m,powerFailure}){
   return <>
     {/* The office preserves the recognizable CCTV duty station without duplicating the old game systems. */}
     <Box x={-1.5} y={1.08+.79/2} z={-1.95} w={2.55} h={.79} d={.76} mat={m.wood}/>
@@ -139,18 +140,22 @@ function WorldProps({m}){
       </group>;
     })}
     <EmergencyLamp x={0} z={-.9} at={1.08+2.54} m={m}/>
-    <EmergencyLamp x={0} z={7.7} at={2.51} m={m}/>
-    <EmergencyLamp x={0} z={14} m={m}/>
-    <EmergencyLamp x={0} z={19.7} m={m}/>
-    <EmergencyLamp x={9} z={16} m={m}/>
-    <EmergencyLamp x={9} z={26.5} m={m}/>
-    <EmergencyLamp x={0} z={27} m={m}/>
+    <EmergencyLamp x={0} z={7.7} at={2.51} red={powerFailure} m={m}/>
+    <EmergencyLamp x={0} z={14} red={powerFailure} m={m}/>
+    <EmergencyLamp x={0} z={19.7} red={powerFailure} m={m}/>
+    <EmergencyLamp x={9} z={16} red={powerFailure} m={m}/>
+    <EmergencyLamp x={9} z={26.5} red={powerFailure} m={m}/>
+    <EmergencyLamp x={0} z={27} red={powerFailure} m={m}/>
     <EmergencyLamp x={-4.3} z={16.5} red m={m}/>
     <EmergencyLamp x={5.0} z={16.5} at={2.55} m={m}/>
     <EmergencyLamp x={4.8} z={27} at={2.55} m={m}/>
     {/* Sealed G: you can approach it but not enter, until a later story patch. */}
     <Box x={-5.88} y={1.12} z={16.5} w={.20} h={2.26} d={2.62} mat={m.rusty}/>
     <Box x={-5.74} y={1.05} z={16.15} w={.04} h={.12} d={.22} mat={m.red}/>
+    {/* E-key breaker and real hiding target */}
+    <Box x={10.11} y={1.35} z={14.88} w={.44} h={.77} d={.21} mat={m.dark}/>
+    <Box x={10.11} y={1.45} z={14.75} w={.21} h={.31} d={.035} mat={powerFailure?m.red:m.green}/>
+    <Box x={-1.27} y={1.52} z={27.16} w={.08} h={.34} d={.36} mat={m.rusty}/>
     {/* An OPEN security shutter during the route-proof prototype. */}
     <Box x={0} y={2.53} z={11.0} w={2.20} h={.72} d={.20} mat={m.rusty}/>
     <Box x={-1.20} y={1.5} z={11} w={.17} h={2.74} d={.23} mat={m.metal}/>
@@ -175,7 +180,69 @@ function Flashlight({enabled}){
       intensity={enabled?19:0} angle={.33} penumbra={.53} distance={11} decay={2}/>
   </>;
 }
-function Space({flashlight}){
+function MonsterActor({monster,playerRef,hidingRef,paused,onEncounter,onMonsterPhase,sound}){
+  const root=useRef(null),body=useRef(null),left=useRef(null),right=useRef(null);
+  const previous=useRef('dormant');
+  const march=useRef(0);
+  useFrame((_,dt)=>{
+    const m=monster.current;
+    const cues=advanceChase(m,dt,playerRef.current,{hiding:hidingRef.current,paused});
+    for(const cue of cues){
+      sound.current?.spatial?.(cue.type,cue.x,cue.z);
+      if(cue.type==='caught')onEncounter();
+    }
+    if(m.phase!==previous.current){
+      previous.current=m.phase;
+      onMonsterPhase(m.phase);
+    }
+    if(!root.current)return;
+    root.current.visible=!['dormant','caught'].includes(m.phase);
+    root.current.position.set(m.pos.x,0,m.pos.z);
+    // Monster's local face points along -Z. Follow the actual navigation heading.
+    root.current.rotation.y=Math.atan2(-m.heading.x,-m.heading.z);
+    const moving=['investigate','chase','search'].includes(m.phase);
+    if(moving)march.current+=dt*(m.phase==='chase'?13:5);
+    const sway=moving?Math.sin(march.current)*.12:Math.sin(m.t*2)*.012;
+    if(left.current)left.current.rotation.x=sway;
+    if(right.current)right.current.rotation.x=-sway;
+    if(body.current)body.current.rotation.z=sway*.13;
+  });
+  return <group ref={root} visible={false}>
+    {/* Temporary readable uncanny silhouette — replace with animated GLB in polish. */}
+    <group ref={body}>
+      <mesh position={[0,1.32,0]} castShadow>
+        <cylinderGeometry args={[.22,.37,1.48,11]}/>
+        <meshStandardMaterial color="#151b19" metalness={.05} roughness={.93}/>
+      </mesh>
+      <mesh position={[0,2.14,-.07]} rotation={[.0,0,.20]} castShadow>
+        <sphereGeometry args={[.245,16,11]}/>
+        <meshStandardMaterial color="#111716" roughness={.99}/>
+      </mesh>
+      <mesh position={[0,1.88,-.07]} castShadow>
+        <cylinderGeometry args={[.11,.13,.38,11]}/>
+        <meshStandardMaterial color="#0c1110" roughness={.96}/>
+      </mesh>
+      {[-1,1].map((side)=><mesh key={side} position={[side*.17,.4,0]} castShadow>
+        <cylinderGeometry args={[.13,.16,.74,9]}/>
+        <meshStandardMaterial color="#0e1413" roughness={.89}/>
+      </mesh>)}
+    </group>
+    <group ref={left} position={[-.35,1.85,0]}>
+      <mesh position={[-.055,-.53,0]} castShadow>
+        <cylinderGeometry args={[.085,.105,1.20,8]}/>
+        <meshStandardMaterial color="#131918" roughness={.97}/>
+      </mesh>
+    </group>
+    <group ref={right} position={[.35,1.85,0]}>
+      <mesh position={[.055,-.6,0]} castShadow>
+        <cylinderGeometry args={[.09,.115,1.34,8]}/>
+        <meshStandardMaterial color="#131918" roughness={.97}/>
+      </mesh>
+    </group>
+  </group>;
+}
+
+function Space({flashlight,powerFailure,monster,onEncounter,onMonsterPhase,playerRef,hidingRef,halted,sound}){
   const mats=useMaterials();
   return <>
     <color attach="background" args={['#0b1112']}/>
@@ -183,7 +250,10 @@ function Space({flashlight}){
     <ambientLight intensity={.33} color="#c5d0c1"/>
     <hemisphereLight args={['#adbdad','#0d1615',.37]}/>
     <RoomArchitecture m={mats}/>
-    <WorldProps m={mats}/>
+    <WorldProps m={mats} powerFailure={powerFailure}/>
+    <MonsterActor monster={monster} playerRef={playerRef} hidingRef={hidingRef}
+      paused={halted} onEncounter={onEncounter} onMonsterPhase={onMonsterPhase}
+      sound={sound}/>
     <Flashlight enabled={flashlight}/>
   </>;
 }
@@ -194,81 +264,154 @@ function useSound(){
     if(store.current){store.current.ctx.resume();return;}
     const AC=window.AudioContext||window.webkitAudioContext;
     if(!AC)return;
-    const ctx=new AC(),master=ctx.createGain();master.gain.value=.18;master.connect(ctx.destination);
+    const ctx=new AC(),master=ctx.createGain();
+    master.gain.value=.26;master.connect(ctx.destination);
     const hum=ctx.createOscillator(),tone=ctx.createGain();
-    hum.type='sawtooth';hum.frequency.value=53;
-    tone.gain.value=.028;hum.connect(tone);tone.connect(master);hum.start();
-    store.current={ctx,close:()=>{hum.stop();ctx.close();},tick:()=>{
+    hum.type='sawtooth';hum.frequency.value=52;
+    tone.gain.value=.016;hum.connect(tone);tone.connect(master);hum.start();
+    const listener=ctx.listener;
+    const spatial=(type,x,z)=>{
       if(ctx.state!=='running')return;
-      const osc=ctx.createOscillator(),vol=ctx.createGain();
-      osc.type='triangle';osc.frequency.value=120;
-      osc.connect(vol);vol.connect(master);
-      vol.gain.setValueAtTime(.0005,ctx.currentTime);
-      vol.gain.linearRampToValueAtTime(.11,ctx.currentTime+.016);
-      vol.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.13);
-      osc.start();osc.stop(ctx.currentTime+.15);
-      osc.onended=()=>{osc.disconnect();vol.disconnect();};
-    }};
+      const t=ctx.currentTime;
+      const p=ctx.createPanner();
+      p.panningModel='HRTF';p.distanceModel='inverse';
+      p.refDistance=2.2;p.maxDistance=35;p.rolloffFactor=1.15;
+      p.positionX.setValueAtTime(x,t);
+      p.positionY.setValueAtTime(1.35,t);
+      p.positionZ.setValueAtTime(z,t);
+      p.connect(master);
+      const frequency=type==='step'?95:type==='charge'?260:type==='alert'?465:type==='caught'?110:380;
+      const span=type==='step'?.14:type==='caught'?1.3:type==='charge'?.85:.40;
+      const g=ctx.createGain(),osc=ctx.createOscillator();
+      osc.type=type==='step'?'triangle':'sawtooth';
+      osc.frequency.setValueAtTime(frequency,t);
+      if(type==='charge'||type==='alert')osc.frequency.exponentialRampToValueAtTime(frequency*2.15,t+span);
+      g.gain.setValueAtTime(.001,t);
+      g.gain.linearRampToValueAtTime(type==='step'?.28:.50,t+.018);
+      g.gain.exponentialRampToValueAtTime(.001,t+span);
+      osc.connect(g);g.connect(p);osc.start(t);osc.stop(t+span+.025);
+      osc.onended=()=>{osc.disconnect();g.disconnect();p.disconnect();};
+    };
+    store.current={
+      ctx,
+      spatial,
+      updateListener:(position,direction)=>{
+        if(ctx.state!=='running')return;
+        if(listener.positionX){
+          listener.positionX.value=position.x;
+          listener.positionY.value=position.y;
+          listener.positionZ.value=position.z;
+          listener.forwardX.value=direction.x;
+          listener.forwardY.value=direction.y;
+          listener.forwardZ.value=direction.z;
+        }
+      },
+      close:()=>{try{hum.stop();}catch{}ctx.close();},
+      tick:()=>{
+        if(ctx.state!=='running')return;
+        const osc=ctx.createOscillator(),vol=ctx.createGain();
+        osc.type='triangle';osc.frequency.value=120;
+        osc.connect(vol);vol.connect(master);
+        vol.gain.setValueAtTime(.0005,ctx.currentTime);
+        vol.gain.linearRampToValueAtTime(.11,ctx.currentTime+.016);
+        vol.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.13);
+        osc.start();osc.stop(ctx.currentTime+.15);
+        osc.onended=()=>{osc.disconnect();vol.disconnect();};
+      }
+    };
   },[]);
   return {start,sound:store};
 }
-function CameraController({started,zoneChanged,progressed,onSteps,onPosition}){
-  const {camera,gl}=useThree();
+function CameraController({
+  started,halted,hiding,resetToken,playerRef,zoneChanged,onSteps,onPosition,onUse,sound
+}){
+  const {camera}=useThree();
   const held=useRef({});
   const lastZone=useRef('');
   const stepDistance=useRef(0);
   const positionTime=useRef(0);
-  const forward=useMemo(()=>new THREE.Vector3(),[]);
-  const lateral=useMemo(()=>new THREE.Vector3(),[]);
-  const callbackRef=useRef({zoneChanged,progressed,onSteps,onPosition});
-  callbackRef.current={zoneChanged,progressed,onSteps,onPosition};
+  const move=useMemo(()=>new THREE.Vector3(),[]);
+  const look=useMemo(()=>new THREE.Vector3(),[]);
+  const callbackRef=useRef({});
+  callbackRef.current={zoneChanged,onSteps,onPosition,onUse};
   useEffect(()=>{
-    camera.position.set(0,1.08+EYE,0.4);
-    camera.rotation.set(0,Math.PI,0); // Look DOWN the stairs, +Z.
-  },[camera]);
+    if(resetToken>0){
+      camera.position.set(9,1.68,16.6);
+      camera.rotation.set(0,Math.PI/2,0); // From the electrical room, face west to the hub.
+    }else{
+      camera.position.set(0,1.08+EYE,.4);
+      camera.rotation.set(0,Math.PI,0); // Face +Z, down the stairs.
+    }
+    playerRef.current={x:camera.position.x,z:camera.position.z};
+    held.current={};
+    lastZone.current='';
+  },[camera,resetToken,playerRef]);
   useEffect(()=>{
     const down=e=>{
-      if(['KeyW','KeyS','KeyA','KeyD','ShiftLeft','KeyC'].includes(e.code))e.preventDefault();
+      if(['KeyW','KeyS','KeyA','KeyD','ShiftLeft','KeyC','KeyE'].includes(e.code))
+        e.preventDefault();
+      if(e.code==='KeyE' && !e.repeat && started && !halted && document.pointerLockElement){
+        callbackRef.current.onUse?.();
+      }
       held.current[e.code]=true;
     };
     const up=e=>{held.current[e.code]=false;};
     const blur=()=>{held.current={};};
-    window.addEventListener('keydown',down);window.addEventListener('keyup',up);
+    window.addEventListener('keydown',down);
+    window.addEventListener('keyup',up);
     window.addEventListener('blur',blur);
-    return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);};
-  },[]);
+    return ()=>{
+      window.removeEventListener('keydown',down);
+      window.removeEventListener('keyup',up);
+      window.removeEventListener('blur',blur);
+    };
+  },[started,halted]);
   useFrame((_,delta)=>{
-    if(!started||!document.pointerLockElement)return;
+    if(!started)return;
     const dt=Math.min(delta,.04);
-    const moveX=(held.current.KeyD?1:0)-(held.current.KeyA?1:0);
-    const moveZ=(held.current.KeyW?1:0)-(held.current.KeyS?1:0);
-    const norm=Math.hypot(moveX,moveZ);
-    camera.getWorldDirection(forward);forward.y=0;forward.normalize();
-    lateral.set(forward.z,0,-forward.x);
-    let actual=0;
-    if(norm){
-      const speed=held.current.KeyC?1.0:held.current.ShiftLeft?4.2:2.5;
-      const dx=(forward.x*moveZ+lateral.x*moveX)*speed*dt/norm;
-      const dz=(forward.z*moveZ+lateral.z*moveX)*speed*dt/norm;
-      const before={x:camera.position.x,z:camera.position.z};
-      const next=stepMove(before,dx,dz);
-      actual=Math.hypot(next.x-before.x,next.z-before.z);
-      camera.position.x=next.x;camera.position.z=next.z;
+    camera.getWorldDirection(look);
+    sound.current?.updateListener?.(camera.position,look);
+    if(halted||!document.pointerLockElement)return;
+    if(!hiding){
+      const strafe=(held.current.KeyD?1:0)-(held.current.KeyA?1:0);
+      const forward=(held.current.KeyW?1:0)-(held.current.KeyS?1:0);
+      cameraMovement(camera.quaternion,strafe,forward,move);
+      const speed=held.current.KeyC?1.05:held.current.ShiftLeft?4.2:2.5;
+      let distanceMoved=0;
+      if(strafe||forward){
+        const before={x:camera.position.x,z:camera.position.z};
+        const next=stepMove(before,move.x*speed*dt,move.z*speed*dt);
+        distanceMoved=Math.hypot(next.x-before.x,next.z-before.z);
+        camera.position.x=next.x;
+        camera.position.z=next.z;
+      }
+      camera.position.y=THREE.MathUtils.damp(
+        camera.position.y,
+        floorHeight(camera.position.x,camera.position.z)+(held.current.KeyC?1.06:EYE),
+        11,dt
+      );
+      if(distanceMoved){
+        stepDistance.current+=distanceMoved;
+        if(stepDistance.current>.78){
+          stepDistance.current-=.78;
+          callbackRef.current.onSteps?.();
+        }
+      }
+    }else{
+      camera.position.y=THREE.MathUtils.damp(
+        camera.position.y,floorHeight(camera.position.x,camera.position.z)+1.12,9,dt
+      );
     }
-    const eye=held.current.KeyC?1.06:EYE;
-    const goal=floorHeight(camera.position.x,camera.position.z)+eye;
-    camera.position.y=THREE.MathUtils.damp(camera.position.y,goal,11,dt);
-    if(actual){
-      stepDistance.current+=actual;
-      if(stepDistance.current>.78){stepDistance.current-=.78;callbackRef.current.onSteps();}
-    }
+    playerRef.current={x:camera.position.x,z:camera.position.z};
     positionTime.current+=dt;
-    if(positionTime.current>.18){positionTime.current=0;callbackRef.current.onPosition?.({x:camera.position.x,z:camera.position.z});}
+    if(positionTime.current>.18){
+      positionTime.current=0;
+      callbackRef.current.onPosition?.({x:camera.position.x,z:camera.position.z});
+    }
     const a=getArea(camera.position.x,camera.position.z);
     if(a && a.id!==lastZone.current){
       lastZone.current=a.id;
-      callbackRef.current.zoneChanged(a);
-      callbackRef.current.progressed(a.id);
+      callbackRef.current.zoneChanged?.(a);
     }
   });
   return <PointerLockControls/>;
@@ -295,31 +438,96 @@ function LevelMap({current,position}){
 export default function MaintenanceDemo(){
   const [started,setStarted]=useState(false);
   const [zone,setZone]=useState(AREA_BY_ID.guard);
-  const [progress,setProgress]=useState(0);
   const [steps,setSteps]=useState(0);
   const [position,setPosition]=useState({x:0,z:.4});
   const [showMap,setShowMap]=useState(false);
   const [flashlight,setFlashlight]=useState(true);
   const [debug,setDebug]=useState(false);
-
+  const [stage,setStage]=useState('seekBreaker');
+  const [monsterPhase,setMonsterPhase]=useState('dormant');
+  const [powerFailure,setPowerFailure]=useState(false);
+  const [hiding,setHiding]=useState(false);
+  const [caught,setCaught]=useState(false);
+  const [hint,setHint]=useState('');
+  const [resetToken,setResetToken]=useState(0);
+  const actor=useRef(createChase()),playerRef=useRef({x:0,z:.4});
+  const hidingRef=useRef(false);
+  const stageRef=useRef('seekBreaker');
   const {start,sound}=useSound();
-  const progressRef=useRef(0);
-  const zoneChanged=useCallback(a=>setZone(a),[]);
-  const progressed=useCallback(id=>{
-    const p=progressRef.current;
-    const next=p===0&&id==='electrical'?1:
-      p===1&&id==='service'?2:
-      p===2&&id==='storage'?3:
-      p===3&&id==='guard'?4:p;
-    if(next!==p){progressRef.current=next;setProgress(next);sound.current?.tick();}
-  },[sound]);
-  const onSteps=useCallback(()=>setSteps(n=>n+1),[]);
+  const changeStage=useCallback(value=>{
+    stageRef.current=value;setStage(value);
+  },[]);
   const onPosition=useCallback(p=>setPosition(p),[]);
+  const zoneChanged=useCallback(a=>{
+    setZone(a);
+    if(a.id==='storage' && stageRef.current==='escaping')changeStage('atStorage');
+  },[changeStage]);
+  const onSteps=useCallback(()=>{
+    setSteps(n=>n+1);
+    if(stageRef.current==='escaping')sound.current?.spatial?.('step',playerRef.current.x,playerRef.current.z);
+  },[sound]);
+  const onCaught=useCallback(()=>{
+    if(stageRef.current==='survived')return;
+    setCaught(true);
+    document.exitPointerLock?.();
+  },[]);
+  const onUse=useCallback(()=>{
+    if(stageRef.current==='seekBreaker'){
+      if(canOperateBreaker(playerRef.current)){
+        wakeChase(actor.current);
+        changeStage('escaping');
+        setPowerFailure(true);
+        setHint('뒤쪽 정비 통로에서 놈이 달려온다! 복도 쪽으로 도망쳐!');
+        sound.current?.spatial?.('charge',9,21.6);
+      }else{
+        setHint('전기실 제어반 쪽으로 더 가까이 다가가야 한다.');
+      }
+    }else if(stageRef.current==='atStorage' && canUseHiding(playerRef.current)){
+      if(spotted(actor.current,playerRef.current,false)){
+        setHint('놈이 보고 있다. 먼저 시야에서 벗어나야 해!');
+        return;
+      }
+      hidingRef.current=true;
+      setHiding(true);
+      changeStage('hidden');
+      setHint('');
+      sound.current?.tick?.();
+    }else if(stageRef.current==='hidden'){
+      hidingRef.current=false;
+      setHiding(false);
+      changeStage('atStorage');
+    }
+  },[changeStage,sound]);
+  const retry=()=>{
+    actor.current=createChase();
+    hidingRef.current=false;
+    stageRef.current='seekBreaker';
+    setStage('seekBreaker');
+    setCaught(false);setPowerFailure(false);
+    setHiding(false);setMonsterPhase('dormant');
+    setPosition({x:9,z:16.6});
+    setZone(AREA_BY_ID.electrical);
+    setHint('전기실 진입 지점에서 다시 시작. 제어반을 E로 조작해.');
+    setResetToken(n=>n+1);
+    const canvas=document.querySelector('.map-demo canvas');
+    try{canvas?.requestPointerLock?.();}catch{}
+  };
+  useEffect(()=>{
+    if(stage!=='hidden')return;
+    let elapsed=0;
+    const id=setInterval(()=>{
+      const m=actor.current;
+      const tooClose=Math.hypot(m.pos.x-playerRef.current.x,m.pos.z-playerRef.current.z)<2.3;
+      if(!tooClose)elapsed+=.12;
+      if(elapsed>=3.2){changeStage('survived');setHint('은신 성공. 첫 추격 프로토타입 종료.');}
+    },120);
+    return ()=>clearInterval(id);
+  },[stage,changeStage]);
   useEffect(()=>{
     const keys=e=>{
       if(e.repeat)return;
-      if(e.code==='KeyM'){setShowMap(a=>!a);}
-      if(e.code==='KeyF'){setFlashlight(a=>!a);}
+      if(e.code==='KeyM')setShowMap(a=>!a);
+      if(e.code==='KeyF')setFlashlight(a=>!a);
       if(e.code==='F3'){e.preventDefault();setDebug(a=>!a);}
     };
     window.addEventListener('keydown',keys);
@@ -330,39 +538,68 @@ export default function MaintenanceDemo(){
     const canvas=document.querySelector('.map-demo canvas');
     try{canvas?.requestPointerLock?.();}catch{}
   };
+  const prompt=stage==='seekBreaker'&&canOperateBreaker(position)
+    ?'E · 보조 차단기 조작':stage==='atStorage'&&canUseHiding(position)
+    ?'E · 선반 뒤 숨기':stage==='hidden'
+    ?'E · 은신 해제':null;
   return <main className="map-demo">
-    <Canvas dpr={[1,1.5]} camera={{fov:72,near:.045,far:44,position:[0,2.76,.4]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <Space flashlight={flashlight}/>
-      <CameraController started={started} zoneChanged={zoneChanged} progressed={progressed} onSteps={onSteps} onPosition={onPosition}/>
+    <Canvas dpr={[1,1.5]} camera={{fov:72,near:.045,far:44,position:[0,2.76,.4]}}
+      gl={{antialias:true,powerPreference:'high-performance'}}>
+      <Space flashlight={flashlight} powerFailure={powerFailure}
+        monster={actor} playerRef={playerRef} hidingRef={hidingRef}
+        onEncounter={onCaught} onMonsterPhase={setMonsterPhase} sound={sound}
+        halted={!started||caught||stage==='survived'}/>
+      <CameraController started={started} halted={caught||stage==='survived'}
+        hiding={hiding} resetToken={resetToken} playerRef={playerRef}
+        zoneChanged={zoneChanged} onSteps={onSteps} onPosition={onPosition}
+        onUse={onUse} sound={sound}/>
     </Canvas>
     <div className="world-vignette"/>
+    {powerFailure&&<div className="blackout-tint"/>}
     <header className="level-header">
-      <span>B∞ RE:ZERO / V0.5-A</span>
+      <span>B∞ RE:ZERO / V0.5-B</span>
       <strong>{zone?.name||'지하 관리구역'}</strong>
       <span className="level-status">지도 M · 손전등 F · 상태 F3</span>
     </header>
-    {started&&<div className="cursor-dot">+</div>}
+    {started&&!caught&&<div className="cursor-dot">+</div>}
     <div className="objective">
-      <div className="mission-label">ROUTE TEST · {Math.min(progress,4)}/4</div>
-      <p>{OBJECTIVE_STEPS[progress]}</p>
-      <small>WASD 이동 · Shift 달리기 · C 웅크리기 · ESC 포인터 해제</small>
+      <div className="mission-label">{stage==='survived'?'FIRST CHASE CLEARED':'INCIDENT 001 · FIRST CHASE'}</div>
+      <p>{MISSION[stage]}</p>
+      <small>WASD 이동 · Shift 달리기 · C 웅크리기 · E 조작/숨기 · M 지도</small>
     </div>
+    {hint && started&&!caught&&stage!=='survived'&&<div className="world-hint" role="status">{hint}</div>}
+    {prompt && started&&!caught&&<div className="world-interact">{prompt}</div>}
     {showMap&&<LevelMap current={zone?.id} position={position}/>}
-    {debug&&<div className="performance">V0.5-A BLOCKOUT<br/>이동 구역 {zone?.id}<br/>발걸음 {steps}<br/>괴물/추격 미구현<br/>FPS: 별도 브라우저 측정 필요</div>}
+    {debug&&<div className="performance">V0.5-B CHASE<br/>구역 {zone?.id}<br/>
+      괴물 {monsterPhase}<br/>걷기 {steps}<br/>
+      위치 {position.x.toFixed(1)}, {position.z.toFixed(1)}<br/>
+      FPS: 별도 브라우저 측정 필요</div>}
     {!started&&<div className="start-screen">
       <div className="supra">B∞ RE:ZERO · SURVIVE THE NIGHT</div>
       <h1>마지막 야간근무</h1>
-      <h2>V0.5-A / 지하층 동선 프로토타입</h2>
-      <p>이번 빌드에서는 경비실에서 지하 전기실과 정비실·창고를 거쳐 돌아오는 동선을 테스트합니다.<br/>
-      괴물과 정전, 셔터 봉쇄는 다음 단계에서 추가됩니다.</p>
-      <button onClick={begin}>지하층 동선 점검 시작</button>
-      <small>PC 키보드·마우스 전용 · 기존 RE:ZERO CCTV 프로토타입과 별도 실행</small>
+      <h2>V0.5-B / FIRST CHASE</h2>
+      <p>지하 전기실의 제어반을 조사하라는 근무 지시가 내려왔습니다.
+      <br/>전기실에서 E키로 제어반을 확인하세요. 뒤편 통로에서 무언가 나타나면 중앙복도와 우회로를 이용해 창고로 도망치세요.</p>
+      <button onClick={begin}>야간근무 시작</button>
+      <small>PC 키보드·마우스 전용 · 이번 패치는 첫 습격·추격만 검수</small>
     </div>}
-    {progress===4&&<div className="route-success">
-      <strong>동선 점검 완료</strong>
-      <p>두 경로를 연결한 지하 맵의 기본 이동 확인.<br/>추격전의 실제 공포·AI는 아직 구현 전입니다.</p>
-      <button onClick={()=>setShowMap(a=>!a)}>맵 구조 확인 (M)</button>
+    {hiding&&stage==='hidden'&&<div className="hide-overlay">
+      <div>숨을 죽여… 놈이 지나갈 때까지 기다려.</div>
     </div>}
-    <div className="build-notice">BLOCKOUT · 고품질 아트/AI/정전·탈출 사건 미구현 · 첫 단계 검수용</div>
+    {caught&&<div className="capture-screen" role="dialog" aria-label="괴물에게 붙잡혔습니다">
+      <div className="capture-card">
+        <div className="supra">INCIDENT 001 · FAILED</div>
+        <h2>붙잡혔다.</h2>
+        <p>기껏 여기까지 내려왔는데… 다시 전기실에서 시작할 수 있다.</p>
+        <button onClick={retry}>첫 습격 직전부터 재도전</button>
+      </div>
+    </div>}
+    {stage==='survived'&&<div className="route-success">
+      <strong>첫 추격 생존 성공</strong>
+      <p>전기실 뒤편에서 달려든 존재를 피해 창고에 숨는 데 성공했어.
+      <br/>최종 전원 복구·셔터 탈출은 V0.5-C/D 제작 대상.</p>
+      <button onClick={()=>setShowMap(a=>!a)}>지하 지도 보기 (M)</button>
+    </div>}
+    <div className="build-notice">V0.5-B · 첫 추격 기술 프로토타입 · 괴물 모델/사운드 임시 · 전원 복구/탈출 미구현</div>
   </main>;
 }

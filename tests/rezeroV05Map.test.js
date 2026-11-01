@@ -76,13 +76,12 @@ test('V0.5-A retains legacy/RE:ZERO route and introduces independently bundled s
   assert.match(readFileSync('index.html','utf8'),/src\/main.jsx/);
   assert.match(readFileSync('rezero.html','utf8'),/src\/rezero\/main.jsx/);
 });
-test('player movement collision and quest milestones are linked to same area definitions',()=>{
+test('V0.5-B keeps wall collision, movement and first-chase objectives linked to areas',()=>{
   const app=readFileSync('src/rezero/v05/MaintenanceDemo.jsx','utf8');
-  assert.match(app,/stepMove\(before,dx,dz\)/);
+  assert.match(app,/stepMove\(before,move.x\*speed\*dt,move.z\*speed\*dt\)/);
   assert.match(app,/floorHeight\(camera.position.x,camera.position.z\)/);
-  assert.match(app,/p===0&&id==='electrical'/);
-  assert.match(app,/p===1&&id==='service'/);
-  assert.match(app,/p===2&&id==='storage'/);
-  assert.match(app,/p===3&&id==='guard'/);
-  assert.match(app,/괴물과 정전, 셔터 봉쇄는 다음 단계/);
+  assert.match(app,/canOperateBreaker\(playerRef.current\)/);
+  assert.match(app,/a.id==='storage'/);
+  assert.match(app,/changeStage\('atStorage'\)/);
+  assert.match(app,/stage==='survived'/);
 });
