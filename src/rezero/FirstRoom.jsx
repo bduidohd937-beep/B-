@@ -653,7 +653,7 @@ export default function FirstRoom() {
     const valid=canRecordVideoMismatch(tested,feed);
     if(valid){
       setEvidence(true);
-      beginPresence(presence.current);
+      if(beginPresence(presence.current)) setPresencePhase('watch');
     }
     return valid;
   };
