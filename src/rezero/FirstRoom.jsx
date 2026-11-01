@@ -1,0 +1,437 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { PointerLockControls, useFBO } from '@react-three/drei';
+import * as THREE from 'three';
+import { focusTarget, passageAllowed, canRecordVideoMismatch } from './rules.js';
+
+const TARGETS = [
+  { id: 'monitor', x: -.45, z: -1.12, label: 'CCTV 감시 모니터' },
+  { id: 'relay', x: 1.8, z: -1.25, label: '보안 제어반' },
+  { id: 'door', x: 2.45, z: 1.10, label: '경비실 출입문' },
+  { id: 'log', x: -1.8, z: -.98, label: '야간 근무일지' }
+];
+const COLOR = { ink: '#101918', plaster: '#69716a', ceiling: '#626b62', concrete: '#575e59',
+  floor: '#515d56', steel: '#273b3a', wood: '#51483e', trim: '#29312e',
+  glass: '#506d6a', paper: '#d8d1ae', rubber: '#171d1d' };
+
+function makeGrunge(base, seed) {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = base; g.fillRect(0, 0, 256, 256);
+  let v = seed;
+  const rnd = () => { v = (v * 1664525 + 1013904223) >>> 0; return v / 4294967296; };
+  for (let i = 0; i < 4800; i++) {
+    const x = rnd() * 256, y = rnd() * 256, a = rnd() * .09;
+    g.fillStyle = rnd() > .55 ? 'rgba(230,226,205,' + a + ')' : 'rgba(13,19,17,' + a + ')';
+    g.fillRect(x, y, 1 + rnd() * 8, 1 + rnd() * 4);
+  }
+  for (let i = 0; i < 19; i++) {
+    g.strokeStyle = 'rgba(11,15,13,' + (rnd() * .08) + ')';
+    g.beginPath(); const x = rnd() * 256;
+    g.moveTo(x, 0); g.lineTo(x + rnd() * 8, 256); g.stroke();
+  }
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+function useMaterials() {
+  const mats = useMemo(() => {
+    const wallMap = makeGrunge('#858984', 17);
+    const floorMap = makeGrunge('#858b84', 47);
+    return {
+      wall: new THREE.MeshStandardMaterial({ color: '#afb8ad', map: wallMap, roughness: .93 }),
+      floor: new THREE.MeshStandardMaterial({ color: '#8e9b8f', map: floorMap, roughness: .86, metalness: .06 }),
+      concrete: new THREE.MeshStandardMaterial({ color: COLOR.concrete, roughness: .95 }),
+      ceiling: new THREE.MeshStandardMaterial({ color: COLOR.ceiling, roughness: .94 }),
+      trim: new THREE.MeshStandardMaterial({ color: COLOR.trim, roughness: .65, metalness: .45 }),
+      steel: new THREE.MeshStandardMaterial({ color: COLOR.steel, roughness: .43, metalness: .64 }),
+      wood: new THREE.MeshStandardMaterial({ color: COLOR.wood, roughness: .78 }),
+      rubber: new THREE.MeshStandardMaterial({ color: COLOR.rubber, roughness: .9 }),
+      paper: new THREE.MeshStandardMaterial({ color: COLOR.paper, roughness: .95 }),
+      amber: new THREE.MeshStandardMaterial({ color: '#e5bd6a', emissive: '#9b6725', emissiveIntensity: .42, roughness: .6 })
+    };
+  }, []);
+  useEffect(() => () => {
+    Object.values(mats).forEach(m => m.dispose());
+    mats.wall.map.dispose(); mats.floor.map.dispose();
+  }, [mats]);
+  return mats;
+}
+
+function Block({ p, s, mat, rot = [0, 0, 0], cast = true }) {
+  return <mesh position={p} rotation={rot} material={mat} castShadow={cast} receiveShadow>
+    <boxGeometry args={s} />
+  </mesh>;
+}
+
+function Envelope({ m }) {
+  return <>
+    <Block p={[0, -.16, 0]} s={[6.5, .32, 6]} mat={m.floor}/>
+    <Block p={[0, 2.78, 0]} s={[6.5, .18, 6]} mat={m.ceiling} cast={false}/>
+    <Block p={[0, 1.35, -3]} s={[6.5, 2.72, .22]} mat={m.wall}/>
+    <Block p={[0, 1.35, 3]} s={[6.5, 2.72, .22]} mat={m.wall}/>
+    <Block p={[-3.25, 1.35, 0]} s={[.22, 2.72, 6]} mat={m.wall}/>
+    <Block p={[3.25, 1.35, -1.58]} s={[.22, 2.72, 2.84]} mat={m.wall}/>
+    <Block p={[3.25, 1.35, 2.45]} s={[.22, 2.72, 1.04]} mat={m.wall}/>
+    <Block p={[3.25, 2.42, 1.02]} s={[.22, .58, 1.98]} mat={m.wall}/>
+    <Block p={[3.25, .075, 1.02]} s={[.26, .15, 1.98]} mat={m.trim}/>
+    <Block p={[-3.02, .9, 0]} s={[.06, 1.8, 5.9]} mat={m.trim}/>
+    <Block p={[0, .07, -2.86]} s={[6.2, .14, .12]} mat={m.trim}/>
+    <Block p={[0, .07, 2.86]} s={[6.2, .14, .12]} mat={m.trim}/>
+    <Block p={[8.65, -.16, 1.55]} s={[11.6, .32, 3.12]} mat={m.floor}/>
+    <Block p={[8.65, 2.65, 1.55]} s={[11.6, .18, 3.12]} mat={m.ceiling}/>
+    <Block p={[8.65, 1.29, -.04]} s={[11.6, 2.63, .16]} mat={m.concrete}/>
+    <Block p={[8.65, 1.29, 3.13]} s={[11.6, 2.63, .16]} mat={m.concrete}/>
+    <Block p={[14.47, 1.29, 1.55]} s={[.18, 2.63, 3.12]} mat={m.concrete}/>
+    <Block p={[14.33, 1.19, 1.53]} s={[.12, 2.32, 1.41]} mat={m.steel}/>
+    <Block p={[14.23, 1.38, 1.54]} s={[.13, 1.82, 1.12]} mat={m.trim}/>
+    <Block p={[14.14, 1.18, 1.88]} s={[.15, .17, .05]} mat={m.amber}/>
+    {Array.from({ length: 8 }, (_,i) =>
+      <Block key={'floor'+i} p={[4+i*1.28,.005,1.6]} s={[.035,.015,2.85]} mat={m.trim} cast={false}/>
+    )}
+    {Array.from({ length: 8 }, (_,i) =>
+      <Block key={'wall'+i} p={[4+i*1.28,1.2,-.035]} s={[.025,2.3,.03]} mat={m.trim} cast={false}/>
+    )}
+    <Block p={[7.2,2.35,-.02]} s={[8,.13,.15]} mat={m.steel} cast={false}/>
+    <Block p={[7.2,2.17,-.02]} s={[8,.09,.07]} mat={m.trim} cast={false}/>
+  </>;
+}
+
+function LampFixture({ p, on, m }) {
+  return <group position={p}>
+    <Block p={[0,0,0]} s={[.82,.11,.31]} mat={m.trim}/>
+    <mesh position={[0,-.073,0]}>
+      <boxGeometry args={[.66,.018,.19]}/>
+      <meshBasicMaterial color={on ? '#eff3d8' : '#47564e'} toneMapped={false}/>
+    </mesh>
+    {on && <pointLight position={[0,-.26,0]} color="#d6e2c8" intensity={5.5} distance={7} decay={2}/>}
+  </group>;
+}
+
+function Decor({ m }) {
+  return <>
+    <Block p={[-.7,.72,-1.95]} s={[3.9,.16,1.26]} mat={m.wood}/>
+    {[-2.42,.98].map(x=><Block key={'deskleg'+x} p={[x,.39,-1.99]} s={[.12,.71,1.13]} mat={m.steel}/>)}
+    <Block p={[-.7,.73,-1.85]} s={[3.7,.025,1.1]} mat={m.trim} cast={false}/>
+    <Block p={[-1.78,.83,-1.23]} s={[.68,.035,.48]} mat={m.paper}/>
+    {Array.from({ length: 6 }, (_,i)=><Block key={'paper'+i} p={[-1.86+i*.025,.85+i*.006,-1.28+i*.008]} s={[.43,.008,.32]} mat={m.paper}/>)}
+    <Block p={[1.02,.9,-1.35]} s={[.51,.21,.39]} mat={m.steel}/>
+    {Array.from({ length: 15 }, (_,i)=><Block key={'key'+i} p={[.82+(i%5)*.1,1.014,-1.5+Math.floor(i/5)*.12]} s={[.067,.013,.07]} mat={m.rubber} cast={false}/>)}
+    <Block p={[.05,.86,-1.17]} s={[.63,.045,.22]} mat={m.rubber}/>
+    {Array.from({ length: 10 }, (_,i)=><Block key={'kb'+i} p={[-.19+(i%5)*.11,.89,-1.18+Math.floor(i/5)*.1]} s={[.077,.02,.072]} mat={m.trim} cast={false}/>)}
+    <mesh position={[-2.35,.87,-1.62]}><cylinderGeometry args={[.13,.13,.25,16]}/><primitive object={m.paper} attach="material"/></mesh>
+    <mesh position={[-2.35,1.01,-1.62]}><cylinderGeometry args={[.105,.105,.01,16]}/><primitive object={m.rubber} attach="material"/></mesh>
+    <Block p={[1.83,1.16,-2.86]} s={[.55,.75,.21]} mat={m.steel}/>
+    {Array.from({ length: 12 }, (_,i)=><Block key={'panel'+i} p={[1.66+(i%3)*.17,1.05+Math.floor(i/3)*.15,-2.73]} s={[.08,.07,.03]} mat={i===3?m.amber:m.rubber} cast={false}/>)}
+    <Block p={[-2.55,1.71,-2.87]} s={[.71,.62,.07]} mat={m.trim}/>
+    <Block p={[-2.55,1.71,-2.82]} s={[.59,.5,.02]} mat={m.paper} cast={false}/>
+    <Block p={[-2.05,.9,2.62]} s={[.63,1.72,.43]} mat={m.steel}/>
+    {Array.from({ length: 5 }, (_,i)=><Block key={'drawer'+i} p={[-2.04,.33+i*.28,2.375]} s={[.51,.22,.035]} mat={m.trim}/>)}
+    <Block p={[1.1, .45, 2.1]} s={[1.02,.9,.63]} mat={m.wood}/>
+    {Array.from({ length: 5 }, (_,i)=><Block key={'book'+i} p={[.74+i*.15,1.03,2.1]} s={[.1,.28+(i%2)*.16,.36]} mat={i%2?m.paper:m.steel}/>)}
+    <Block p={[-1.85,2.15,-2.86]} s={[.25,.27,.08]} mat={m.trim}/>
+    <mesh position={[-1.85,2.16,-2.81]}><circleGeometry args={[.105,24]}/><meshBasicMaterial color="#a7b1a3"/></mesh>
+    <Block p={[-.25,2.66,-.1]} s={[1.3,.12,.29]} mat={m.trim}/>
+    <mesh position={[-.25,2.57,-.1]}><boxGeometry args={[1.16,.02,.18]}/><meshBasicMaterial color="#d8dfc5" toneMapped={false}/></mesh>
+    <Block p={[-.25,2.49,-.1]} s={[.04,.14,.03]} mat={m.trim}/>
+    <Block p={[-2.66,1.5,1.5]} s={[.03,1.55,1.18]} mat={m.trim}/>
+    <mesh position={[-2.62,1.5,1.5]} rotation={[0,Math.PI/2,0]}>
+      <planeGeometry args={[1.05,1.4]}/>
+      <meshPhysicalMaterial color="#537674" transmission={.28} transparent opacity={.59} roughness={.32} metalness={.25}/>
+    </mesh>
+  </>;
+}
+
+function SwingDoor({ open, m }) {
+  const hinge = useRef(null);
+  useFrame((_,dt)=> {
+    if (hinge.current) {
+      const desired = open ? -1.42 : 0;
+      hinge.current.rotation.y = THREE.MathUtils.damp(hinge.current.rotation.y, desired, 7, dt);
+    }
+  });
+  return <group ref={hinge} position={[3.18,0,.32]}>
+    <Block p={[0,1.05,.72]} s={[.105,2.1,1.41]} mat={m.steel}/>
+    <Block p={[-.068,1.44,.70]} s={[.05,.47,.73]} mat={m.trim}/>
+    <mesh position={[-.108,1.44,.70]} rotation={[0,-Math.PI/2,0]}>
+      <planeGeometry args={[.67,.4]}/>
+      <meshPhysicalMaterial color="#7e9d9b" transparent opacity={.53} metalness={.22} roughness={.21}/>
+    </mesh>
+    <Block p={[-.13,.93,1.15]} s={[.11,.08,.24]} mat={m.amber}/>
+  </group>;
+}
+
+function CCTVFeeds({ m }) {
+  const { gl, scene } = useThree();
+  const feed1 = useFBO(320,180,{depthBuffer:true});
+  const feed2 = useFBO(320,180,{depthBuffer:true});
+  const camera1 = useMemo(()=> {
+    const c = new THREE.PerspectiveCamera(56,16/9,.05,23);
+    c.position.set(6.3,2.27,2.67); c.lookAt(10.0,1.3,1.4); return c;
+  },[]);
+  const camera2 = useMemo(()=> {
+    const c = new THREE.PerspectiveCamera(54,16/9,.05,17);
+    c.position.set(10.4,2.31,2.46); c.lookAt(14.27,1.26,1.53); return c;
+  },[]);
+  const t = useRef(0), frozen = useRef(false);
+  useFrame((_,dt)=>{
+    t.current+=dt;
+    if(t.current < .12) return;
+    t.current=0;
+    const before=gl.getRenderTarget();
+    gl.setRenderTarget(feed1); gl.clear(); gl.render(scene,camera1);
+    if(!frozen.current) {
+      gl.setRenderTarget(feed2); gl.clear(); gl.render(scene,camera2);
+      frozen.current=true;
+    }
+    gl.setRenderTarget(before);
+  });
+  return <>
+    {[-.96,.32].map((x,i)=><group key={i}>
+      <Block p={[x,1.31,-1.99]} s={[1.12,.72,.18]} mat={m.rubber}/>
+      <mesh position={[x,1.31,-1.887]}>
+        <planeGeometry args={[.98,.55]}/>
+        <meshBasicMaterial map={i===0?feed1.texture:feed2.texture} toneMapped={false}/>
+      </mesh>
+      <Block p={[x, .97,-1.94]} s={[.13,.08,.15]} mat={m.steel}/>
+      <Block p={[x,.925,-1.89]} s={[.48,.03,.31]} mat={m.steel}/>
+      <mesh position={[x-.43,1.62,-1.879]}><circleGeometry args={[.016,12]}/><meshBasicMaterial color={i?'#ecb46a':'#91e4af'}/></mesh>
+    </group>)}
+  </>;
+}
+
+function Scene({ lampOn, doorOpen }) {
+  const m = useMaterials();
+  return <>
+    <color attach="background" args={['#0b1010']}/>
+    <fog attach="fog" args={['#0b1010',12,27]}/>
+    <hemisphereLight args={['#b8c9b4','#101b1a',.26]}/>
+    <spotLight position={[-.25,2.54,-.1]} angle={1.13} intensity={22} distance={8} penumbra={.85} color="#d3dfd0" castShadow shadow-mapSize-width={512} shadow-mapSize-height={512}/>
+    <pointLight position={[-.75,1.15,-1.5]} intensity={1.6} distance={3.4} color="#94b6ad"/>
+    <LampFixture p={[5.15,2.5,1.55]} on m={m}/>
+    <LampFixture p={[9.12,2.5,1.55]} on={lampOn} m={m}/>
+    <LampFixture p={[12.91,2.5,1.55]} on m={m}/>
+    <Envelope m={m}/>
+    <Decor m={m}/>
+    <SwingDoor open={doorOpen} m={m}/>
+    <CCTVFeeds m={m}/>
+  </>;
+}
+
+function Player({ active, panel, doorOpen, onFocus, onInteract, onStats, audio }) {
+  const { camera } = useThree();
+  const keys = useRef({});
+  const looking = useRef(new THREE.Vector3()), right = useRef(new THREE.Vector3());
+  const lastFocus = useRef(null);
+  const fpsTime = useRef(0), fpsFrames = useRef(0);
+  useEffect(()=>{
+    camera.position.set(-.2,1.68,1.55);
+    camera.rotation.set(0,0,0);
+  },[camera]);
+  useEffect(()=>{
+    const down = e => {
+      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','KeyE'].includes(e.code)) e.preventDefault();
+      keys.current[e.code] = true;
+      if (e.code === 'KeyE' && !e.repeat && active && !panel && document.pointerLockElement) {
+        if(lastFocus.current) onInteract(lastFocus.current);
+      }
+    };
+    const up = e=>{ keys.current[e.code] = false; };
+    const blur=()=>{keys.current={};};
+    window.addEventListener('keydown',down);
+    window.addEventListener('keyup',up);
+    window.addEventListener('blur',blur);
+    return ()=> {
+      window.removeEventListener('keydown',down);
+      window.removeEventListener('keyup',up);
+      window.removeEventListener('blur',blur);
+    };
+  },[active,panel,onInteract]);
+  useFrame((_,rawDt)=>{
+    const dt=Math.min(.04,rawDt);
+    fpsTime.current+=dt; fpsFrames.current++;
+    if(fpsTime.current>=1){onStats(Math.round(fpsFrames.current/fpsTime.current));fpsTime.current=0;fpsFrames.current=0;}
+    if (!active || panel || !document.pointerLockElement) { if(lastFocus.current){lastFocus.current=null;onFocus(null);} return; }
+    camera.getWorldDirection(looking.current);
+    looking.current.y=0; looking.current.normalize();
+    right.current.crossVectors(looking.current,camera.up).normalize();
+    const forward=(keys.current.KeyW?1:0)-(keys.current.KeyS?1:0);
+    const sideways=(keys.current.KeyD?1:0)-(keys.current.KeyA?1:0);
+    const sum=Math.hypot(forward,sideways);
+    if(sum){
+      const speed=keys.current.ShiftLeft?3.55:2.18;
+      const dx=(looking.current.x*forward+right.current.x*sideways)/sum*speed*dt;
+      const dz=(looking.current.z*forward+right.current.z*sideways)/sum*speed*dt;
+      const x=camera.position.x,z=camera.position.z;
+      if(passageAllowed({x:x+dx,z},doorOpen))camera.position.x+=dx;
+      if(passageAllowed({x:camera.position.x,z:z+dz},doorOpen))camera.position.z+=dz;
+    }
+    const focus=focusTarget({
+      x:camera.position.x,z:camera.position.z,fx:looking.current.x,fz:looking.current.z,
+      targets:TARGETS
+    });
+    if(focus!==lastFocus.current) {lastFocus.current=focus;onFocus(focus);}
+    audio?.updateListener?.(camera.position,looking.current);
+  });
+  return <PointerLockControls/>;
+}
+
+function createRoomAudio() {
+  const C = window.AudioContext || window.webkitAudioContext;
+  if(!C)return null;
+  const ctx = new C();
+  const mix=ctx.createGain(); mix.gain.value=.34; mix.connect(ctx.destination);
+  const base=ctx.createOscillator(), filter=ctx.createBiquadFilter(), level=ctx.createGain();
+  base.type='sawtooth';base.frequency.value=58;
+  filter.type='lowpass';filter.frequency.value=140;
+  level.gain.value=.012;
+  base.connect(filter);filter.connect(level);level.connect(mix);base.start();
+  const noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
+  const data=noise.getChannelData(0);
+  for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
+  const panner=ctx.createPanner();
+  panner.panningModel='HRTF';panner.distanceModel='inverse';panner.refDistance=1.9;panner.maxDistance=22;panner.rolloffFactor=1.2;panner.connect(mix);
+  const soundAt=(x,z,frequency=480,seconds=.5)=>{
+    if(ctx.state==='closed')return;
+    panner.positionX.setValueAtTime(x,ctx.currentTime);
+    panner.positionY.setValueAtTime(1.4,ctx.currentTime);
+    panner.positionZ.setValueAtTime(z,ctx.currentTime);
+    const source=ctx.createBufferSource(),bp=ctx.createBiquadFilter(),vol=ctx.createGain();
+    source.buffer=noise; bp.type='bandpass';bp.frequency.value=frequency;bp.Q.value=.7;
+    source.connect(bp);bp.connect(vol);vol.connect(panner);
+    const t=ctx.currentTime;
+    vol.gain.setValueAtTime(.001,t);
+    vol.gain.linearRampToValueAtTime(.42,t+.015);
+    vol.gain.exponentialRampToValueAtTime(.001,t+seconds);
+    source.start(t,0,seconds);
+    source.stop(t+seconds+.02);
+    source.onended=()=>{source.disconnect();bp.disconnect();vol.disconnect();};
+  };
+  return {
+    resume:()=>ctx.resume(),
+    soundAt,
+    updateListener:(pos,dir)=>{
+      if(ctx.state!=='running')return;
+      const l=ctx.listener;
+      if(l.positionX){l.positionX.value=pos.x;l.positionY.value=pos.y;l.positionZ.value=pos.z;l.forwardX.value=dir.x;l.forwardY.value=0;l.forwardZ.value=dir.z;}
+    },
+    close:()=>{try{base.stop();}catch{}return ctx.close();}
+  };
+}
+
+function CameraGraphic({ id, lampOn }) {
+  const live=id==='cam1';
+  const light=live?lampOn:true;
+  return <div className={'camera-graphic '+(light?'lit':'unlit')}>
+    <svg viewBox="0 0 320 178" aria-hidden="true">
+      <path d="M0 178 L102 18 L226 18 L320 178 Z" fill="#273b36" stroke="#708a79" strokeWidth="3"/>
+      <path d="M102 18 L102 178 M226 18 L226 178" stroke="#53675a" strokeWidth="6"/>
+      <path d="M104 18 L216 18 L225 35 L93 35Z" fill="#172921"/>
+      <rect x="145" y="19" width="37" height="8" fill={light?'#d0efd1':'#3d5049'}/>
+      <path d="M0 136H320 M0 157H320" stroke="#7d8f84" opacity=".38"/>
+      {!live && <><rect x="143" y="54" width="63" height="113" fill="#3d4943" stroke="#a7b7a9" strokeWidth="4"/><circle cx="194" cy="111" r="3" fill="#d1d8c3"/></>}
+    </svg>
+    <span className="camera-tag">{live?'CAM 01 · B1 복도':'CAM 02 · B1 방화문'}</span>
+    <span className="camera-clock">{live?'03:17:42 · LIVE':'03:05:30 · LIVE'}</span>
+    <div className="scanlines"/>
+  </div>;
+}
+
+function Surveillance({ lampOn, onLamp, tested, evidence, onEvidence, onClose }) {
+  return <div className="screen-backdrop" role="dialog" aria-modal="true" aria-label="CCTV 감시 단말기">
+    <div className="surveillance-shell">
+      <div className="screen-header"><strong>SEORIM · NIGHT CONTROL</strong><span>보안 단말기 01 / 사건 001</span></div>
+      <div className="feed-grid">
+        <CameraGraphic id="cam1" lampOn={lampOn}/>
+        <CameraGraphic id="cam2" lampOn={lampOn}/>
+      </div>
+      <div className="sensor-row"><span>방화문 센서: <b className="danger">OPEN</b></span><span>CAM 02 화면: CLOSED</span></div>
+      <div className="screen-info">
+        <div>동일한 점검등 L-07이 두 카메라에 잡힌다. 제어반으로 점검등을 조작해 영상이 실시간인지 확인할 수 있다.</div>
+        {tested && <div className="clue">관찰 기록: CAM 01의 조명이 변했지만 CAM 02의 조명은 그대로다.</div>}
+        {evidence && <div className="clue">증거 확보: CAM 02는 실시간 영상으로 볼 수 없다.</div>}
+      </div>
+      <div className="screen-actions">
+        <button onClick={onLamp}>L-07 점검등 {lampOn?'끄기':'켜기'}</button>
+        <button disabled={!canRecordVideoMismatch(tested)||evidence} onClick={onEvidence}>영상 이상 기록</button>
+        <button className="outline" onClick={onClose}>모니터에서 물러나기</button>
+      </div>
+    </div>
+  </div>;
+}
+
+export default function FirstRoom() {
+  const [started,setStarted] = useState(false);
+  const [panel,setPanel] = useState(null);
+  const [focus,setFocus] = useState(null);
+  const [doorOpen,setDoorOpen] = useState(false);
+  const [lampOn,setLampOn] = useState(true);
+  const [tested,setTested] = useState(false);
+  const [evidence,setEvidence] = useState(false);
+  const [debug,setDebug] = useState(false);
+  const [fps,setFps] = useState(null);
+  const sound=useRef(null), firstCue=useRef(false);
+  useEffect(()=>{
+    const onKey=e=>{if(e.code==='F3'){e.preventDefault();setDebug(v=>!v);}if(e.code==='Escape' && panel)setPanel(null);};
+    window.addEventListener('keydown',onKey);
+    return ()=>window.removeEventListener('keydown',onKey);
+  },[panel]);
+  useEffect(()=>()=>{sound.current?.close?.();},[]);
+  const start=()=>{
+    if(!sound.current)sound.current=createRoomAudio();
+    sound.current?.resume();
+    setStarted(true);
+    document.querySelector('canvas')?.requestPointerLock?.();
+  };
+  const interact=useCallback((id)=>{
+    if(id==='monitor'||id==='log'||id==='relay'){
+      document.exitPointerLock?.();setPanel(id==='log'?'log':'camera');
+    }
+    if(id==='door'){setDoorOpen(v=>!v);sound.current?.soundAt(3.1,1.1,210,.22);}
+  },[]);
+  const turnLamp=()=>{setLampOn(v=>!v);setTested(true);sound.current?.soundAt(8.5,1.5,760,.15);};
+  const closePanel=()=>{
+    setPanel(null);
+    if(evidence&&!firstCue.current){
+      firstCue.current=true;
+      sound.current?.soundAt(10,1.55,220,.56);
+    }
+    document.querySelector('canvas')?.requestPointerLock?.();
+  };
+  const label=TARGETS.find(t=>t.id===focus)?.label;
+  return <main className="room-app">
+    <Canvas shadows dpr={[1,1.5]} camera={{fov:72,near:.045,far:35,position:[-.2,1.68,1.55]}} gl={{antialias:true,powerPreference:'high-performance'}}>
+      <Scene lampOn={lampOn} doorOpen={doorOpen}/>
+      <Player active={started} panel={panel} doorOpen={doorOpen} onFocus={setFocus}
+        onInteract={interact} onStats={setFps} audio={sound.current}/>
+    </Canvas>
+    <div className="vignette" aria-hidden="true"/>
+    <div className="top-title">서림주택 / 야간 관리동 <span>03:17 · INCIDENT 001</span></div>
+    {started && !panel && <><div className="crosshair" aria-hidden="true">+</div>
+      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · 마우스 시점 · Shift 달리기 · E 상호작용'}</div>
+    </>}
+    {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>괴물 AI 없음</div>}
+    {!started && <div className="start-overlay">
+      <div className="eyebrow">B∞ RE:ZERO · FIRST ROOM V0.4.0</div>
+      <h1>마지막 야간근무</h1>
+      <p>03:17. 지하 방화문 센서에서 열림 신호가 들어왔습니다.<br/>CCTV 화면은 여전히 문이 닫혀 있다고 주장합니다.</p>
+      <button onClick={start}>근무 시작</button>
+      <small>PC 키보드 + 마우스 전용 · 헤드폰 권장 · ESC 커서 해제</small>
+    </div>}
+    {panel==='camera'&&<Surveillance lampOn={lampOn} tested={tested} evidence={evidence}
+      onLamp={turnLamp} onEvidence={()=>setEvidence(true)} onClose={closePanel}/>}
+    {panel==='log'&&<div className="screen-backdrop" role="dialog" aria-modal="true">
+      <div className="logbook"><div className="eyebrow">야간근무 일지 · INCIDENT 001</div>
+        <h2>열리지 않은 문</h2><p>03:17 — B1 방화문 센서: OPEN</p>
+        <p>CAM 02 — 화면: CLOSED</p>
+        <p>점검등 테스트: {tested?'실시':'미실시'}</p>
+        <p>영상 이상 증거: {evidence?'확보':'미확보'}</p>
+        <p className="muted">현장 조사와 사건 종결 기능은 V0.5 개발 대상입니다.</p>
+        <button onClick={closePanel}>일지 덮기</button></div>
+    </div>}
+    <footer>FIRST ROOM · 그래픽/사운드/조작 검수용 개발 빌드 · 사건 전체 미구현</footer>
+  </main>;
+}
