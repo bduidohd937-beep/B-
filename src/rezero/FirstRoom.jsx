@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, useFBO } from '@react-three/drei';
 import * as THREE from 'three';
-import { focusTarget, passageAllowed, canRecordVideoMismatch } from './rules.js';
+import { focusTarget, passageAllowed, canRecordVideoMismatch, doorCloseObstructed, DOOR_OPEN_ANGLE } from './rules.js';
 
 const TARGETS = [
   { id: 'monitor', x: -.45, z: -1.12, label: 'CCTV 감시 모니터' },
@@ -145,27 +146,65 @@ function Decor({ m }) {
   </>;
 }
 
-function SwingDoor({ open, m }) {
+function SwingDoor({ doorState, playerPosition, m, audio }) {
   const hinge = useRef(null);
-  useFrame((_,dt)=> {
-    if (hinge.current) {
-      const desired = open ? -1.42 : 0;
-      hinge.current.rotation.y = THREE.MathUtils.damp(hinge.current.rotation.y, desired, 7, dt);
+  useFrame((_, rawDelta) => {
+    const dt = Math.min(rawDelta, .04);
+    const d = doorState.current;
+    if (d.phase === 'holding') {
+      d.holdFor -= dt;
+      if (d.holdFor <= 0) d.phase = 'closing';
     }
+    if (d.phase === 'opening' || d.phase === 'closing') {
+      const target = d.phase === 'opening' ? DOOR_OPEN_ANGLE : 0;
+      const acceleration = (target - d.angle) * 27 - d.velocity * 8.5;
+      const nextVelocity = THREE.MathUtils.clamp(d.velocity + acceleration * dt, -3.3, 3.3);
+      const nextAngle = THREE.MathUtils.clamp(d.angle + nextVelocity * dt, DOOR_OPEN_ANGLE, 0);
+      if (d.phase === 'closing' && doorCloseObstructed(playerPosition.current, nextAngle)) {
+        // The closer must reopen, not cut through a person occupying its sweep.
+        d.phase = 'opening';
+        d.velocity = 0;
+      } else {
+        d.angle = nextAngle;
+        d.velocity = nextVelocity;
+        if (Math.abs(d.angle - target) < .012 && Math.abs(d.velocity) < .21) {
+          d.angle = target;
+          d.velocity = 0;
+          if (d.phase === 'opening') {
+            d.phase = 'holding';
+            d.holdFor = 3.0;
+          } else {
+            d.phase = 'closed';
+            audio?.current?.soundAt(3.16, .94, 360, .18);
+          }
+        }
+      }
+    }
+    if (hinge.current) hinge.current.rotation.y = d.angle;
   });
-  return <group ref={hinge} position={[3.18,0,.32]}>
+  return <group ref={hinge} position={[3.18, 0, .32]}>
     <Block p={[0,1.05,.72]} s={[.105,2.1,1.41]} mat={m.steel}/>
     <Block p={[-.068,1.44,.70]} s={[.05,.47,.73]} mat={m.trim}/>
     <mesh position={[-.108,1.44,.70]} rotation={[0,-Math.PI/2,0]}>
       <planeGeometry args={[.67,.4]}/>
       <meshPhysicalMaterial color="#7e9d9b" transparent opacity={.53} metalness={.22} roughness={.21}/>
     </mesh>
-    <Block p={[-.13,.93,1.15]} s={[.11,.08,.24]} mat={m.amber}/>
+    <group position={[-.18,.93,1.15]}>
+      <Block p={[0,0,0]} s={[.10,.09,.19]} mat={m.amber}/>
+      <Block p={[-.06,-.035,0]} s={[.05,.06,.25]} mat={m.steel}/>
+    </group>
+    {/* hinge pins, closer arm, and latch plate add physical cues */}
+    {[.22,1.82].map(y => <mesh key={y} position={[0,y,0]}>
+      <cylinderGeometry args={[.042,.042,.15,10]}/><primitive attach="material" object={m.trim}/>
+    </mesh>)}
+    <Block p={[0,2.02,.33]} s={[.10,.10,.52]} mat={m.trim}/>
+    <Block p={[0,2.04,1.35]} s={[.11,.12,.17]} mat={m.amber}/>
   </group>;
 }
 
 function CCTVFeeds({ m }) {
   const { gl, scene } = useThree();
+  const feeds = useRef(null);
   const feed1 = useFBO(320,180,{depthBuffer:true});
   const feed2 = useFBO(320,180,{depthBuffer:true});
   const camera1 = useMemo(()=> {
@@ -176,34 +215,39 @@ function CCTVFeeds({ m }) {
     const c = new THREE.PerspectiveCamera(54,16/9,.05,17);
     c.position.set(10.4,2.31,2.46); c.lookAt(14.27,1.26,1.53); return c;
   },[]);
-  const t = useRef(0), frozen = useRef(false);
+  const elapsed = useRef(0), frozen = useRef(false);
   useFrame((_,dt)=>{
-    t.current+=dt;
-    if(t.current < .12) return;
-    t.current=0;
-    const before=gl.getRenderTarget();
-    gl.setRenderTarget(feed1); gl.clear(); gl.render(scene,camera1);
-    if(!frozen.current) {
-      gl.setRenderTarget(feed2); gl.clear(); gl.render(scene,camera2);
-      frozen.current=true;
+    elapsed.current += dt;
+    if(elapsed.current < .125) return;
+    elapsed.current=0;
+    const previous=gl.getRenderTarget();
+    if (feeds.current) feeds.current.visible = false;
+    try {
+      gl.setRenderTarget(feed1);gl.clear();gl.render(scene,camera1);
+      if(!frozen.current) {
+        gl.setRenderTarget(feed2);gl.clear();gl.render(scene,camera2);
+        frozen.current=true;
+      }
+    } finally {
+      gl.setRenderTarget(previous);
+      if (feeds.current) feeds.current.visible = true;
     }
-    gl.setRenderTarget(before);
   });
-  return <>
+  return <group ref={feeds}>
     {[-.96,.32].map((x,i)=><group key={i}>
       <Block p={[x,1.31,-1.99]} s={[1.12,.72,.18]} mat={m.rubber}/>
       <mesh position={[x,1.31,-1.887]}>
         <planeGeometry args={[.98,.55]}/>
         <meshBasicMaterial map={i===0?feed1.texture:feed2.texture} toneMapped={false}/>
       </mesh>
-      <Block p={[x, .97,-1.94]} s={[.13,.08,.15]} mat={m.steel}/>
+      <Block p={[x,.97,-1.94]} s={[.13,.08,.15]} mat={m.steel}/>
       <Block p={[x,.925,-1.89]} s={[.48,.03,.31]} mat={m.steel}/>
       <mesh position={[x-.43,1.62,-1.879]}><circleGeometry args={[.016,12]}/><meshBasicMaterial color={i?'#ecb46a':'#91e4af'}/></mesh>
     </group>)}
-  </>;
+  </group>;
 }
 
-function Scene({ lampOn, doorOpen }) {
+function Scene({ lampOn, doorState, playerPosition, audio }) {
   const m = useMaterials();
   return <>
     <color attach="background" args={['#0b1010']}/>
@@ -216,8 +260,14 @@ function Scene({ lampOn, doorOpen }) {
     <LampFixture p={[12.91,2.5,1.55]} on m={m}/>
     <Envelope m={m}/>
     <Decor m={m}/>
-    <SwingDoor open={doorOpen} m={m}/>
+    <SwingDoor doorState={doorState} playerPosition={playerPosition} audio={audio} m={m}/>
     <CCTVFeeds m={m}/>
+    <Block p={[3.26,2.2,1.0]} s={[.19,.15,1.75]} mat={m.trim}/>
+    <Block p={[3.34,2.38,1.06]} s={[.18,.12,.26]} mat={m.trim}/>
+    {Array.from({length:8},(_,i)=><Block key={'tray'+i} p={[3.8+i*1.25,2.38,-.06]} s={[.3,.06,.21]} mat={m.steel} cast={false}/>)}
+    <Block p={[10,1.2,3.0]} s={[1.25,1.4,.14]} mat={m.steel}/>
+    <Block p={[10,1.48,2.90]} s={[.89,.55,.05]} mat={m.trim}/>
+    <Block p={[5.3,1.26,-.14]} s={[.46,.58,.12]} mat={m.trim}/>
   </>;
 }
 
