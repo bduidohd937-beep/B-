@@ -40,8 +40,26 @@ try {
   await page.keyboard.press('F3');
   await page.waitForTimeout(450);
   assert.equal(await page.locator('.perf-debug').count(),1,'F3 debug absent');
+  // Physical chair starts in front of the player, within interaction range.
+  await page.keyboard.press('e');
+  await page.locator('.console-ui').waitFor({state:'visible',timeout:7000});
+  assert.equal(await page.locator('.console-title').count(),1,'Seated console never opened');
+  assert.equal(await page.evaluate(()=>document.pointerLockElement),null,'Cursor remained locked while seated');
+
+  await page.getByRole('button',{name:'CAM 01 확대'}).click();
+  assert.equal(await page.getByRole('button',{name:'CAM 01 확대'}).getAttribute('class'),'selected');
+  await page.getByRole('button',{name:'CAM 02 확대'}).click();
+  await page.getByRole('button',{name:/L-07 점검등/}).click();
+  await page.getByRole('button',{name:'영상 이상 기록'}).click();
+  assert.ok((await page.locator('.console-feedback').innerText()).includes('근무일지'),'Camera evidence not recorded');
+  await page.screenshot({path:'rezero-first-room.png'});
+  await page.getByRole('button',{name:'의자에서 일어서기'}).click();
+  await page.waitForTimeout(450);
+  assert.equal(await page.locator('.console-ui').count(),0,'Console did not close');
+  assert.equal(await page.locator('.crosshair').count(),1,'Returned FPS HUD missing');
+
   assert.deepEqual(errors,[],'RE:ZERO JavaScript crash: '+errors.join('\n'));
-  console.log('PASS: RE:ZERO entry, WebGL canvas, start action, F3 overlay and no uncaught JS errors');
+  console.log('PASS: RE:ZERO WebGL, seated controls without ESC, CCTV selection, evidence, FPS exit and no JS errors');
 } finally {
   if(browser)await browser.close();
   proc.kill('SIGTERM');

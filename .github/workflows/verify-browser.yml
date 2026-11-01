@@ -22,12 +22,12 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Chrome browser boot (detects black-screen React crashes)
-        run: |
-          npm install --no-save --no-package-lock playwright-core
-          node scripts/smoke-browser.mjs
-      - name: RE:ZERO first-room Chrome boot and capture
+      - name: Install Chrome test dependency
+        run: npm install --no-save --no-package-lock playwright-core
+      - name: RE:ZERO seated CCTV Chrome boot and capture
         run: node scripts/smoke-rezero.mjs
+      - name: Legacy B∞ Chrome boot regression
+        run: node scripts/smoke-browser.mjs
       - name: Upload first-room preview artifact
         if: always()
         uses: actions/upload-artifact@v4

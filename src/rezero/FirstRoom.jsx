@@ -4,8 +4,10 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, useFBO } from '@react-three/drei';
 import * as THREE from 'three';
 import { focusTarget, passageAllowed, canRecordVideoMismatch, doorCloseObstructed, DOOR_OPEN_ANGLE } from './rules.js';
+import { aimCameraAt, monitorLookTarget, SEAT } from './seatedCamera.js';
 
 const TARGETS = [
+  { id: 'chair', x: -.34, z: .45, label: '관제 의자에 앉기' },
   { id: 'monitor', x: -.45, z: -1.12, label: 'CCTV 감시 모니터' },
   { id: 'relay', x: 1.8, z: -1.25, label: '보안 제어반' },
   { id: 'door', x: 2.45, z: 1.10, label: '경비실 출입문' },
@@ -138,6 +140,16 @@ function Decor({ m }) {
     <Block p={[-.25,2.66,-.1]} s={[1.3,.12,.29]} mat={m.trim}/>
     <mesh position={[-.25,2.57,-.1]}><boxGeometry args={[1.16,.02,.18]}/><meshBasicMaterial color="#d8dfc5" toneMapped={false}/></mesh>
     <Block p={[-.25,2.49,-.1]} s={[.04,.14,.03]} mat={m.trim}/>
+    {/* Fixed swivel chair: physical seat makes the seated camera mode legible. */}
+    <mesh position={[-.35,.42,.42]} material={m.rubber} castShadow receiveShadow>
+      <cylinderGeometry args={[.36,.30,.10,16]}/>
+    </mesh>
+    <Block p={[-.35,.83,.81]} s={[.64,.76,.12]} mat={m.steel}/>
+    <Block p={[-.35,.20,.42]} s={[.065,.40,.065]} mat={m.trim}/>
+    <mesh position={[-.35,.05,.42]} material={m.trim}>
+      <cylinderGeometry args={[.33,.28,.05,6]}/>
+    </mesh>
+    {[-1,1].map(side=><Block key={'chairarm'+side} p={[-.35+side*.36,.63,.45]} s={[.055,.065,.48]} mat={m.trim}/>)}
     <Block p={[-2.66,1.5,1.5]} s={[.03,1.55,1.18]} mat={m.trim}/>
     <mesh position={[-2.62,1.5,1.5]} rotation={[0,Math.PI/2,0]}>
       <planeGeometry args={[1.05,1.4]}/>
@@ -271,20 +283,24 @@ function Scene({ lampOn, doorState, playerPosition, audio }) {
   </>;
 }
 
-function Player({ active, panel, doorState, playerPosition, onFocus, onInteract, onStats, audio }) {
+function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocus, onInteract, onStats, audio }) {
   const { camera } = useThree();
   const keys = useRef({});
   const looking = useRef(new THREE.Vector3()), right = useRef(new THREE.Vector3());
   const lastFocus = useRef(null);
   const savedPose = useRef(null), previousPanel = useRef(null);
   const fpsTime = useRef(0), fpsFrames = useRef(0);
-  const zoomPosition = useMemo(() => new THREE.Vector3(-.30,1.52,.43),[]);
-  const zoomQuaternion = useMemo(() => {
-    const target = new THREE.Object3D();
-    target.position.copy(zoomPosition);
-    target.lookAt(-.36,1.32,-1.89);
-    return target.quaternion.clone();
-  },[zoomPosition]);
+  const seatPosition = useMemo(()=>new THREE.Vector3(SEAT.x,SEAT.y,SEAT.z),[]);
+  const lookDrag = useRef({pressed:false,yaw:0,pitch:0});
+  const seatTarget = useMemo(()=>new THREE.Vector3(),[]);
+  const seatQuaternion = useMemo(()=>new THREE.Quaternion(),[]);
+  const turnY = useMemo(()=>new THREE.Quaternion(),[]);
+  const turnX = useMemo(()=>new THREE.Quaternion(),[]);
+  const verticalAxis = useMemo(()=>new THREE.Vector3(0,1,0),[]);
+  const horizontalAxis = useMemo(()=>new THREE.Vector3(1,0,0),[]);
+  const previousSelected = useRef(null);
+  // A Three.Camera faces its local negative Z axis. Matrix4.lookAt generates
+  // a camera-compatible orientation; Object3D.lookAt instead points +Z.
   useEffect(()=>{
     camera.position.set(-.2,1.68,1.55);
     camera.rotation.set(0,0,0);
@@ -309,6 +325,47 @@ function Player({ active, panel, doorState, playerPosition, onFocus, onInteract,
     keys.current={};
   },[camera,panel]);
   useEffect(()=>{
+    // Free cursor for normal button clicks; hold right mouse to look around
+    // the room while the player stays seated. No separate ESC step.
+    if(panel!=='camera')return;
+    const drag=lookDrag.current;
+    drag.pressed=false;
+    drag.yaw=0;
+    drag.pitch=0;
+    const mouseDown=e=>{
+      if(e.button===2){e.preventDefault();drag.pressed=true;}
+    };
+    const mouseUp=e=>{if(e.button===2)drag.pressed=false;};
+    const mouseMove=e=>{
+      if(!drag.pressed || !(e.buttons & 2))return;
+      drag.yaw=THREE.MathUtils.clamp(drag.yaw-(e.movementX||0)*.0035,-1.65,1.65);
+      drag.pitch=THREE.MathUtils.clamp(drag.pitch-(e.movementY||0)*.0032,-.75,.8);
+    };
+    const context=e=>e.preventDefault();
+    const cancel=()=>{drag.pressed=false;};
+    window.addEventListener('mousedown',mouseDown);
+    window.addEventListener('mouseup',mouseUp);
+    window.addEventListener('mousemove',mouseMove);
+    window.addEventListener('contextmenu',context);
+    window.addEventListener('blur',cancel);
+    return ()=>{
+      window.removeEventListener('mousedown',mouseDown);
+      window.removeEventListener('mouseup',mouseUp);
+      window.removeEventListener('mousemove',mouseMove);
+      window.removeEventListener('contextmenu',context);
+      window.removeEventListener('blur',cancel);
+    };
+  },[panel]);
+  useEffect(()=>{
+    // Selecting a monitor centers the view on that screen. Right-drag still
+    // overrides the base orientation without moving the player's body.
+    if(selectedFeed!==previousSelected.current){
+      lookDrag.current.yaw=0;
+      lookDrag.current.pitch=0;
+      previousSelected.current=selectedFeed;
+    }
+  },[selectedFeed]);
+  useEffect(()=>{
     const down = e => {
       if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','KeyE'].includes(e.code)) e.preventDefault();
       keys.current[e.code] = true;
@@ -332,11 +389,17 @@ function Player({ active, panel, doorState, playerPosition, onFocus, onInteract,
     fpsTime.current+=dt; fpsFrames.current++;
     if(fpsTime.current>=1){onStats(Math.round(fpsFrames.current/fpsTime.current));fpsTime.current=0;fpsFrames.current=0;}
     if (panel === 'camera') {
-      const blend=1-Math.exp(-7*dt);
-      camera.position.lerp(zoomPosition,blend);
-      camera.quaternion.slerp(zoomQuaternion,blend);
-      camera.fov=THREE.MathUtils.damp(camera.fov,54,7,dt);
+      const blend=1-Math.exp(-6*dt);
+      seatTarget.set(...monitorLookTarget(selectedFeed));
+      aimCameraAt(seatPosition,seatTarget,seatQuaternion);
+      turnY.setFromAxisAngle(verticalAxis,lookDrag.current.yaw);
+      turnX.setFromAxisAngle(horizontalAxis,lookDrag.current.pitch);
+      seatQuaternion.premultiply(turnY).multiply(turnX);
+      camera.position.lerp(seatPosition,blend);
+      camera.quaternion.slerp(seatQuaternion,blend);
+      camera.fov=THREE.MathUtils.damp(camera.fov,selectedFeed?42:57,6,dt);
       camera.updateProjectionMatrix();
+      playerPosition.current.copy(seatPosition);
       if(lastFocus.current){lastFocus.current=null;onFocus(null);}
       return;
     }
@@ -412,8 +475,7 @@ function createRoomAudio() {
   };
 }
 
-function Surveillance({ lampOn, onLamp, tested, evidence, onEvidence, onClose }) {
-  const [selected,setSelected]=useState(null);
+function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, onEvidence, onClose }) {
   const [hint,setHint]=useState(0);
   const [feedback,setFeedback]=useState('');
   function record() {
@@ -423,27 +485,29 @@ function Surveillance({ lampOn, onLamp, tested, evidence, onEvidence, onClose })
     setFeedback(okay?'영상 이상에 대한 근거를 근무일지에 기록했다.':'선택한 카메라의 이상을 입증할 근거가 충분하지 않다.');
   }
   return <div className="console-ui" role="dialog" aria-label="실제 CCTV 화면과 연동된 조작 단말기">
-    <header className="console-title"><strong>SEORIM / CCTV</strong><span>INCIDENT 001 · B1 방화문</span></header>
+    <header className="console-title"><strong>SEORIM / SEATED CONTROL</strong><span>착석 중 · INCIDENT 001 · B1 방화문</span></header>
     <div className="console-status">
       <span>출입 센서 <b>OPEN</b></span><span>CAM 02 보고 <b>CLOSED</b></span>
     </div>
     <div className="console-actions">
-      <button className={selected==='cam1'?'selected':''} onClick={()=>{setSelected('cam1');setFeedback('');}}>CAM 01 선택</button>
-      <button className={selected==='cam2'?'selected':''} onClick={()=>{setSelected('cam2');setFeedback('');}}>CAM 02 선택</button>
+      <button className={!selected?'selected':''} onClick={()=>{onSelected(null);setFeedback('');}}>전체 모니터</button>
+      <button className={selected==='cam1'?'selected':''} onClick={()=>{onSelected('cam1');setFeedback('');}}>CAM 01 확대</button>
+      <button className={selected==='cam2'?'selected':''} onClick={()=>{onSelected('cam2');setFeedback('');}}>CAM 02 확대</button>
       <button onClick={()=>{onLamp();setFeedback('');}}>L-07 점검등 {lampOn?'OFF':'ON'}</button>
       <button onClick={record} disabled={evidence}>영상 이상 기록</button>
       <button className="quiet" onClick={()=>setHint(v=>Math.min(2,v+1))}>힌트</button>
-      <button className="quit" onClick={onClose}>나가기 · FPS 복귀</button>
+      <button className="quit" onClick={onClose}>의자에서 일어서기</button>
     </div>
     {hint>0 && <p className="console-hint">{hint===1?'서로 다른 두 카메라가 동일한 점검등 L-07을 보여준다.':'점검등을 조작한 뒤 두 화면의 빛이 모두 변하는지 비교해 보세요.'}</p>}
     {(feedback||evidence) && <p className="console-feedback">{feedback||'근무일지에 영상 이상이 기록되었다.'}</p>}
-    <p className="console-foot">모니터에 표시된 실제 3D CCTV를 관찰하세요. 마우스는 자유롭게 움직이며, ESC가 필요하지 않습니다.</p>
+    <p className="console-foot">의자에서 관제 중입니다. 마우스 오른쪽 버튼을 누른 채 움직이면 주변을 둘러볼 수 있습니다. ESC 없이 버튼을 클릭하세요.</p>
   </div>;
 }
 
 export default function FirstRoom() {
   const [started,setStarted] = useState(false);
   const [panel,setPanel] = useState(null);
+  const [selectedFeed,setSelectedFeed] = useState(null);
   const [focus,setFocus] = useState(null);
   const [lampOn,setLampOn] = useState(true);
   const [tested,setTested] = useState(false);
@@ -475,8 +539,9 @@ export default function FirstRoom() {
     lockGamePointer();
   };
   const interact=useCallback((id)=>{
-    if(id==='monitor'||id==='log'||id==='relay'){
+    if(id==='chair'||id==='monitor'||id==='log'||id==='relay'){
       document.exitPointerLock?.();
+      setSelectedFeed(null);
       setPanel(id==='log'?'log':'camera');
     }
     if(id==='door'){
@@ -510,7 +575,7 @@ export default function FirstRoom() {
   return <main className="room-app">
     <Canvas shadows dpr={[1,1.5]} camera={{fov:72,near:.045,far:35,position:[-.2,1.68,1.55]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <Scene lampOn={lampOn} doorState={doorState} playerPosition={playerPosition} audio={sound}/>
-      <Player active={started} panel={panel} doorState={doorState} playerPosition={playerPosition}
+      <Player active={started} panel={panel} selectedFeed={selectedFeed} doorState={doorState} playerPosition={playerPosition}
         onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}/>
     </Canvas>
     <div className="vignette" aria-hidden="true"/>
@@ -520,13 +585,14 @@ export default function FirstRoom() {
     </>}
     {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>괴물 AI 없음</div>}
     {!started && <div className="start-overlay">
-      <div className="eyebrow">B∞ RE:ZERO · FIRST ROOM V0.4.1</div>
+      <div className="eyebrow">B∞ RE:ZERO · FIRST INCIDENT V0.4.2-A</div>
       <h1>마지막 야간근무</h1>
       <p>03:17. 지하 방화문 센서에서 열림 신호가 들어왔습니다.<br/>CCTV 화면은 여전히 문이 닫혀 있다고 주장합니다.</p>
       <button onClick={start}>근무 시작</button>
       <small>PC 키보드 + 마우스 전용 · 헤드폰 권장 · ESC 커서 해제</small>
     </div>}
     {panel==='camera'&&<Surveillance lampOn={lampOn} tested={tested} evidence={evidence}
+      selected={selectedFeed} onSelected={setSelectedFeed}
       onLamp={turnLamp} onEvidence={noteEvidence} onClose={closePanel}/>}
     {panel==='log'&&<div className="screen-backdrop" role="dialog" aria-modal="true">
       <div className="logbook"><div className="eyebrow">야간근무 일지 · INCIDENT 001</div>
@@ -538,6 +604,6 @@ export default function FirstRoom() {
         <button onClick={closePanel}>일지 덮기 / FPS 복귀</button></div>
     </div>}
     {started && !panel && resumeHint && <button className="resume-pointer" onClick={lockGamePointer}>화면 클릭하여 시점 조작 계속</button>}
-    <footer>FIRST ROOM V0.4.1 · 기능 검수 빌드 · 전체 사건 미구현</footer>
+    <footer>V0.4.2-A · 착석형 관제 검수 빌드 · 공포 사건 미구현</footer>
   </main>;
 }
