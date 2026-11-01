@@ -1,0 +1,32 @@
+name: RE:ZERO V0.5 Underground Map Chrome
+on:
+  pull_request:
+    paths:
+      - 'src/rezero/v05/**'
+      - 'survive.html'
+      - 'scripts/smoke-survive.mjs'
+      - 'vite.config.js'
+      - '.github/workflows/verify-survive.yml'
+  workflow_dispatch:
+
+jobs:
+  map-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Install browser test dependency
+        run: npm install --no-save --no-package-lock playwright-core
+      - name: Open V0.5-A map in Chrome and capture preview
+        run: node scripts/smoke-survive.mjs
+      - name: Upload first underground map screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rezero-v05a-underground-map
+          path: survive-map-v05a.png
+          if-no-files-found: ignore
