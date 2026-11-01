@@ -1,6 +1,8 @@
 import {walkable,stepMove} from './level.js';
 
-export const MONSTER_SPAWN=Object.freeze({x:-4.8,z:16.5});
+// The first threat erupts from the rear maintenance access, near the breaker.
+// Sealed G remains reserved for a later case.
+export const MONSTER_SPAWN=Object.freeze({x:9,z:21.6});
 export const BREAKER_POS=Object.freeze({x:10.10,z:14.95});
 export const HIDE_POS=Object.freeze({x:-1.3,z:27.15});
 export const MONSTER_WALK=1.25;
@@ -160,7 +162,7 @@ export function advanceChase(s,seconds,player,{hiding=false,paused=false}={}){
     }
   }
   if(s.phase==='investigate'){
-    navigate(s,BREAKER_POS,MONSTER_WALK,dt,ev);
+    navigate(s,BREAKER_POS,2.55,dt,ev);
     if(distance(s.pos,BREAKER_POS)<1.0){
       s.phase='search';s.searchClock=5.5;s.pathClock=0;
     }
