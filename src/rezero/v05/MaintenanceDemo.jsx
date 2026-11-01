@@ -86,7 +86,7 @@ function RoomArchitecture({m}){
         })
         :<Box x={(a.x0+a.x1)/2} y={(a.elevation||0)-.14} z={(a.z0+a.z1)/2}
           w={a.x1-a.x0} h={.28} d={a.z1-a.z0} mat={m.floor}/>}
-      <Box x={(a.x0+a.x1)/2} y={(a.kind==='office'?1.08:0)+2.94}
+      <Box x={(a.x0+a.x1)/2} y={(a.kind==='office'?1.08:a.kind==='stair'?.70:0)+2.94}
         z={(a.z0+a.z1)/2} w={a.x1-a.x0} h={.16} d={a.z1-a.z0} mat={m.dark}/>
       {/* Base boards make doorways and wall ends read as physical partitions. */}
     </group>)}
@@ -163,6 +163,7 @@ function Flashlight({enabled}){
   const facing=useMemo(()=>new THREE.Vector3(),[]);
   useFrame(()=>{
     if(!light.current||!target.current)return;
+    light.current.target=target.current;
     camera.getWorldDirection(facing);
     light.current.position.copy(camera.position);
     target.current.position.copy(camera.position).addScaledVector(facing,7);
@@ -211,15 +212,16 @@ function useSound(){
   },[]);
   return {start,sound:store};
 }
-function CameraController({started,zoneChanged,progressed,onSteps,flashlight}){
+function CameraController({started,zoneChanged,progressed,onSteps,onPosition}){
   const {camera,gl}=useThree();
   const held=useRef({});
   const lastZone=useRef('');
   const stepDistance=useRef(0);
+  const positionTime=useRef(0);
   const forward=useMemo(()=>new THREE.Vector3(),[]);
   const lateral=useMemo(()=>new THREE.Vector3(),[]);
-  const callbackRef=useRef({zoneChanged,progressed,onSteps});
-  callbackRef.current={zoneChanged,progressed,onSteps};
+  const callbackRef=useRef({zoneChanged,progressed,onSteps,onPosition});
+  callbackRef.current={zoneChanged,progressed,onSteps,onPosition};
   useEffect(()=>{
     camera.position.set(0,1.08+EYE,0.4);
     camera.rotation.set(0,Math.PI,0); // Look DOWN the stairs, +Z.
@@ -242,7 +244,7 @@ function CameraController({started,zoneChanged,progressed,onSteps,flashlight}){
     const moveZ=(held.current.KeyW?1:0)-(held.current.KeyS?1:0);
     const norm=Math.hypot(moveX,moveZ);
     camera.getWorldDirection(forward);forward.y=0;forward.normalize();
-    lateral.set(-forward.z,0,forward.x);
+    lateral.set(forward.z,0,-forward.x);
     let actual=0;
     if(norm){
       const speed=held.current.KeyC?1.0:held.current.ShiftLeft?4.2:2.5;
@@ -260,6 +262,8 @@ function CameraController({started,zoneChanged,progressed,onSteps,flashlight}){
       stepDistance.current+=actual;
       if(stepDistance.current>.78){stepDistance.current-=.78;callbackRef.current.onSteps();}
     }
+    positionTime.current+=dt;
+    if(positionTime.current>.18){positionTime.current=0;callbackRef.current.onPosition?.({x:camera.position.x,z:camera.position.z});}
     const a=getArea(camera.position.x,camera.position.z);
     if(a && a.id!==lastZone.current){
       lastZone.current=a.id;
@@ -269,7 +273,7 @@ function CameraController({started,zoneChanged,progressed,onSteps,flashlight}){
   });
   return <PointerLockControls/>;
 }
-function LevelMap({current}){
+function LevelMap({current,position}){
   return <div className="map-panel">
     <div className="map-heading">시설 개요도 · 이동 동선 검증</div>
     <svg viewBox="-14 -5 30 39" role="img" aria-label="경비실, 계단, 중앙복도, 전기실, 정비실, 창고가 연결된 2차원 시설 지도">
@@ -283,7 +287,7 @@ function LevelMap({current}){
         <text x="9" y="27">정비실</text><text x="0" y="27">창고</text>
         <text x="-4.6" y="15.6" fontSize=".6">폐쇄</text>
       </g>
-      <circle cx="0" cy={0} r=".38" fill="#f2db89"/>
+      <circle cx={position.x} cy={position.z} r=".38" fill="#f2db89"/>
     </svg>
     <div className="map-note">방향·연결 검수용 지도 (M으로 닫기)<br/>폐쇄 설비 구역은 후속 단계에서 개방</div>
   </div>;
@@ -293,11 +297,11 @@ export default function MaintenanceDemo(){
   const [zone,setZone]=useState(AREA_BY_ID.guard);
   const [progress,setProgress]=useState(0);
   const [steps,setSteps]=useState(0);
+  const [position,setPosition]=useState({x:0,z:.4});
   const [showMap,setShowMap]=useState(false);
   const [flashlight,setFlashlight]=useState(true);
   const [debug,setDebug]=useState(false);
-  const [fps,setFps]=useState(0);
-  const frameT=useRef(0),frameN=useRef(0);
+
   const {start,sound}=useSound();
   const progressRef=useRef(0);
   const zoneChanged=useCallback(a=>setZone(a),[]);
@@ -310,6 +314,7 @@ export default function MaintenanceDemo(){
     if(next!==p){progressRef.current=next;setProgress(next);sound.current?.tick();}
   },[sound]);
   const onSteps=useCallback(()=>setSteps(n=>n+1),[]);
+  const onPosition=useCallback(p=>setPosition(p),[]);
   useEffect(()=>{
     const keys=e=>{
       if(e.repeat)return;
@@ -328,7 +333,7 @@ export default function MaintenanceDemo(){
   return <main className="map-demo">
     <Canvas dpr={[1,1.5]} camera={{fov:72,near:.045,far:44,position:[0,2.76,.4]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <Space flashlight={flashlight}/>
-      <CameraController started={started} zoneChanged={zoneChanged} progressed={progressed} onSteps={onSteps}/>
+      <CameraController started={started} zoneChanged={zoneChanged} progressed={progressed} onSteps={onSteps} onPosition={onPosition}/>
     </Canvas>
     <div className="world-vignette"/>
     <header className="level-header">
@@ -342,8 +347,8 @@ export default function MaintenanceDemo(){
       <p>{OBJECTIVE_STEPS[progress]}</p>
       <small>WASD 이동 · Shift 달리기 · C 웅크리기 · ESC 포인터 해제</small>
     </div>
-    {showMap&&<LevelMap current={zone?.id}/>}
-    {debug&&<div className="performance">V0.5-A BLOCKOUT<br/>이동 구역 {zone?.id}<br/>발걸음 {steps}<br/>괴물/추격 미구현<br/>테스트 FPS {fps||'브라우저 측정 필요'}</div>}
+    {showMap&&<LevelMap current={zone?.id} position={position}/>}
+    {debug&&<div className="performance">V0.5-A BLOCKOUT<br/>이동 구역 {zone?.id}<br/>발걸음 {steps}<br/>괴물/추격 미구현<br/>FPS: 별도 브라우저 측정 필요</div>}
     {!started&&<div className="start-screen">
       <div className="supra">B∞ RE:ZERO · SURVIVE THE NIGHT</div>
       <h1>마지막 야간근무</h1>
