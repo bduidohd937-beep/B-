@@ -265,7 +265,7 @@ function CCTVFeeds({ m }) {
 // This is the same physical actor seen by the player and both CCTV cameras.
 // Rough shapes are intentionally masked by the coat, fog and distance.
 // Real character mesh/animation is a later art task, not claimed here.
-function PresenceActor({ presence, doorState, playerPosition, audio, onPhase }) {
+function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, cameraVisible }) {
   const actor = useRef(null), coat = useRef(null);
   const lastPhase = useRef(null);
   const stepBob = useRef(0);
@@ -273,7 +273,8 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase }) 
     const p=presence.current;
     const events=advancePresence(p,rawDt,{
       player:playerPosition.current,
-      doorClosed:doorState.current.phase==='closed'
+      doorClosed:doorState.current.phase==='closed',
+      cameraVisible
     });
     for(const ev of events){
       if(ev.type==='step'){
@@ -339,7 +340,7 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase }) 
   </group>;
 }
 
-function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresencePhase }) {
+function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresencePhase, cameraVisible }) {
   const m = useMaterials();
   return <>
     <color attach="background" args={['#0b1010']}/>
@@ -354,7 +355,7 @@ function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresenceP
     <Envelope m={m}/>
     <Decor m={m}/>
     <SwingDoor doorState={doorState} playerPosition={playerPosition} presence={presence} audio={audio} m={m}/>
-    <PresenceActor presence={presence} doorState={doorState} playerPosition={playerPosition} audio={audio} onPhase={onPresencePhase}/>
+    <PresenceActor presence={presence} doorState={doorState} playerPosition={playerPosition} audio={audio} onPhase={onPresencePhase} cameraVisible={cameraVisible}/>
     <CCTVFeeds m={m}/>
     <Block p={[3.26,2.2,1.0]} s={[.19,.15,1.75]} mat={m.trim}/>
     <Block p={[3.34,2.38,1.06]} s={[.18,.12,.26]} mat={m.trim}/>
@@ -483,6 +484,8 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
       camera.fov=THREE.MathUtils.damp(camera.fov,selectedFeed?42:57,6,dt);
       camera.updateProjectionMatrix();
       playerPosition.current.copy(seatPosition);
+      camera.getWorldDirection(looking.current);
+      audio?.current?.updateListener?.(camera.position,looking.current);
       if(lastFocus.current){lastFocus.current=null;onFocus(null);}
       return;
     }
@@ -528,13 +531,17 @@ function createRoomAudio() {
   const noise=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);
   const data=noise.getChannelData(0);
   for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
-  const panner=ctx.createPanner();
-  panner.panningModel='HRTF';panner.distanceModel='inverse';panner.refDistance=1.9;panner.maxDistance=22;panner.rolloffFactor=1.2;panner.connect(mix);
   const soundAt=(x,z,frequency=480,seconds=.5)=>{
     if(ctx.state==='closed')return;
+    // One panner per sound: overlapping footsteps must not jump to the
+    // position of a later click or door event.
+    const panner=ctx.createPanner();
+    panner.panningModel='HRTF';panner.distanceModel='inverse';
+    panner.refDistance=1.9;panner.maxDistance=22;panner.rolloffFactor=1.2;
     panner.positionX.setValueAtTime(x,ctx.currentTime);
     panner.positionY.setValueAtTime(1.4,ctx.currentTime);
     panner.positionZ.setValueAtTime(z,ctx.currentTime);
+    panner.connect(mix);
     const source=ctx.createBufferSource(),bp=ctx.createBiquadFilter(),vol=ctx.createGain();
     source.buffer=noise; bp.type='bandpass';bp.frequency.value=frequency;bp.Q.value=.7;
     source.connect(bp);bp.connect(vol);vol.connect(panner);
@@ -544,7 +551,7 @@ function createRoomAudio() {
     vol.gain.exponentialRampToValueAtTime(.001,t+seconds);
     source.start(t,0,seconds);
     source.stop(t+seconds+.02);
-    source.onended=()=>{source.disconnect();bp.disconnect();vol.disconnect();};
+    source.onended=()=>{source.disconnect();bp.disconnect();vol.disconnect();panner.disconnect();};
   };
   return {
     resume:()=>ctx.resume(),
@@ -663,7 +670,8 @@ export default function FirstRoom() {
   return <main className="room-app">
     <Canvas shadows dpr={[1,1.5]} camera={{fov:72,near:.045,far:35,position:[-.2,1.68,1.55]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <Scene lampOn={lampOn} doorState={doorState} playerPosition={playerPosition} audio={sound}
-        presence={presence} onPresencePhase={setPresencePhase}/>
+        presence={presence} onPresencePhase={setPresencePhase}
+        cameraVisible={panel==='camera' && selectedFeed!=='cam2'}/>
       <Player active={started} panel={panel} selectedFeed={selectedFeed} doorState={doorState} playerPosition={playerPosition}
         onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}/>
     </Canvas>
