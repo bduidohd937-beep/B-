@@ -53,7 +53,7 @@ test('walls and furniture are solid; illegal through-wall shortcuts never succee
   for(const o of OBSTACLES)assert.equal(walkable(o.x,o.z),false,'furniture must block player: '+o.id);
 });
 test('movement collision slides beside objects and does not tunnel through',()=>{
-  let p={x:1.9,z:17};
+  let p={x:1.9,z:13.2};
   const next=stepMove(p,4,0);
   assert.ok(next.x<2.9,'tried to cross hub wall outside connecting passage');
   p={x:0,z:16.5};
