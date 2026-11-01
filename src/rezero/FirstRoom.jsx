@@ -475,7 +475,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
   },[selectedFeed]);
   useEffect(()=>{
     const down = e => {
-      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ControlLeft','KeyE'].includes(e.code)) e.preventDefault();
+      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ControlLeft','KeyC','KeyE'].includes(e.code)) e.preventDefault();
       keys.current[e.code] = true;
       if (e.code === 'KeyE' && !e.repeat && active && !panel && document.pointerLockElement) {
         if(lastFocus.current) onInteract(lastFocus.current);
@@ -523,7 +523,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     const forward=(keys.current.KeyW?1:0)-(keys.current.KeyS?1:0);
     const sideways=(keys.current.KeyD?1:0)-(keys.current.KeyA?1:0);
     const sum=Math.hypot(forward,sideways);
-    const crouch=Boolean(keys.current.ControlLeft);
+    const crouch=Boolean(keys.current.ControlLeft||keys.current.KeyC);
     crouching.current=crouch;
     const eyeHeight=crouch?.98:1.68;
     camera.position.y=THREE.MathUtils.damp(camera.position.y,eyeHeight,12,dt);
@@ -770,7 +770,7 @@ export default function FirstRoom() {
     <div className="vignette" aria-hidden="true"/>
     <div className="top-title">서림주택 / 야간 관리동 <span>03:17 · INCIDENT 001</span></div>
     {started && !panel && <><div className="crosshair" aria-hidden="true">+</div>
-      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · Shift 달리기 · Ctrl 웅크리기 · E 상호작용'}</div>
+      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · Shift 달리기 · C 웅크리기 · E 상호작용'}</div>
     </>}
     {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>첫 사건: {presencePhase}<br/>문 잠금: {locked?'ON':'OFF'} / 방송: {speakerReady?'READY':'COOLDOWN'}</div>}
     {!started && <div className="start-overlay">
