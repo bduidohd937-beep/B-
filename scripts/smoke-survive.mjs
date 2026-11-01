@@ -28,7 +28,7 @@ try{
   await page.goto(address,{waitUntil:'domcontentloaded',timeout:30000});
   await page.getByRole('heading',{name:'마지막 야간근무'}).waitFor({timeout:12000});
   assert.equal(await page.locator('#root canvas').count(),1);
-  await page.getByRole('button',{name:'지하층 동선 점검 시작'}).click();
+  await page.getByRole('button',{name:'야간근무 시작'}).click();
   await page.locator('.start-screen').waitFor({state:'detached',timeout:12000});
   await page.waitForTimeout(1400);
   await page.keyboard.press('m');
