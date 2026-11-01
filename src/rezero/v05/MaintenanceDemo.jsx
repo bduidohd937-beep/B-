@@ -11,7 +11,7 @@ const CUBE=new THREE.BoxGeometry(1,1,1);
 const EYE=1.68;
 const MISSION={
   seekBreaker:'B1 전기실로 내려가 보조 제어반을 조사하자. 가까이 가서 E키.',
-  escaping:'뛰어! 무언가 전기실을 향해 달려온다. 정비 통로를 통해 관리 창고로!',
+  escaping:'뒤쪽 정비 통로에서 온다! 복도로 되돌아가거나 빈틈을 이용해 관리 창고까지 도망쳐!',
   atStorage:'관리 창고에서 선반 뒤 은신 지점을 찾아 E키로 숨자.',
   hidden:'조용히 숨자. 발소리가 멀어질 때까지 기다려…',
   survived:'첫 추격 생존 성공! 다음 패치에서 전원 복구와 최종 탈출 진행 예정.'
@@ -477,8 +477,8 @@ export default function MaintenanceDemo(){
         wakeChase(actor.current);
         changeStage('escaping');
         setPowerFailure(true);
-        setHint('경보 발생! 정비 우회통로를 통해 창고로 도망쳐!');
-        sound.current?.spatial?.('charge',-4.8,16.5);
+        setHint('뒤쪽 정비 통로에서 놈이 달려온다! 복도 쪽으로 도망쳐!');
+        sound.current?.spatial?.('charge',9,21.6);
       }else{
         setHint('전기실 제어반 쪽으로 더 가까이 다가가야 한다.');
       }
@@ -579,7 +579,7 @@ export default function MaintenanceDemo(){
       <h1>마지막 야간근무</h1>
       <h2>V0.5-B / FIRST CHASE</h2>
       <p>지하 전기실의 제어반을 조사하라는 근무 지시가 내려왔습니다.
-      <br/>전기실에서 E키로 제어반을 확인한 뒤, 무언가 깨어나면 정비 통로를 통해 관리 창고로 도망치세요.</p>
+      <br/>전기실에서 E키로 제어반을 확인하세요. 뒤편 통로에서 무언가 나타나면 중앙복도와 우회로를 이용해 창고로 도망치세요.</p>
       <button onClick={begin}>야간근무 시작</button>
       <small>PC 키보드·마우스 전용 · 이번 패치는 첫 습격·추격만 검수</small>
     </div>}
@@ -596,7 +596,7 @@ export default function MaintenanceDemo(){
     </div>}
     {stage==='survived'&&<div className="route-success">
       <strong>첫 추격 생존 성공</strong>
-      <p>전기실에서 깨어난 존재를 피하고 창고에 숨는 데 성공했어.
+      <p>전기실 뒤편에서 달려든 존재를 피해 창고에 숨는 데 성공했어.
       <br/>최종 전원 복구·셔터 탈출은 V0.5-C/D 제작 대상.</p>
       <button onClick={()=>setShowMap(a=>!a)}>지하 지도 보기 (M)</button>
     </div>}
