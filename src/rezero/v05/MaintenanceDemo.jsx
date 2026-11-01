@@ -264,81 +264,154 @@ function useSound(){
     if(store.current){store.current.ctx.resume();return;}
     const AC=window.AudioContext||window.webkitAudioContext;
     if(!AC)return;
-    const ctx=new AC(),master=ctx.createGain();master.gain.value=.18;master.connect(ctx.destination);
+    const ctx=new AC(),master=ctx.createGain();
+    master.gain.value=.26;master.connect(ctx.destination);
     const hum=ctx.createOscillator(),tone=ctx.createGain();
-    hum.type='sawtooth';hum.frequency.value=53;
-    tone.gain.value=.028;hum.connect(tone);tone.connect(master);hum.start();
-    store.current={ctx,close:()=>{hum.stop();ctx.close();},tick:()=>{
+    hum.type='sawtooth';hum.frequency.value=52;
+    tone.gain.value=.016;hum.connect(tone);tone.connect(master);hum.start();
+    const listener=ctx.listener;
+    const spatial=(type,x,z)=>{
       if(ctx.state!=='running')return;
-      const osc=ctx.createOscillator(),vol=ctx.createGain();
-      osc.type='triangle';osc.frequency.value=120;
-      osc.connect(vol);vol.connect(master);
-      vol.gain.setValueAtTime(.0005,ctx.currentTime);
-      vol.gain.linearRampToValueAtTime(.11,ctx.currentTime+.016);
-      vol.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.13);
-      osc.start();osc.stop(ctx.currentTime+.15);
-      osc.onended=()=>{osc.disconnect();vol.disconnect();};
-    }};
+      const t=ctx.currentTime;
+      const p=ctx.createPanner();
+      p.panningModel='HRTF';p.distanceModel='inverse';
+      p.refDistance=2.2;p.maxDistance=35;p.rolloffFactor=1.15;
+      p.positionX.setValueAtTime(x,t);
+      p.positionY.setValueAtTime(1.35,t);
+      p.positionZ.setValueAtTime(z,t);
+      p.connect(master);
+      const frequency=type==='step'?95:type==='charge'?260:type==='alert'?465:type==='caught'?110:380;
+      const span=type==='step'?.14:type==='caught'?1.3:type==='charge'?.85:.40;
+      const g=ctx.createGain(),osc=ctx.createOscillator();
+      osc.type=type==='step'?'triangle':'sawtooth';
+      osc.frequency.setValueAtTime(frequency,t);
+      if(type==='charge'||type==='alert')osc.frequency.exponentialRampToValueAtTime(frequency*2.15,t+span);
+      g.gain.setValueAtTime(.001,t);
+      g.gain.linearRampToValueAtTime(type==='step'?.28:.50,t+.018);
+      g.gain.exponentialRampToValueAtTime(.001,t+span);
+      osc.connect(g);g.connect(p);osc.start(t);osc.stop(t+span+.025);
+      osc.onended=()=>{osc.disconnect();g.disconnect();p.disconnect();};
+    };
+    store.current={
+      ctx,
+      spatial,
+      updateListener:(position,direction)=>{
+        if(ctx.state!=='running')return;
+        if(listener.positionX){
+          listener.positionX.value=position.x;
+          listener.positionY.value=position.y;
+          listener.positionZ.value=position.z;
+          listener.forwardX.value=direction.x;
+          listener.forwardY.value=direction.y;
+          listener.forwardZ.value=direction.z;
+        }
+      },
+      close:()=>{try{hum.stop();}catch{}ctx.close();},
+      tick:()=>{
+        if(ctx.state!=='running')return;
+        const osc=ctx.createOscillator(),vol=ctx.createGain();
+        osc.type='triangle';osc.frequency.value=120;
+        osc.connect(vol);vol.connect(master);
+        vol.gain.setValueAtTime(.0005,ctx.currentTime);
+        vol.gain.linearRampToValueAtTime(.11,ctx.currentTime+.016);
+        vol.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.13);
+        osc.start();osc.stop(ctx.currentTime+.15);
+        osc.onended=()=>{osc.disconnect();vol.disconnect();};
+      }
+    };
   },[]);
   return {start,sound:store};
 }
-function CameraController({started,zoneChanged,progressed,onSteps,onPosition}){
-  const {camera,gl}=useThree();
+function CameraController({
+  started,halted,hiding,resetToken,playerRef,zoneChanged,onSteps,onPosition,onUse,sound
+}){
+  const {camera}=useThree();
   const held=useRef({});
   const lastZone=useRef('');
   const stepDistance=useRef(0);
   const positionTime=useRef(0);
-  const forward=useMemo(()=>new THREE.Vector3(),[]);
-  const lateral=useMemo(()=>new THREE.Vector3(),[]);
-  const callbackRef=useRef({zoneChanged,progressed,onSteps,onPosition});
-  callbackRef.current={zoneChanged,progressed,onSteps,onPosition};
+  const move=useMemo(()=>new THREE.Vector3(),[]);
+  const look=useMemo(()=>new THREE.Vector3(),[]);
+  const callbackRef=useRef({});
+  callbackRef.current={zoneChanged,onSteps,onPosition,onUse};
   useEffect(()=>{
-    camera.position.set(0,1.08+EYE,0.4);
-    camera.rotation.set(0,Math.PI,0); // Look DOWN the stairs, +Z.
-  },[camera]);
+    if(resetToken>0){
+      camera.position.set(9,1.68,16.6);
+      camera.rotation.set(0,Math.PI/2,0); // From the electrical room, face west to the hub.
+    }else{
+      camera.position.set(0,1.08+EYE,.4);
+      camera.rotation.set(0,Math.PI,0); // Face +Z, down the stairs.
+    }
+    playerRef.current={x:camera.position.x,z:camera.position.z};
+    held.current={};
+    lastZone.current='';
+  },[camera,resetToken,playerRef]);
   useEffect(()=>{
     const down=e=>{
-      if(['KeyW','KeyS','KeyA','KeyD','ShiftLeft','KeyC'].includes(e.code))e.preventDefault();
+      if(['KeyW','KeyS','KeyA','KeyD','ShiftLeft','KeyC','KeyE'].includes(e.code))
+        e.preventDefault();
+      if(e.code==='KeyE' && !e.repeat && started && !halted && document.pointerLockElement){
+        callbackRef.current.onUse?.();
+      }
       held.current[e.code]=true;
     };
     const up=e=>{held.current[e.code]=false;};
     const blur=()=>{held.current={};};
-    window.addEventListener('keydown',down);window.addEventListener('keyup',up);
+    window.addEventListener('keydown',down);
+    window.addEventListener('keyup',up);
     window.addEventListener('blur',blur);
-    return ()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);};
-  },[]);
+    return ()=>{
+      window.removeEventListener('keydown',down);
+      window.removeEventListener('keyup',up);
+      window.removeEventListener('blur',blur);
+    };
+  },[started,halted]);
   useFrame((_,delta)=>{
-    if(!started||!document.pointerLockElement)return;
+    if(!started)return;
     const dt=Math.min(delta,.04);
-    const moveX=(held.current.KeyD?1:0)-(held.current.KeyA?1:0);
-    const moveZ=(held.current.KeyW?1:0)-(held.current.KeyS?1:0);
-    const norm=Math.hypot(moveX,moveZ);
-    camera.getWorldDirection(forward);forward.y=0;forward.normalize();
-    lateral.set(forward.z,0,-forward.x);
-    let actual=0;
-    if(norm){
-      const speed=held.current.KeyC?1.0:held.current.ShiftLeft?4.2:2.5;
-      const dx=(forward.x*moveZ+lateral.x*moveX)*speed*dt/norm;
-      const dz=(forward.z*moveZ+lateral.z*moveX)*speed*dt/norm;
-      const before={x:camera.position.x,z:camera.position.z};
-      const next=stepMove(before,dx,dz);
-      actual=Math.hypot(next.x-before.x,next.z-before.z);
-      camera.position.x=next.x;camera.position.z=next.z;
+    camera.getWorldDirection(look);
+    sound.current?.updateListener?.(camera.position,look);
+    if(halted||!document.pointerLockElement)return;
+    if(!hiding){
+      const strafe=(held.current.KeyD?1:0)-(held.current.KeyA?1:0);
+      const forward=(held.current.KeyW?1:0)-(held.current.KeyS?1:0);
+      cameraMovement(camera.quaternion,strafe,forward,move);
+      const speed=held.current.KeyC?1.05:held.current.ShiftLeft?4.2:2.5;
+      let distanceMoved=0;
+      if(strafe||forward){
+        const before={x:camera.position.x,z:camera.position.z};
+        const next=stepMove(before,move.x*speed*dt,move.z*speed*dt);
+        distanceMoved=Math.hypot(next.x-before.x,next.z-before.z);
+        camera.position.x=next.x;
+        camera.position.z=next.z;
+      }
+      camera.position.y=THREE.MathUtils.damp(
+        camera.position.y,
+        floorHeight(camera.position.x,camera.position.z)+(held.current.KeyC?1.06:EYE),
+        11,dt
+      );
+      if(distanceMoved){
+        stepDistance.current+=distanceMoved;
+        if(stepDistance.current>.78){
+          stepDistance.current-=.78;
+          callbackRef.current.onSteps?.();
+        }
+      }
+    }else{
+      camera.position.y=THREE.MathUtils.damp(
+        camera.position.y,floorHeight(camera.position.x,camera.position.z)+1.12,9,dt
+      );
     }
-    const eye=held.current.KeyC?1.06:EYE;
-    const goal=floorHeight(camera.position.x,camera.position.z)+eye;
-    camera.position.y=THREE.MathUtils.damp(camera.position.y,goal,11,dt);
-    if(actual){
-      stepDistance.current+=actual;
-      if(stepDistance.current>.78){stepDistance.current-=.78;callbackRef.current.onSteps();}
-    }
+    playerRef.current={x:camera.position.x,z:camera.position.z};
     positionTime.current+=dt;
-    if(positionTime.current>.18){positionTime.current=0;callbackRef.current.onPosition?.({x:camera.position.x,z:camera.position.z});}
+    if(positionTime.current>.18){
+      positionTime.current=0;
+      callbackRef.current.onPosition?.({x:camera.position.x,z:camera.position.z});
+    }
     const a=getArea(camera.position.x,camera.position.z);
     if(a && a.id!==lastZone.current){
       lastZone.current=a.id;
-      callbackRef.current.zoneChanged(a);
-      callbackRef.current.progressed(a.id);
+      callbackRef.current.zoneChanged?.(a);
     }
   });
   return <PointerLockControls/>;
