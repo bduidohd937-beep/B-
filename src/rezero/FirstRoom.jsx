@@ -422,7 +422,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     const mouseUp=e=>{if(e.button===2)drag.pressed=false;};
     const mouseMove=e=>{
       if(!drag.pressed || !(e.buttons & 2))return;
-      drag.yaw=THREE.MathUtils.clamp(drag.yaw-(e.movementX||0)*.0035,-1.65,1.65);
+      drag.yaw=THREE.MathUtils.clamp(drag.yaw-(e.movementX||0)*.0035,-2.25,2.25);
       drag.pitch=THREE.MathUtils.clamp(drag.pitch-(e.movementY||0)*.0032,-.75,.8);
     };
     const context=e=>e.preventDefault();
