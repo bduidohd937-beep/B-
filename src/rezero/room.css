@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+:root{font-family:'Noto Sans KR',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-synthesis:none;color:#e5e7da;background:#080d0f}
+*{box-sizing:border-box}
+html,body,#root{margin:0;width:100%;height:100%;overflow:hidden}
+button{font:inherit;cursor:pointer;transition:background .2s,border-color .2s,transform .2s}
+button:disabled{opacity:.3;cursor:not-allowed}
+.room-app{width:100%;height:100%;background:#080d0f;position:relative;overflow:hidden}
+.room-app canvas{display:block;width:100%;height:100%;outline:none}
+.vignette{position:absolute;pointer-events:none;inset:0;background:radial-gradient(ellipse 69% 69% at 50% 45%,transparent 35%,rgba(0,0,0,.24) 75%,rgba(1,4,5,.78) 100%);z-index:2}
+.top-title{position:absolute;top:24px;left:28px;color:#d4dacf;font-size:12px;letter-spacing:.14em;z-index:3;text-shadow:0 2px 4px #0008}
+.top-title span{margin-left:24px;color:#8fa19a;font-size:10px}
+.crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#dce4d7a0;font-size:21px;font-weight:200;z-index:3;pointer-events:none;text-shadow:0 1px 4px black}
+.bottom-instruction{position:absolute;bottom:56px;left:50%;transform:translateX(-50%);padding:10px 16px;background:rgba(4,12,12,.7);border:1px solid #9ab9a432;color:#d9e6d8;font-size:12px;letter-spacing:.04em;white-space:nowrap;z-index:3;pointer-events:none}
+footer{position:absolute;bottom:18px;left:26px;color:#d4dfd478;font-size:9px;letter-spacing:.08em;z-index:3}
+.start-overlay{z-index:10;position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:32px 20px;background:radial-gradient(ellipse at 50% 41%,rgba(15,33,32,.86),rgba(4,8,9,.98) 65%)}
+.eyebrow{font-size:11px;letter-spacing:.22em;color:#9bada3;font-weight:700}
+.start-overlay h1{font-size:clamp(37px,5.5vw,76px);font-weight:600;letter-spacing:.12em;margin:19px 0 26px;text-shadow:0 9px 24px #0009}
+.start-overlay p{max-width:620px;color:#a4b2aa;line-height:2.1;font-size:14px}
+.start-overlay button{margin:35px 0 22px;background:transparent;border:1px solid #c0d2c1;color:#e5ece2;padding:15px 68px;font-weight:600;letter-spacing:.18em}
+.start-overlay button:hover,.screen-actions button:hover:not(:disabled),.logbook button:hover{background:#314a40}
+.start-overlay small{color:#74867e;font-size:11px}
+.screen-backdrop{z-index:12;position:absolute;inset:0;background:rgba(2,7,8,.93);display:flex;align-items:center;justify-content:center;padding:22px;overflow:auto}
+.surveillance-shell{width:min(1120px,100%);max-height:97vh;overflow:auto;padding:24px;background:#0d1819;border:1px solid #54796b63;box-shadow:0 24px 110px #000c}
+.screen-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:15px;letter-spacing:.13em;font-size:13px;color:#c4dac6}
+.screen-header span{font-size:10px;color:#8ba194}
+.feed-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.camera-graphic{position:relative;overflow:hidden;border:8px solid #141f21;background:#202f29;aspect-ratio:16/9;box-shadow:inset 0 0 45px #000b}
+.camera-graphic svg{display:block;width:100%;height:100%;filter:contrast(.85) saturate(.6)}
+.camera-graphic.unlit svg{filter:brightness(.47) contrast(1.1) saturate(.55)}
+.camera-graphic.lit{background:#263d32}
+.camera-tag,.camera-clock{position:absolute;top:12px;color:#b3d1bd;font-family:monospace;font-size:11px;text-shadow:1px 1px 2px #000}
+.camera-tag{left:10px}.camera-clock{right:10px}
+.scanlines{position:absolute;inset:0;pointer-events:none;opacity:.19;background:repeating-linear-gradient(180deg,transparent 0,transparent 3px,#030908 3px,#030908 4px)}
+.sensor-row{display:flex;gap:16px;justify-content:space-between;padding:15px 2px;border-bottom:1px solid #29483c;font-size:12px;letter-spacing:.06em;color:#c2d5c5}
+.sensor-row .danger{color:#e2a2a0}
+.screen-info{font-size:12px;line-height:1.9;color:#a2baaa;padding:17px 1px 14px}
+.screen-info .clue{padding-top:6px;color:#d7eacb}
+.screen-actions{display:flex;gap:10px;flex-wrap:wrap}
+.screen-actions button,.logbook button{border:1px solid #536e5d;background:#283f35;color:#e0e9db;padding:11px 18px;font-size:12px}
+.screen-actions button.outline{margin-left:auto;background:transparent}
+.logbook{width:min(540px,100%);background:#c6bea3;color:#242720;padding:37px;box-shadow:0 16px 75px #000b;transform:rotate(-.3deg)}
+.logbook .eyebrow{color:#666c5b}
+.logbook h2{font-size:29px;font-weight:500;margin-bottom:30px}
+.logbook p{font-size:13px;border-bottom:1px solid #75786650;padding:13px 0}
+.logbook p.muted{color:#686c5f;border:none}
+.logbook button{margin-top:22px;color:white}
+.perf-debug{position:absolute;z-index:14;right:16px;top:16px;padding:10px 13px;background:#060b0bdc;color:#b2c8ab;font:11px/1.8 monospace;pointer-events:none}
+@media(max-width:680px){
+  .feed-grid{grid-template-columns:1fr}
+  .surveillance-shell{padding:13px}
+  .screen-header{flex-direction:column;align-items:flex-start}
+  .sensor-row{flex-direction:column}
+  .screen-actions button.outline{margin-left:0}
+  .top-title{font-size:10px;left:12px;top:14px}
+  .top-title span{display:block;margin:5px 0}
+  .bottom-instruction{font-size:10px;padding:8px;white-space:normal;text-align:center;width:90%}
+  footer{font-size:8px;left:10px}
+}

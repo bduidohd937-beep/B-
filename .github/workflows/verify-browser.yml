@@ -4,6 +4,9 @@ on:
     paths:
       - 'src/**'
       - 'scripts/smoke-browser.mjs'
+      - 'scripts/smoke-rezero.mjs'
+      - 'rezero.html'
+      - 'vite.config.js'
       - '.github/workflows/verify-browser.yml'
       - 'package.json'
       - 'package-lock.json'
@@ -23,3 +26,12 @@ jobs:
         run: |
           npm install --no-save --no-package-lock playwright-core
           node scripts/smoke-browser.mjs
+      - name: RE:ZERO first-room Chrome boot and capture
+        run: node scripts/smoke-rezero.mjs
+      - name: Upload first-room preview artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rezero-first-room-preview
+          path: rezero-first-room.png
+          if-no-files-found: ignore
