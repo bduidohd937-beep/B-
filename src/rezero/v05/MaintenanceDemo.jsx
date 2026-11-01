@@ -1,20 +1,21 @@
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {createRoot} from 'react-dom/client';
 import * as THREE from 'three';
 import {Canvas,useFrame,useThree} from '@react-three/fiber';
 import {PointerLockControls} from '@react-three/drei';
-import {AREAS,WALLS,OBSTACLES,STOPS,AREA_BY_ID,DEMO_ROUTE,walkable,stepMove,floorHeight,getArea} from './level.js';
+import {AREAS,WALLS,OBSTACLES,AREA_BY_ID,stepMove,floorHeight,getArea} from './level.js';
+import {cameraMovement} from './controls.js';
+import {createChase,wakeChase,advanceChase,canOperateBreaker,canUseHiding,spotted,HIDE_POS} from './chase.js';
 import './style.css';
 
 const CUBE=new THREE.BoxGeometry(1,1,1);
 const EYE=1.68;
-const OBJECTIVE_STEPS=[
-  '계단을 내려가 지하 전기실을 찾아가자',
-  '전기실 확인 완료 — 우회통로를 통해 정비실로 이동',
-  '정비실 통과 — 관리 창고로 이동',
-  '창고 확인 완료 — 중앙복도를 통해 경비실로 복귀',
-  '이동 동선 검증 성공 · 현재는 괴물과 정전 이벤트 미구현'
-];
+const MISSION={
+  seekBreaker:'B1 전기실로 내려가 보조 제어반을 조사하자. 가까이 가서 E키.',
+  escaping:'뛰어! 무언가 전기실을 향해 달려온다. 정비 통로를 통해 관리 창고로!',
+  atStorage:'관리 창고에서 선반 뒤 은신 지점을 찾아 E키로 숨자.',
+  hidden:'조용히 숨자. 발소리가 멀어질 때까지 기다려…',
+  survived:'첫 추격 생존 성공! 다음 패치에서 전원 복구와 최종 탈출 진행 예정.'
+};
 
 function proceduralTexture(base,seed){
   const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
@@ -113,7 +114,7 @@ function RoomArchitecture({m}){
     </group>)}
   </>;
 }
-function WorldProps({m}){
+function WorldProps({m,powerFailure}){
   return <>
     {/* The office preserves the recognizable CCTV duty station without duplicating the old game systems. */}
     <Box x={-1.5} y={1.08+.79/2} z={-1.95} w={2.55} h={.79} d={.76} mat={m.wood}/>
@@ -139,18 +140,22 @@ function WorldProps({m}){
       </group>;
     })}
     <EmergencyLamp x={0} z={-.9} at={1.08+2.54} m={m}/>
-    <EmergencyLamp x={0} z={7.7} at={2.51} m={m}/>
-    <EmergencyLamp x={0} z={14} m={m}/>
-    <EmergencyLamp x={0} z={19.7} m={m}/>
-    <EmergencyLamp x={9} z={16} m={m}/>
-    <EmergencyLamp x={9} z={26.5} m={m}/>
-    <EmergencyLamp x={0} z={27} m={m}/>
+    <EmergencyLamp x={0} z={7.7} at={2.51} red={powerFailure} m={m}/>
+    <EmergencyLamp x={0} z={14} red={powerFailure} m={m}/>
+    <EmergencyLamp x={0} z={19.7} red={powerFailure} m={m}/>
+    <EmergencyLamp x={9} z={16} red={powerFailure} m={m}/>
+    <EmergencyLamp x={9} z={26.5} red={powerFailure} m={m}/>
+    <EmergencyLamp x={0} z={27} red={powerFailure} m={m}/>
     <EmergencyLamp x={-4.3} z={16.5} red m={m}/>
     <EmergencyLamp x={5.0} z={16.5} at={2.55} m={m}/>
     <EmergencyLamp x={4.8} z={27} at={2.55} m={m}/>
     {/* Sealed G: you can approach it but not enter, until a later story patch. */}
     <Box x={-5.88} y={1.12} z={16.5} w={.20} h={2.26} d={2.62} mat={m.rusty}/>
     <Box x={-5.74} y={1.05} z={16.15} w={.04} h={.12} d={.22} mat={m.red}/>
+    {/* E-key breaker and real hiding target */}
+    <Box x={10.11} y={1.35} z={14.88} w={.44} h={.77} d={.21} mat={m.dark}/>
+    <Box x={10.11} y={1.45} z={14.75} w={.21} h={.31} d={.035} mat={powerFailure?m.red:m.green}/>
+    <Box x={-1.27} y={1.52} z={27.16} w={.08} h={.34} d={.36} mat={m.rusty}/>
     {/* An OPEN security shutter during the route-proof prototype. */}
     <Box x={0} y={2.53} z={11.0} w={2.20} h={.72} d={.20} mat={m.rusty}/>
     <Box x={-1.20} y={1.5} z={11} w={.17} h={2.74} d={.23} mat={m.metal}/>
@@ -175,7 +180,69 @@ function Flashlight({enabled}){
       intensity={enabled?19:0} angle={.33} penumbra={.53} distance={11} decay={2}/>
   </>;
 }
-function Space({flashlight}){
+function MonsterActor({monster,playerRef,hidingRef,paused,onEncounter,onMonsterPhase,sound}){
+  const root=useRef(null),body=useRef(null),left=useRef(null),right=useRef(null);
+  const previous=useRef('dormant');
+  const march=useRef(0);
+  useFrame((_,dt)=>{
+    const m=monster.current;
+    const cues=advanceChase(m,dt,playerRef.current,{hiding:hidingRef.current,paused});
+    for(const cue of cues){
+      sound.current?.spatial?.(cue.type,cue.x,cue.z);
+      if(cue.type==='caught')onEncounter();
+    }
+    if(m.phase!==previous.current){
+      previous.current=m.phase;
+      onMonsterPhase(m.phase);
+    }
+    if(!root.current)return;
+    root.current.visible=!['dormant','caught'].includes(m.phase);
+    root.current.position.set(m.pos.x,0,m.pos.z);
+    // Monster's local face points along -Z. Follow the actual navigation heading.
+    root.current.rotation.y=Math.atan2(-m.heading.x,-m.heading.z);
+    const moving=['investigate','chase','search'].includes(m.phase);
+    if(moving)march.current+=dt*(m.phase==='chase'?13:5);
+    const sway=moving?Math.sin(march.current)*.12:Math.sin(m.t*2)*.012;
+    if(left.current)left.current.rotation.x=sway;
+    if(right.current)right.current.rotation.x=-sway;
+    if(body.current)body.current.rotation.z=sway*.13;
+  });
+  return <group ref={root} visible={false}>
+    {/* Temporary readable uncanny silhouette — replace with animated GLB in polish. */}
+    <group ref={body}>
+      <mesh position={[0,1.32,0]} castShadow>
+        <cylinderGeometry args={[.22,.37,1.48,11]}/>
+        <meshStandardMaterial color="#151b19" metalness={.05} roughness={.93}/>
+      </mesh>
+      <mesh position={[0,2.14,-.07]} rotation={[.0,0,.20]} castShadow>
+        <sphereGeometry args={[.245,16,11]}/>
+        <meshStandardMaterial color="#111716" roughness={.99}/>
+      </mesh>
+      <mesh position={[0,1.88,-.07]} castShadow>
+        <cylinderGeometry args={[.11,.13,.38,11]}/>
+        <meshStandardMaterial color="#0c1110" roughness={.96}/>
+      </mesh>
+      {[-1,1].map((side)=><mesh key={side} position={[side*.17,.4,0]} castShadow>
+        <cylinderGeometry args={[.13,.16,.74,9]}/>
+        <meshStandardMaterial color="#0e1413" roughness={.89}/>
+      </mesh>)}
+    </group>
+    <group ref={left} position={[-.35,1.85,0]}>
+      <mesh position={[-.055,-.53,0]} castShadow>
+        <cylinderGeometry args={[.085,.105,1.20,8]}/>
+        <meshStandardMaterial color="#131918" roughness={.97}/>
+      </mesh>
+    </group>
+    <group ref={right} position={[.35,1.85,0]}>
+      <mesh position={[.055,-.6,0]} castShadow>
+        <cylinderGeometry args={[.09,.115,1.34,8]}/>
+        <meshStandardMaterial color="#131918" roughness={.97}/>
+      </mesh>
+    </group>
+  </group>;
+}
+
+function Space({flashlight,powerFailure,monster,onEncounter,onMonsterPhase,playerRef,hidingRef,halted,sound}){
   const mats=useMaterials();
   return <>
     <color attach="background" args={['#0b1112']}/>
@@ -183,7 +250,10 @@ function Space({flashlight}){
     <ambientLight intensity={.33} color="#c5d0c1"/>
     <hemisphereLight args={['#adbdad','#0d1615',.37]}/>
     <RoomArchitecture m={mats}/>
-    <WorldProps m={mats}/>
+    <WorldProps m={mats} powerFailure={powerFailure}/>
+    <MonsterActor monster={monster} playerRef={playerRef} hidingRef={hidingRef}
+      paused={halted} onEncounter={onEncounter} onMonsterPhase={onMonsterPhase}
+      sound={sound}/>
     <Flashlight enabled={flashlight}/>
   </>;
 }
