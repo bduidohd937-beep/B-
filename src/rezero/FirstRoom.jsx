@@ -335,7 +335,7 @@ function CameraGraphic({ id, lampOn }) {
       {!live && <><rect x="143" y="54" width="63" height="113" fill="#3d4943" stroke="#a7b7a9" strokeWidth="4"/><circle cx="194" cy="111" r="3" fill="#d1d8c3"/></>}
     </svg>
     <span className="camera-tag">{live?'CAM 01 · B1 복도':'CAM 02 · B1 방화문'}</span>
-    <span className="camera-clock">{live?'03:17:42 · LIVE':'03:05:30 · LIVE'}</span>
+    <span className="camera-clock">{live?'03:17:42 · LIVE':'03:17:42 · LIVE'}</span>
     <div className="scanlines"/>
   </div>;
 }
