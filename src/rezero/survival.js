@@ -11,7 +11,7 @@ export const ENEMY_WALK_SPEED=1.12;
 export const PLAYER_RUN_SPEED=3.55;
 
 export function createResponse() {
-  return {locked:false, speakerCooldown:0, speakerPulse:0, heardPulse:0, lastNoise:0};
+  return {locked:false, speakerCooldown:0, speakerPulse:0, heardPulse:0, lastNoise:0, reportedReady:true};
 }
 export function canLockDoor(door) {
   return door.phase==='closed' && Math.abs(door.angle)<.08;
@@ -24,6 +24,7 @@ export function toggleSecurityLock(response,door) {
 export function activateSpeaker(response) {
   if(response.speakerCooldown>0)return false;
   response.speakerPulse++;
+  response.reportedReady=false;
   response.speakerCooldown=16;
   return true;
 }
@@ -153,4 +154,5 @@ export function resetResponseAfterCapture(response){
   response.speakerPulse=0;
   response.heardPulse=0;
   response.lastNoise=0;
+  response.reportedReady=true;
 }
