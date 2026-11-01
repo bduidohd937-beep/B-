@@ -26,6 +26,8 @@ export function passageAllowed(position, angle = 0) {
   const inRoom = x >= ROOM_BOUNDS.minX && x <= ROOM_BOUNDS.maxX && z >= ROOM_BOUNDS.minZ && z <= ROOM_BOUNDS.maxZ;
   const inHall = x >= HALL_BOUNDS.minX && x <= HALL_BOUNDS.maxX && z >= HALL_BOUNDS.minZ && z <= HALL_BOUNDS.maxZ;
   if (!(inRoom || inHall)) return false;
+  // Physical locker near right-hand corridor wall: walk around it.
+  if(inHall && x>=8.42 && x<=9.38 && z>=1.84 && z<=2.68)return false;
   // Solid desk: camera interaction is from the player's side, not through the worktop.
   if (inRoom && x >= -2.77 && x <= 1.35 && z <= -1.06) return false;
   const opening = typeof angle === 'boolean' ? (angle ? DOOR_OPEN_ANGLE : 0) : angle;

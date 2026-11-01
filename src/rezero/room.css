@@ -75,3 +75,13 @@ footer{position:absolute;bottom:18px;left:26px;color:#d4dfd478;font-size:9px;let
 .console-foot{color:#7f948a;font-size:10px;letter-spacing:.02em;margin:11px 0 0}
 .resume-pointer{z-index:15;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#203c32;border:1px solid #a7b9a9;color:#eff5e8;padding:15px 30px;font-size:14px}
 @media (max-width:720px){.console-ui{bottom:40px;padding:11px;width:calc(100% - 16px)}.console-title{flex-direction:column;align-items:flex-start}.console-actions button.quit{margin-left:0}.console-foot{display:none}.console-status{flex-wrap:wrap;gap:7px}.top-title{pointer-events:none}}
+
+
+/* V0.4.2-C: low-profile survival hints, only during actual threat. */
+.survival-danger{position:absolute;z-index:8;top:78px;left:50%;transform:translateX(-50%);background:rgba(30,10,10,.78);border:1px solid rgba(220,102,88,.45);color:#f3d9c8;padding:10px 22px;font-size:12px;letter-spacing:.035em;text-align:center;max-width:85vw;pointer-events:none}
+.caught-overlay{position:absolute;z-index:20;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse,#230c0ced 0%,#080404f7 72%);padding:24px}
+.caught-inner{text-align:center;max-width:510px}
+.caught-inner h2{font-size:clamp(25px,4vw,46px);font-weight:500;letter-spacing:.12em;color:#f5dddd;margin:24px 0}
+.caught-inner p{color:#b8a6a6;font-size:13px;line-height:1.9}
+.caught-inner button{margin-top:28px;padding:14px 28px;background:#271515;border:1px solid #a26969;color:#fff4e9}
+.caught-inner button:hover{background:#543030}

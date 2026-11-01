@@ -5,7 +5,8 @@ import { PointerLockControls, useFBO } from '@react-three/drei';
 import * as THREE from 'three';
 import { focusTarget, passageAllowed, canRecordVideoMismatch, doorCloseObstructed, DOOR_OPEN_ANGLE } from './rules.js';
 import { aimCameraAt, monitorLookTarget, SEAT } from './seatedCamera.js';
-import { createPresence, beginPresence, advancePresence } from './presence.js';
+import { createPresence, beginPresence } from './presence.js';
+import { createResponse, advanceEncounter, canLockDoor, toggleSecurityLock, activateSpeaker, resetResponseAfterCapture, inHall } from './survival.js';
 
 const TARGETS = [
   { id: 'chair', x: -.34, z: .45, label: '관제 의자에 앉기' },
@@ -265,17 +266,24 @@ function CCTVFeeds({ m }) {
 // This is the same physical actor seen by the player and both CCTV cameras.
 // Rough shapes are intentionally masked by the coat, fog and distance.
 // Real character mesh/animation is a later art task, not claimed here.
-function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, cameraVisible }) {
+function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, cameraVisible, response, noise, crouching, onCaught, onSpeakerReady }) {
   const actor = useRef(null), coat = useRef(null);
   const lastPhase = useRef(null);
   const stepBob = useRef(0);
   useFrame((_,rawDt)=>{
     const p=presence.current;
-    const events=advancePresence(p,rawDt,{
+    const events=advanceEncounter(p,rawDt,{
       player:playerPosition.current,
+      crouching:crouching.current,
       doorClosed:doorState.current.phase==='closed',
-      cameraVisible
+      cameraVisible,
+      response:response.current,
+      noise:noise.current
     });
+    if(response.current.speakerCooldown===0 && !response.current.reportedReady){
+      response.current.reportedReady=true;
+      onSpeakerReady();
+    }
     for(const ev of events){
       if(ev.type==='step'){
         audio.current?.soundAt(ev.x,ev.z, ev.x<6?260:320, .17);
@@ -284,6 +292,12 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
         audio.current?.soundAt(ev.x,ev.z,570,.21);
       } else if(ev.type==='leave'){
         audio.current?.soundAt(ev.x,ev.z,185,.35);
+      } else if(ev.type==='speaker'){
+        audio.current?.soundAt(ev.x,ev.z,1100,.85);
+      } else if(ev.type==='alert'){
+        audio.current?.soundAt(ev.x,ev.z,550,.26);
+      } else if(ev.type==='caught'){
+        onCaught();
       } else if(ev.type==='glimpse'){
         // A subtle dry scrape marks a real, nearby sighting: no forced jumpscare.
         audio.current?.soundAt(ev.x,ev.z,710,.24);
@@ -294,11 +308,11 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
       onPhase(p.phase);
     }
     if(!actor.current)return;
-    actor.current.visible = p.phase!=='dormant'&&p.phase!=='departed';
+    actor.current.visible = p.phase!=='dormant'&&p.phase!=='departed'&&p.phase!=='caught';
     actor.current.position.set(p.x,0,p.z);
-    actor.current.rotation.y = p.phase==='withdraw' ? Math.PI : 0;
+    actor.current.rotation.y = ['withdraw','divert'].includes(p.phase) ? Math.PI : 0;
     if(coat.current){
-      const moving=p.phase==='approach'||p.phase==='withdraw';
+      const moving=['approach','withdraw','chase','search','investigate','divert'].includes(p.phase);
       const sway=moving ? Math.sin(p.x*7.5)*.042 : Math.sin(p.t*1.6)*.012;
       coat.current.rotation.z=sway;
       coat.current.position.y=Math.sin(p.x*9.2)*.012;
@@ -340,7 +354,7 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
   </group>;
 }
 
-function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresencePhase, cameraVisible }) {
+function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresencePhase, cameraVisible, response, noise, crouching, onCaught, onSpeakerReady }) {
   const m = useMaterials();
   return <>
     <color attach="background" args={['#0b1010']}/>
@@ -355,7 +369,9 @@ function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresenceP
     <Envelope m={m}/>
     <Decor m={m}/>
     <SwingDoor doorState={doorState} playerPosition={playerPosition} presence={presence} audio={audio} m={m}/>
-    <PresenceActor presence={presence} doorState={doorState} playerPosition={playerPosition} audio={audio} onPhase={onPresencePhase} cameraVisible={cameraVisible}/>
+    <PresenceActor presence={presence} doorState={doorState} playerPosition={playerPosition}
+      audio={audio} onPhase={onPresencePhase} cameraVisible={cameraVisible}
+      response={response} noise={noise} crouching={crouching} onCaught={onCaught} onSpeakerReady={onSpeakerReady}/>
     <CCTVFeeds m={m}/>
     <Block p={[3.26,2.2,1.0]} s={[.19,.15,1.75]} mat={m.trim}/>
     <Block p={[3.34,2.38,1.06]} s={[.18,.12,.26]} mat={m.trim}/>
@@ -364,16 +380,24 @@ function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresenceP
     <Block p={[10,1.48,2.90]} s={[.89,.55,.05]} mat={m.trim}/>
     <Block p={[5.3,1.26,-.14]} s={[.46,.58,.12]} mat={m.trim}/>
     <Block p={[11.2,1.48,3.02]} s={[.64,.9,.1]} mat={m.trim}/>
+    {/* Security speaker: audio coordinates and mesh correspond to one fixture. */}
+    <Block p={[12.75,2.18,3.01]} s={[.52,.42,.18]} mat={m.rubber}/>
+    <Block p={[12.75,2.18,2.90]} s={[.36,.27,.04]} mat={m.steel}/>
+    {/* Solid steel locker supplies real visual concealment on one side. */}
+    <Block p={[8.90,1.02,2.49]} s={[.83,2.0,.87]} mat={m.steel}/>
+    <Block p={[8.49,1.14,2.49]} s={[.04,1.50,.65]} mat={m.trim}/>
+    <Block p={[8.45,1.10,2.25]} s={[.04,.12,.04]} mat={m.amber}/>
   </>;
 }
 
-function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocus, onInteract, onStats, audio }) {
+function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocus, onInteract, onStats, audio, noise, crouching, resetToken }) {
   const { camera } = useThree();
   const keys = useRef({});
   const looking = useRef(new THREE.Vector3()), right = useRef(new THREE.Vector3());
   const lastFocus = useRef(null);
   const savedPose = useRef(null), previousPanel = useRef(null);
   const fpsTime = useRef(0), fpsFrames = useRef(0);
+  const steps = useRef(0);
   const seatPosition = useMemo(()=>new THREE.Vector3(SEAT.x,SEAT.y,SEAT.z),[]);
   const lookDrag = useRef({pressed:false,yaw:0,pitch:0});
   const seatTarget = useMemo(()=>new THREE.Vector3(),[]);
@@ -389,7 +413,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     camera.position.set(-.2,1.68,1.55);
     camera.rotation.set(0,0,0);
     playerPosition.current.copy(camera.position);
-  },[camera,playerPosition]);
+  },[camera,playerPosition,resetToken]);
   useLayoutEffect(()=>{
     if(panel && !previousPanel.current) {
       savedPose.current = {
@@ -451,7 +475,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
   },[selectedFeed]);
   useEffect(()=>{
     const down = e => {
-      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','KeyE'].includes(e.code)) e.preventDefault();
+      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ControlLeft','KeyC','KeyE'].includes(e.code)) e.preventDefault();
       keys.current[e.code] = true;
       if (e.code === 'KeyE' && !e.repeat && active && !panel && document.pointerLockElement) {
         if(lastFocus.current) onInteract(lastFocus.current);
@@ -499,13 +523,27 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     const forward=(keys.current.KeyW?1:0)-(keys.current.KeyS?1:0);
     const sideways=(keys.current.KeyD?1:0)-(keys.current.KeyA?1:0);
     const sum=Math.hypot(forward,sideways);
+    const crouch=Boolean(keys.current.ControlLeft||keys.current.KeyC);
+    crouching.current=crouch;
+    const eyeHeight=crouch?.98:1.68;
+    camera.position.y=THREE.MathUtils.damp(camera.position.y,eyeHeight,12,dt);
     if(sum){
-      const speed=keys.current.ShiftLeft?3.55:2.18;
+      const speed=crouch?.92:keys.current.ShiftLeft?3.55:2.18;
       const dx=(looking.current.x*forward+right.current.x*sideways)/sum*speed*dt;
       const dz=(looking.current.z*forward+right.current.z*sideways)/sum*speed*dt;
       const x=camera.position.x,z=camera.position.z;
       if(passageAllowed({x:x+dx,z},doorState.current.angle))camera.position.x+=dx;
       if(passageAllowed({x:camera.position.x,z:z+dz},doorState.current.angle))camera.position.z+=dz;
+      const traveled=Math.hypot(camera.position.x-x,camera.position.z-z);
+      if(inHall(camera.position)){
+        steps.current+=traveled;
+        if(steps.current>=.75){
+          steps.current-=.75;
+          noise.current={seq:noise.current.seq+1,
+            x:camera.position.x,z:camera.position.z,
+            range:crouch?1.1:keys.current.ShiftLeft?8.5:3.8};
+        }
+      }
     }
     playerPosition.current.copy(camera.position);
     const focus=focusTarget({
@@ -565,9 +603,13 @@ function createRoomAudio() {
   };
 }
 
-function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, onEvidence, onClose }) {
+function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, onEvidence, onClose, locked, speakerReady, onLock, onSpeaker }) {
   const [hint,setHint]=useState(0);
   const [feedback,setFeedback]=useState('');
+  function control(action) {
+    const result=action();
+    if(typeof result==='string')setFeedback(result);
+  }
   function record() {
     if(!tested) {setFeedback('아직 비교 실험이 실시되지 않았다.');return;}
     if(!selected){setFeedback('확인할 카메라를 먼저 선택하세요.');return;}
@@ -585,6 +627,12 @@ function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, 
       <button className={selected==='cam2'?'selected':''} onClick={()=>{onSelected('cam2');setFeedback('');}}>CAM 02 확대</button>
       <button onClick={()=>{onLamp();setFeedback('');}}>L-07 점검등 {lampOn?'OFF':'ON'}</button>
       <button onClick={record} disabled={evidence}>영상 이상 기록</button>
+      <button className={locked?'selected':''} onClick={()=>control(onLock)}>
+        {locked?'경비실 문 잠금 해제':'경비실 문 잠그기'}
+      </button>
+      <button onClick={()=>control(onSpeaker)} disabled={!evidence||!speakerReady}>
+        {speakerReady?'복도 스피커 유인':'방송 재충전 중'}
+      </button>
       <button className="quiet" onClick={()=>setHint(v=>Math.min(2,v+1))}>힌트</button>
       <button className="quit" onClick={onClose}>의자에서 일어서기</button>
     </div>
@@ -606,16 +654,24 @@ export default function FirstRoom() {
   const [fps,setFps] = useState(null);
   const [resumeHint,setResumeHint] = useState(false);
   const [presencePhase,setPresencePhase] = useState('dormant');
+  const [locked,setLocked]=useState(false);
+  const [speakerReady,setSpeakerReady]=useState(true);
+  const [caught,setCaught]=useState(false);
+  const [resetToken,setResetToken]=useState(0);
   const sound=useRef(null), firstCue=useRef(false);
   const doorState=useRef({angle:0,velocity:0,phase:'closed',holdFor:0});
   const playerPosition=useRef(new THREE.Vector3(-.2,1.68,1.55));
   const presence=useRef(createPresence());
+  const response=useRef(createResponse());
+  const noise=useRef({seq:0,x:0,z:0,range:0});
+  const crouching=useRef(false);
   useEffect(()=>{
     const onKey=e=>{if(e.code==='F3'){e.preventDefault();setDebug(v=>!v);}if(e.code==='Escape' && panel)setPanel(null);};
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
   },[panel]);
   useEffect(()=>()=>{sound.current?.close?.();},[]);
+  useEffect(()=>{if(caught)document.exitPointerLock?.();},[caught]);
   const lockGamePointer=()=>{
     const canvas=document.querySelector('.room-app canvas');
     try {
@@ -637,6 +693,10 @@ export default function FirstRoom() {
       setPanel(id==='log'?'log':'camera');
     }
     if(id==='door'){
+      if(response.current.locked){
+        sound.current?.soundAt(3.1,1.1,680,.12);
+        return;
+      }
       const d=doorState.current;
       if(d.phase==='closed'||d.phase==='closing'){
         d.phase='opening';
@@ -657,6 +717,34 @@ export default function FirstRoom() {
     }
     return valid;
   };
+  const switchLock=()=>{
+    if(!toggleSecurityLock(response.current,doorState.current)){
+      return '문이 완전히 닫힌 뒤에만 잠글 수 있습니다.';
+    }
+    setLocked(response.current.locked);
+    sound.current?.soundAt(3.15,1.0,480,.22);
+    return response.current.locked?'경비실 출입문을 잠갔습니다.':'경비실 출입문 잠금을 해제했습니다.';
+  };
+  const useSpeaker=()=>{
+    if(!evidence)return '영상 오류를 먼저 조사해야 합니다.';
+    if(!activateSpeaker(response.current))return '방송 장치가 아직 재충전 중입니다.';
+    setSpeakerReady(false);
+    return '복도 끝 스피커에서 유도음을 재생했습니다.';
+  };
+  const retryEncounter=()=>{
+    presence.current=createPresence();
+    beginPresence(presence.current);
+    resetResponseAfterCapture(response.current);
+    doorState.current={angle:0,velocity:0,phase:'closed',holdFor:0};
+    noise.current={seq:0,x:0,z:0,range:0};
+    crouching.current=false;
+    setPresencePhase('watch');
+    setLocked(false);
+    setSpeakerReady(true);
+    setResetToken(n=>n+1);
+    flushSync(()=>setCaught(false));
+    lockGamePointer();
+  };
   const closePanel=()=>{
     // Mount the FPS control before requesting lock in this same click gesture.
     flushSync(()=>setPanel(null));
@@ -671,18 +759,22 @@ export default function FirstRoom() {
     <Canvas shadows dpr={[1,1.5]} camera={{fov:72,near:.045,far:35,position:[-.2,1.68,1.55]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <Scene lampOn={lampOn} doorState={doorState} playerPosition={playerPosition} audio={sound}
         presence={presence} onPresencePhase={setPresencePhase}
-        cameraVisible={panel==='camera' && selectedFeed!=='cam2'}/>
-      <Player active={started} panel={panel} selectedFeed={selectedFeed} doorState={doorState} playerPosition={playerPosition}
-        onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}/>
+        cameraVisible={panel==='camera' && selectedFeed!=='cam2'}
+        response={response} noise={noise} crouching={crouching}
+        onCaught={()=>setCaught(true)}
+        onSpeakerReady={()=>setSpeakerReady(v=>v? v : true)}/>
+      <Player active={started&&!caught} panel={panel} selectedFeed={selectedFeed} doorState={doorState} playerPosition={playerPosition}
+        onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}
+        noise={noise} crouching={crouching} resetToken={resetToken}/>
     </Canvas>
     <div className="vignette" aria-hidden="true"/>
     <div className="top-title">서림주택 / 야간 관리동 <span>03:17 · INCIDENT 001</span></div>
     {started && !panel && <><div className="crosshair" aria-hidden="true">+</div>
-      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · 마우스 시점 · Shift 달리기 · E 상호작용'}</div>
+      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · Shift 달리기 · C 웅크리기 · E 상호작용'}</div>
     </>}
-    {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>첫 사건: {presencePhase}<br/>완전 추격 AI 미구현</div>}
+    {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>첫 사건: {presencePhase}<br/>문 잠금: {locked?'ON':'OFF'} / 방송: {speakerReady?'READY':'COOLDOWN'}</div>}
     {!started && <div className="start-overlay">
-      <div className="eyebrow">B∞ RE:ZERO · FIRST INCIDENT V0.4.2-B</div>
+      <div className="eyebrow">B∞ RE:ZERO · FIRST INCIDENT V0.4.2-C</div>
       <h1>마지막 야간근무</h1>
       <p>03:17. 지하 방화문 센서에서 열림 신호가 들어왔습니다.<br/>CCTV 화면은 여전히 문이 닫혀 있다고 주장합니다.</p>
       <button onClick={start}>근무 시작</button>
@@ -690,7 +782,8 @@ export default function FirstRoom() {
     </div>}
     {panel==='camera'&&<Surveillance lampOn={lampOn} tested={tested} evidence={evidence}
       selected={selectedFeed} onSelected={setSelectedFeed}
-      onLamp={turnLamp} onEvidence={noteEvidence} onClose={closePanel}/>}
+      onLamp={turnLamp} onEvidence={noteEvidence} onClose={closePanel}
+      locked={locked} speakerReady={speakerReady} onLock={switchLock} onSpeaker={useSpeaker}/>}
     {panel==='log'&&<div className="screen-backdrop" role="dialog" aria-modal="true">
       <div className="logbook"><div className="eyebrow">야간근무 일지 · INCIDENT 001</div>
         <h2>열리지 않은 문</h2><p>03:17 — B1 방화문 센서: OPEN</p>
@@ -700,7 +793,19 @@ export default function FirstRoom() {
         <p className="muted">현장 조사와 사건 종결 기능은 V0.5 개발 대상입니다.</p>
         <button onClick={closePanel}>일지 덮기 / FPS 복귀</button></div>
     </div>}
-    {started && !panel && resumeHint && <button className="resume-pointer" onClick={lockGamePointer}>화면 클릭하여 시점 조작 계속</button>}
-    <footer>V0.4.2-B · 첫 공포 사건 검수 빌드 · 추격/사망 미구현</footer>
+    {evidence && !caught && !panel && ['chase','search','investigate'].includes(presencePhase) &&
+      <div className="survival-danger" role="status">
+        {presencePhase==='chase'?'발견됐다! 경비실로 돌아가거나 엄폐해!':'발소리를 줄이고 괴물의 이동을 확인해.'}
+      </div>}
+    {caught && <div className="caught-overlay" role="dialog" aria-label="위협에게 발견돼 붙잡혔습니다">
+      <div className="caught-inner">
+        <div className="eyebrow">INCIDENT 001 · FAILED</div>
+        <h2>그것에게 붙잡혔다.</h2>
+        <p>확보한 CCTV 증거는 유지돼. 괴물의 위치와 보안 장치만 초기화할게.</p>
+        <button onClick={retryEncounter}>CCTV 조사 이후부터 재시도</button>
+      </div>
+    </div>}
+    {started && !panel && !caught && resumeHint && <button className="resume-pointer" onClick={lockGamePointer}>화면 클릭하여 시점 조작 계속</button>}
+    <footer>V0.4.2-C · 생존·대응 검수 빌드 · 현장 조사/사건 완결 미구현</footer>
   </main>;
 }

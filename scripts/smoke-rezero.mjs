@@ -52,6 +52,14 @@ try {
   await page.getByRole('button',{name:/L-07 점검등/}).click();
   await page.getByRole('button',{name:'영상 이상 기록'}).click();
   assert.ok((await page.locator('.console-feedback').innerText()).includes('근무일지'),'Camera evidence not recorded');
+
+  // Exercise the new response panel without keyboard ESC or scene replacement.
+  await page.getByRole('button',{name:'경비실 문 잠그기'}).click();
+  await page.getByRole('button',{name:'경비실 문 잠금 해제'}).waitFor();
+  await page.getByRole('button',{name:'경비실 문 잠금 해제'}).click();
+  await page.getByRole('button',{name:'복도 스피커 유인'}).click();
+  assert.equal(await page.getByRole('button',{name:'방송 재충전 중'}).isDisabled(),true);
+
   await page.getByRole('button',{name:'CAM 01 확대'}).click();
   // Headless SwiftShader can be far below real-time; only require that
   // the encounter was armed. State progression/timing is unit-tested and
