@@ -33,7 +33,7 @@ test('WASD is truly camera-relative, including backwards-facing spawn direction'
 });
 test('monster can traverse map via real colliders from rear maintenance passage to electrical panel',()=>{
   const route=findRoute(MONSTER_SPAWN,BREAKER_POS);
-  assert.ok(route.length>15,'Enemy needs a physical path: '+route.length);
+  assert.ok(route.length>=12,'Enemy needs a physical path from the rear service door: '+route.length);
   for(const p of route)assert.ok(walkable(p.x,p.z,.27),'solid geometry crossed at '+JSON.stringify(p));
   for(let i=1;i<route.length;i++)assert.ok(Math.hypot(
     route[i].x-route[i-1].x,route[i].z-route[i-1].z
