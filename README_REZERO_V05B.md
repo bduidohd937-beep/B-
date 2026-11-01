@@ -5,7 +5,7 @@
 ## What changed
 - Fixed WASD using the camera's *actual local +X (right), -Z (forward)*; the initial security-room camera looks world +Z and the D key now moves left on the world map but **right on the screen**, as expected.
 - New independent chase module `src/rezero/v05/chase.js`: grid A* derived from real level colliders, actual visibility rays, limited spotting, pursuit, last-known-position search, no wall clipping / no scene-teleport.
-- Electrical breaker E interaction starts a power-failure scare, causes a humanoid entity to emerge through the sealed G gate, and sends it along a real path toward the electrical room.
+- Electrical breaker E interaction starts a power-failure scare, causes a humanoid entity to emerge from the dark rear electrical-room service passage, and sends it along a real path toward the electrical room.
 - Player runs at 4.2 m/s while creature chases at 3.35 m/s. Normal corridors and the existing service/storage loop let the player escape.
 - In the management storage area, get close to the rack and press E to hide; stay hidden for a few seconds to clear the **first-chase vertical slice**.
 - Capture screen; replay from the electrical room rather than returning to the start of the level.
@@ -18,7 +18,7 @@ Visit `http://localhost:5186/B-/survive.html`.
 
 1. Follow the stairs to the electrical room.
 2. Approach the wall-mounted breaker and press E.
-3. Upon alarm, turn and RUN through electrical-room south exit into the service corridor. The creature approaches from the blocked G side via central corridor.
+3. Upon alarm, turn and RUN through electrical-room south exit into the service corridor. The creature first appears from the rear service passage; retreat to the central corridor or take a risky alternative route.
 4. Loop through the service maintenance room to the storage. Find the left-hand rack near x=-1.3,z=27 and press E to hide.
 5. If captured, click retry to return to the electrical room (pre-scare checkpoint).
 
