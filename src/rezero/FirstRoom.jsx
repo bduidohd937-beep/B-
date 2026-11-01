@@ -600,9 +600,13 @@ function createRoomAudio() {
   };
 }
 
-function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, onEvidence, onClose }) {
+function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, onEvidence, onClose, locked, speakerReady, onLock, onSpeaker }) {
   const [hint,setHint]=useState(0);
   const [feedback,setFeedback]=useState('');
+  function control(action) {
+    const result=action();
+    if(typeof result==='string')setFeedback(result);
+  }
   function record() {
     if(!tested) {setFeedback('아직 비교 실험이 실시되지 않았다.');return;}
     if(!selected){setFeedback('확인할 카메라를 먼저 선택하세요.');return;}
@@ -620,6 +624,12 @@ function Surveillance({ lampOn, onLamp, tested, evidence, selected, onSelected, 
       <button className={selected==='cam2'?'selected':''} onClick={()=>{onSelected('cam2');setFeedback('');}}>CAM 02 확대</button>
       <button onClick={()=>{onLamp();setFeedback('');}}>L-07 점검등 {lampOn?'OFF':'ON'}</button>
       <button onClick={record} disabled={evidence}>영상 이상 기록</button>
+      <button className={locked?'selected':''} onClick={()=>control(onLock)}>
+        {locked?'경비실 문 잠금 해제':'경비실 문 잠그기'}
+      </button>
+      <button onClick={()=>control(onSpeaker)} disabled={!evidence||!speakerReady}>
+        {speakerReady?'복도 스피커 유인':'방송 재충전 중'}
+      </button>
       <button className="quiet" onClick={()=>setHint(v=>Math.min(2,v+1))}>힌트</button>
       <button className="quit" onClick={onClose}>의자에서 일어서기</button>
     </div>
@@ -641,16 +651,24 @@ export default function FirstRoom() {
   const [fps,setFps] = useState(null);
   const [resumeHint,setResumeHint] = useState(false);
   const [presencePhase,setPresencePhase] = useState('dormant');
+  const [locked,setLocked]=useState(false);
+  const [speakerReady,setSpeakerReady]=useState(true);
+  const [caught,setCaught]=useState(false);
+  const [resetToken,setResetToken]=useState(0);
   const sound=useRef(null), firstCue=useRef(false);
   const doorState=useRef({angle:0,velocity:0,phase:'closed',holdFor:0});
   const playerPosition=useRef(new THREE.Vector3(-.2,1.68,1.55));
   const presence=useRef(createPresence());
+  const response=useRef(createResponse());
+  const noise=useRef({seq:0,x:0,z:0,range:0});
+  const crouching=useRef(false);
   useEffect(()=>{
     const onKey=e=>{if(e.code==='F3'){e.preventDefault();setDebug(v=>!v);}if(e.code==='Escape' && panel)setPanel(null);};
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
   },[panel]);
   useEffect(()=>()=>{sound.current?.close?.();},[]);
+  useEffect(()=>{if(caught)document.exitPointerLock?.();},[caught]);
   const lockGamePointer=()=>{
     const canvas=document.querySelector('.room-app canvas');
     try {
@@ -672,6 +690,10 @@ export default function FirstRoom() {
       setPanel(id==='log'?'log':'camera');
     }
     if(id==='door'){
+      if(response.current.locked){
+        sound.current?.soundAt(3.1,1.1,680,.12);
+        return;
+      }
       const d=doorState.current;
       if(d.phase==='closed'||d.phase==='closing'){
         d.phase='opening';
@@ -692,6 +714,34 @@ export default function FirstRoom() {
     }
     return valid;
   };
+  const switchLock=()=>{
+    if(!toggleSecurityLock(response.current,doorState.current)){
+      return '문이 완전히 닫힌 뒤에만 잠글 수 있습니다.';
+    }
+    setLocked(response.current.locked);
+    sound.current?.soundAt(3.15,1.0,480,.22);
+    return response.current.locked?'경비실 출입문을 잠갔습니다.':'경비실 출입문 잠금을 해제했습니다.';
+  };
+  const useSpeaker=()=>{
+    if(!evidence)return '영상 오류를 먼저 조사해야 합니다.';
+    if(!activateSpeaker(response.current))return '방송 장치가 아직 재충전 중입니다.';
+    setSpeakerReady(false);
+    return '복도 끝 스피커에서 유도음을 재생했습니다.';
+  };
+  const retryEncounter=()=>{
+    presence.current=createPresence();
+    beginPresence(presence.current);
+    resetResponseAfterCapture(response.current);
+    doorState.current={angle:0,velocity:0,phase:'closed',holdFor:0};
+    noise.current={seq:0,x:0,z:0,range:0};
+    crouching.current=false;
+    setPresencePhase('watch');
+    setLocked(false);
+    setSpeakerReady(true);
+    setResetToken(n=>n+1);
+    flushSync(()=>setCaught(false));
+    lockGamePointer();
+  };
   const closePanel=()=>{
     // Mount the FPS control before requesting lock in this same click gesture.
     flushSync(()=>setPanel(null));
@@ -706,18 +756,22 @@ export default function FirstRoom() {
     <Canvas shadows dpr={[1,1.5]} camera={{fov:72,near:.045,far:35,position:[-.2,1.68,1.55]}} gl={{antialias:true,powerPreference:'high-performance'}}>
       <Scene lampOn={lampOn} doorState={doorState} playerPosition={playerPosition} audio={sound}
         presence={presence} onPresencePhase={setPresencePhase}
-        cameraVisible={panel==='camera' && selectedFeed!=='cam2'}/>
-      <Player active={started} panel={panel} selectedFeed={selectedFeed} doorState={doorState} playerPosition={playerPosition}
-        onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}/>
+        cameraVisible={panel==='camera' && selectedFeed!=='cam2'}
+        response={response} noise={noise} crouching={crouching}
+        onCaught={()=>setCaught(true)}
+        onSpeakerReady={()=>setSpeakerReady(v=>v? v : true)}/>
+      <Player active={started&&!caught} panel={panel} selectedFeed={selectedFeed} doorState={doorState} playerPosition={playerPosition}
+        onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}
+        noise={noise} crouching={crouching} resetToken={resetToken}/>
     </Canvas>
     <div className="vignette" aria-hidden="true"/>
     <div className="top-title">서림주택 / 야간 관리동 <span>03:17 · INCIDENT 001</span></div>
     {started && !panel && <><div className="crosshair" aria-hidden="true">+</div>
-      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · 마우스 시점 · Shift 달리기 · E 상호작용'}</div>
+      <div className="bottom-instruction">{label ? 'E · '+label : 'WASD 이동 · Shift 달리기 · Ctrl 웅크리기 · E 상호작용'}</div>
     </>}
-    {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>첫 사건: {presencePhase}<br/>완전 추격 AI 미구현</div>}
+    {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>첫 사건: {presencePhase}<br/>문 잠금: {locked?'ON':'OFF'} / 방송: {speakerReady?'READY':'COOLDOWN'}</div>}
     {!started && <div className="start-overlay">
-      <div className="eyebrow">B∞ RE:ZERO · FIRST INCIDENT V0.4.2-B</div>
+      <div className="eyebrow">B∞ RE:ZERO · FIRST INCIDENT V0.4.2-C</div>
       <h1>마지막 야간근무</h1>
       <p>03:17. 지하 방화문 센서에서 열림 신호가 들어왔습니다.<br/>CCTV 화면은 여전히 문이 닫혀 있다고 주장합니다.</p>
       <button onClick={start}>근무 시작</button>
@@ -725,7 +779,8 @@ export default function FirstRoom() {
     </div>}
     {panel==='camera'&&<Surveillance lampOn={lampOn} tested={tested} evidence={evidence}
       selected={selectedFeed} onSelected={setSelectedFeed}
-      onLamp={turnLamp} onEvidence={noteEvidence} onClose={closePanel}/>}
+      onLamp={turnLamp} onEvidence={noteEvidence} onClose={closePanel}
+      locked={locked} speakerReady={speakerReady} onLock={switchLock} onSpeaker={useSpeaker}/>}
     {panel==='log'&&<div className="screen-backdrop" role="dialog" aria-modal="true">
       <div className="logbook"><div className="eyebrow">야간근무 일지 · INCIDENT 001</div>
         <h2>열리지 않은 문</h2><p>03:17 — B1 방화문 센서: OPEN</p>
@@ -735,7 +790,19 @@ export default function FirstRoom() {
         <p className="muted">현장 조사와 사건 종결 기능은 V0.5 개발 대상입니다.</p>
         <button onClick={closePanel}>일지 덮기 / FPS 복귀</button></div>
     </div>}
-    {started && !panel && resumeHint && <button className="resume-pointer" onClick={lockGamePointer}>화면 클릭하여 시점 조작 계속</button>}
-    <footer>V0.4.2-B · 첫 공포 사건 검수 빌드 · 추격/사망 미구현</footer>
+    {evidence && !caught && !panel && ['chase','search','investigate'].includes(presencePhase) &&
+      <div className="survival-danger" role="status">
+        {presencePhase==='chase'?'발견됐다! 경비실로 돌아가거나 엄폐해!':'발소리를 줄이고 괴물의 이동을 확인해.'}
+      </div>}
+    {caught && <div className="caught-overlay" role="dialog" aria-label="위협에게 발견돼 붙잡혔습니다">
+      <div className="caught-inner">
+        <div className="eyebrow">INCIDENT 001 · FAILED</div>
+        <h2>그것에게 붙잡혔다.</h2>
+        <p>확보한 CCTV 증거는 유지돼. 괴물의 위치와 보안 장치만 초기화할게.</p>
+        <button onClick={retryEncounter}>CCTV 조사 이후부터 재시도</button>
+      </div>
+    </div>}
+    {started && !panel && !caught && resumeHint && <button className="resume-pointer" onClick={lockGamePointer}>화면 클릭하여 시점 조작 계속</button>}
+    <footer>V0.4.2-C · 생존·대응 검수 빌드 · 현장 조사/사건 완결 미구현</footer>
   </main>;
 }
