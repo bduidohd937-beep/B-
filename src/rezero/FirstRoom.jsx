@@ -4,6 +4,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, useFBO } from '@react-three/drei';
 import * as THREE from 'three';
 import { focusTarget, passageAllowed, canRecordVideoMismatch, doorCloseObstructed, DOOR_OPEN_ANGLE } from './rules.js';
+import { aimCameraAt, monitorLookTarget, SEAT } from './seatedCamera.js';
 
 const TARGETS = [
   { id: 'chair', x: -.34, z: .45, label: '관제 의자에 앉기' },
@@ -289,12 +290,10 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
   const lastFocus = useRef(null);
   const savedPose = useRef(null), previousPanel = useRef(null);
   const fpsTime = useRef(0), fpsFrames = useRef(0);
-  const seatPosition = useMemo(()=>new THREE.Vector3(-.35,1.35,-.06),[]);
+  const seatPosition = useMemo(()=>new THREE.Vector3(SEAT.x,SEAT.y,SEAT.z),[]);
   const lookDrag = useRef({pressed:false,yaw:0,pitch:0});
   const seatTarget = useMemo(()=>new THREE.Vector3(),[]);
   const seatQuaternion = useMemo(()=>new THREE.Quaternion(),[]);
-  const seatMatrix = useMemo(()=>new THREE.Matrix4(),[]);
-  const seatUp = useMemo(()=>new THREE.Vector3(0,1,0),[]);
   const turnY = useMemo(()=>new THREE.Quaternion(),[]);
   const turnX = useMemo(()=>new THREE.Quaternion(),[]);
   const verticalAxis = useMemo(()=>new THREE.Vector3(0,1,0),[]);
@@ -391,12 +390,8 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     if(fpsTime.current>=1){onStats(Math.round(fpsFrames.current/fpsTime.current));fpsTime.current=0;fpsFrames.current=0;}
     if (panel === 'camera') {
       const blend=1-Math.exp(-6*dt);
-      seatTarget.set(
-        selectedFeed==='cam1' ? -.96 : selectedFeed==='cam2' ? .32 : -.32,
-        1.32,-1.887
-      );
-      seatMatrix.lookAt(seatPosition,seatTarget,seatUp);
-      seatQuaternion.setFromRotationMatrix(seatMatrix);
+      seatTarget.set(...monitorLookTarget(selectedFeed));
+      aimCameraAt(seatPosition,seatTarget,seatQuaternion);
       turnY.setFromAxisAngle(verticalAxis,lookDrag.current.yaw);
       turnX.setFromAxisAngle(horizontalAxis,lookDrag.current.pitch);
       seatQuaternion.premultiply(turnY).multiply(turnX);
