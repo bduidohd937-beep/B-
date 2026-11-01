@@ -90,7 +90,7 @@ test('physically entering the same corridor may register one real glimpse',()=>{
 test('visual actor, sound, handle and CCTV all use the same shared presence state',()=>{
   const source=readFileSync('src/rezero/FirstRoom.jsx','utf8');
   assert.match(source,/function PresenceActor\(/);
-  assert.match(source,/advancePresence\(p,rawDt/);
+  assert.match(source,/advanceEncounter\(p,rawDt/);
   assert.match(source,/beginPresence\(presence\.current\)/);
   assert.match(source,/ref=\{actor\}/);
   assert.match(source,/soundAt\(ev\.x,ev\.z/);
