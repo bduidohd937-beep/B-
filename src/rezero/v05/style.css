@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+:root{font-family:'Noto Sans KR',system-ui,sans-serif;color:#e3ebe3;background:#0b1112;font-synthesis:none}
+*{box-sizing:border-box}
+html,body,#root{margin:0;height:100%;width:100%;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer;transition:background .18s,border-color .18s}
+.map-demo{position:relative;background:#090e10;height:100%;width:100%;overflow:hidden}
+.map-demo canvas{display:block;width:100%;height:100%;outline:none}
+.world-vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 67% 68% at 51% 46%,transparent 30%,#01050689 91%);z-index:1}
+.level-header{position:absolute;left:25px;right:25px;top:20px;display:flex;align-items:center;justify-content:space-between;z-index:3;gap:14px;letter-spacing:.10em;text-shadow:0 2px 6px #000}
+.level-header span{font-size:10px;color:#a4bcb3}
+.level-header strong{font-size:14px;font-weight:500}
+.cursor-dot{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#b4ccbbdd;pointer-events:none;font-size:19px;z-index:3}
+.objective{position:absolute;left:24px;bottom:57px;z-index:3;background:#101c1bca;border-left:2px solid #a2c1a4;padding:13px 18px;min-width:min(340px,90vw);max-width:580px}
+.mission-label{font-size:10px;letter-spacing:.17em;color:#98b09d}
+.objective p{font-size:14px;color:#ecf4e6;margin:8px 0;line-height:1.6}
+.objective small{font-size:10px;color:#98a99f;line-height:1.7}
+.performance{position:absolute;right:20px;top:76px;z-index:8;padding:10px 15px;background:#040b0dd8;font:11px/1.8 monospace;color:#b9c9b6}
+.build-notice{position:absolute;bottom:15px;right:20px;z-index:3;font-size:9px;letter-spacing:.045em;color:#adc0ad9c}
+.start-screen{position:absolute;inset:0;z-index:20;background:radial-gradient(ellipse at 47% 42%,#1b302bee,#030808fc 72%);display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:24px}
+.supra{letter-spacing:.27em;font-size:11px;color:#9bac9d}
+.start-screen h1{font-size:clamp(34px,6vw,73px);font-weight:500;letter-spacing:.12em;margin:13px 0 7px;text-shadow:0 9px 25px #000}
+.start-screen h2{font-size:14px;letter-spacing:.18em;font-weight:400;color:#9cbaab;margin:7px 0 28px}
+.start-screen p{font-size:13px;color:#a6b9ae;line-height:2.1;max-width:650px}
+.start-screen button,.route-success button{padding:14px 35px;border:1px solid #9dbea6;background:#18382b99;margin:24px 0 15px}
+.start-screen button:hover,.route-success button:hover{background:#3a6352}
+.start-screen small{font-size:10px;color:#728d80}
+.map-panel{position:absolute;z-index:11;right:22px;top:75px;width:min(350px,92vw);background:#0c1a19ee;border:1px solid #8faba573;padding:16px 16px 8px;box-shadow:0 12px 50px #000b}
+.map-panel svg{display:block;width:100%;max-height:60vh;transform:scale(1,-1)}
+.map-heading{text-align:center;color:#d7e5d7;font-size:13px;letter-spacing:.11em}
+.map-note{font-size:10px;line-height:1.8;color:#a2b5ad;padding:8px 0;text-align:center}
+.route-success{position:absolute;z-index:10;left:50%;top:18%;transform:translateX(-50%);background:#0e1e1de6;border:1px solid #97b4a2a1;padding:16px 26px;text-align:center;max-width:480px;width:90%}
+.route-success strong{font-size:16px;letter-spacing:.10em}
+.route-success p{font-size:11px;line-height:1.9;color:#acbfae}
+.route-success button{padding:8px 13px;font-size:11px;margin:3px}
+@media(max-width:620px){.level-header{left:10px;right:10px;top:10px;flex-wrap:wrap}.level-header span{font-size:9px}.objective{left:10px;right:10px;min-width:auto;bottom:32px}.build-notice{right:10px;bottom:7px;font-size:8px}.map-panel{right:9px;top:75px}.start-screen p{font-size:11px}}
