@@ -5,7 +5,8 @@ import { PointerLockControls, useFBO } from '@react-three/drei';
 import * as THREE from 'three';
 import { focusTarget, passageAllowed, canRecordVideoMismatch, doorCloseObstructed, DOOR_OPEN_ANGLE } from './rules.js';
 import { aimCameraAt, monitorLookTarget, SEAT } from './seatedCamera.js';
-import { createPresence, beginPresence, advancePresence } from './presence.js';
+import { createPresence, beginPresence } from './presence.js';
+import { createResponse, advanceEncounter, canLockDoor, toggleSecurityLock, activateSpeaker, resetResponseAfterCapture, inHall } from './survival.js';
 
 const TARGETS = [
   { id: 'chair', x: -.34, z: .45, label: '관제 의자에 앉기' },
@@ -265,17 +266,21 @@ function CCTVFeeds({ m }) {
 // This is the same physical actor seen by the player and both CCTV cameras.
 // Rough shapes are intentionally masked by the coat, fog and distance.
 // Real character mesh/animation is a later art task, not claimed here.
-function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, cameraVisible }) {
+function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, cameraVisible, response, noise, crouching, onCaught, onSpeakerReady }) {
   const actor = useRef(null), coat = useRef(null);
   const lastPhase = useRef(null);
   const stepBob = useRef(0);
   useFrame((_,rawDt)=>{
     const p=presence.current;
-    const events=advancePresence(p,rawDt,{
+    const events=advanceEncounter(p,rawDt,{
       player:playerPosition.current,
+      crouching:crouching.current,
       doorClosed:doorState.current.phase==='closed',
-      cameraVisible
+      cameraVisible,
+      response:response.current,
+      noise:noise.current
     });
+    if(response.current.speakerCooldown===0)onSpeakerReady();
     for(const ev of events){
       if(ev.type==='step'){
         audio.current?.soundAt(ev.x,ev.z, ev.x<6?260:320, .17);
@@ -284,6 +289,12 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
         audio.current?.soundAt(ev.x,ev.z,570,.21);
       } else if(ev.type==='leave'){
         audio.current?.soundAt(ev.x,ev.z,185,.35);
+      } else if(ev.type==='speaker'){
+        audio.current?.soundAt(ev.x,ev.z,1100,.85);
+      } else if(ev.type==='alert'){
+        audio.current?.soundAt(ev.x,ev.z,550,.26);
+      } else if(ev.type==='caught'){
+        onCaught();
       } else if(ev.type==='glimpse'){
         // A subtle dry scrape marks a real, nearby sighting: no forced jumpscare.
         audio.current?.soundAt(ev.x,ev.z,710,.24);
@@ -294,11 +305,11 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
       onPhase(p.phase);
     }
     if(!actor.current)return;
-    actor.current.visible = p.phase!=='dormant'&&p.phase!=='departed';
+    actor.current.visible = p.phase!=='dormant'&&p.phase!=='departed'&&p.phase!=='caught';
     actor.current.position.set(p.x,0,p.z);
-    actor.current.rotation.y = p.phase==='withdraw' ? Math.PI : 0;
+    actor.current.rotation.y = ['withdraw','divert'].includes(p.phase) ? Math.PI : 0;
     if(coat.current){
-      const moving=p.phase==='approach'||p.phase==='withdraw';
+      const moving=['approach','withdraw','chase','search','investigate','divert'].includes(p.phase);
       const sway=moving ? Math.sin(p.x*7.5)*.042 : Math.sin(p.t*1.6)*.012;
       coat.current.rotation.z=sway;
       coat.current.position.y=Math.sin(p.x*9.2)*.012;
@@ -340,7 +351,7 @@ function PresenceActor({ presence, doorState, playerPosition, audio, onPhase, ca
   </group>;
 }
 
-function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresencePhase, cameraVisible }) {
+function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresencePhase, cameraVisible, response, noise, crouching, onCaught, onSpeakerReady }) {
   const m = useMaterials();
   return <>
     <color attach="background" args={['#0b1010']}/>
@@ -355,7 +366,9 @@ function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresenceP
     <Envelope m={m}/>
     <Decor m={m}/>
     <SwingDoor doorState={doorState} playerPosition={playerPosition} presence={presence} audio={audio} m={m}/>
-    <PresenceActor presence={presence} doorState={doorState} playerPosition={playerPosition} audio={audio} onPhase={onPresencePhase} cameraVisible={cameraVisible}/>
+    <PresenceActor presence={presence} doorState={doorState} playerPosition={playerPosition}
+      audio={audio} onPhase={onPresencePhase} cameraVisible={cameraVisible}
+      response={response} noise={noise} crouching={crouching} onCaught={onCaught} onSpeakerReady={onSpeakerReady}/>
     <CCTVFeeds m={m}/>
     <Block p={[3.26,2.2,1.0]} s={[.19,.15,1.75]} mat={m.trim}/>
     <Block p={[3.34,2.38,1.06]} s={[.18,.12,.26]} mat={m.trim}/>
@@ -364,16 +377,24 @@ function Scene({ lampOn, doorState, playerPosition, audio, presence, onPresenceP
     <Block p={[10,1.48,2.90]} s={[.89,.55,.05]} mat={m.trim}/>
     <Block p={[5.3,1.26,-.14]} s={[.46,.58,.12]} mat={m.trim}/>
     <Block p={[11.2,1.48,3.02]} s={[.64,.9,.1]} mat={m.trim}/>
+    {/* Security speaker: audio coordinates and mesh correspond to one fixture. */}
+    <Block p={[12.75,2.18,3.01]} s={[.52,.42,.18]} mat={m.rubber}/>
+    <Block p={[12.75,2.18,2.90]} s={[.36,.27,.04]} mat={m.steel}/>
+    {/* Solid steel locker supplies real visual concealment on one side. */}
+    <Block p={[8.90,1.02,2.49]} s={[.83,2.0,.87]} mat={m.steel}/>
+    <Block p={[8.49,1.14,2.49]} s={[.04,1.50,.65]} mat={m.trim}/>
+    <Block p={[8.45,1.10,2.25]} s={[.04,.12,.04]} mat={m.amber}/>
   </>;
 }
 
-function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocus, onInteract, onStats, audio }) {
+function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocus, onInteract, onStats, audio, noise, crouching, resetToken }) {
   const { camera } = useThree();
   const keys = useRef({});
   const looking = useRef(new THREE.Vector3()), right = useRef(new THREE.Vector3());
   const lastFocus = useRef(null);
   const savedPose = useRef(null), previousPanel = useRef(null);
   const fpsTime = useRef(0), fpsFrames = useRef(0);
+  const steps = useRef(0);
   const seatPosition = useMemo(()=>new THREE.Vector3(SEAT.x,SEAT.y,SEAT.z),[]);
   const lookDrag = useRef({pressed:false,yaw:0,pitch:0});
   const seatTarget = useMemo(()=>new THREE.Vector3(),[]);
@@ -389,7 +410,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     camera.position.set(-.2,1.68,1.55);
     camera.rotation.set(0,0,0);
     playerPosition.current.copy(camera.position);
-  },[camera,playerPosition]);
+  },[camera,playerPosition,resetToken]);
   useLayoutEffect(()=>{
     if(panel && !previousPanel.current) {
       savedPose.current = {
@@ -451,7 +472,7 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
   },[selectedFeed]);
   useEffect(()=>{
     const down = e => {
-      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','KeyE'].includes(e.code)) e.preventDefault();
+      if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ControlLeft','KeyE'].includes(e.code)) e.preventDefault();
       keys.current[e.code] = true;
       if (e.code === 'KeyE' && !e.repeat && active && !panel && document.pointerLockElement) {
         if(lastFocus.current) onInteract(lastFocus.current);
@@ -499,13 +520,27 @@ function Player({ active, panel, selectedFeed, doorState, playerPosition, onFocu
     const forward=(keys.current.KeyW?1:0)-(keys.current.KeyS?1:0);
     const sideways=(keys.current.KeyD?1:0)-(keys.current.KeyA?1:0);
     const sum=Math.hypot(forward,sideways);
+    const crouch=Boolean(keys.current.ControlLeft);
+    crouching.current=crouch;
+    const eyeHeight=crouch?.98:1.68;
+    camera.position.y=THREE.MathUtils.damp(camera.position.y,eyeHeight,12,dt);
     if(sum){
-      const speed=keys.current.ShiftLeft?3.55:2.18;
+      const speed=crouch?.92:keys.current.ShiftLeft?3.55:2.18;
       const dx=(looking.current.x*forward+right.current.x*sideways)/sum*speed*dt;
       const dz=(looking.current.z*forward+right.current.z*sideways)/sum*speed*dt;
       const x=camera.position.x,z=camera.position.z;
       if(passageAllowed({x:x+dx,z},doorState.current.angle))camera.position.x+=dx;
       if(passageAllowed({x:camera.position.x,z:z+dz},doorState.current.angle))camera.position.z+=dz;
+      const traveled=Math.hypot(camera.position.x-x,camera.position.z-z);
+      if(inHall(camera.position)){
+        steps.current+=traveled;
+        if(steps.current>=.75){
+          steps.current-=.75;
+          noise.current={seq:noise.current.seq+1,
+            x:camera.position.x,z:camera.position.z,
+            range:crouch?1.1:keys.current.ShiftLeft?8.5:3.8};
+        }
+      }
     }
     playerPosition.current.copy(camera.position);
     const focus=focusTarget({
