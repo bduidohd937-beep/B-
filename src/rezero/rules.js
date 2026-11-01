@@ -7,6 +7,8 @@ export function passageAllowed(position, doorOpen) {
   const inRoom = x >= ROOM_BOUNDS.minX && x <= ROOM_BOUNDS.maxX && z >= ROOM_BOUNDS.minZ && z <= ROOM_BOUNDS.maxZ;
   const inHall = x >= HALL_BOUNDS.minX && x <= HALL_BOUNDS.maxX && z >= HALL_BOUNDS.minZ && z <= HALL_BOUNDS.maxZ;
   if (!(inRoom || inHall)) return false;
+  // Solid desk: players can inspect the screens from its front, not walk through it.
+  if (inRoom && x >= -2.77 && x <= 1.35 && z <= -1.06) return false;
   if (!doorOpen && x >= 2.53 && x <= 3.15 && z >= .48 && z <= 1.92) return false;
   if (inHall && x < 3.2 && (z < .48 || z > 1.92)) return false;
   return true;
