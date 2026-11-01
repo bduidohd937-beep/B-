@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { PointerLockControls, useFBO } from '@react-three/drei';
 import * as THREE from 'three';
-import { focusTarget, passageAllowed, canRecordVideoMismatch } from './rules.js';
+import { focusTarget, passageAllowed, canRecordVideoMismatch, doorCloseObstructed, DOOR_OPEN_ANGLE } from './rules.js';
 
 const TARGETS = [
   { id: 'monitor', x: -.45, z: -1.12, label: 'CCTV 감시 모니터' },
@@ -145,27 +146,65 @@ function Decor({ m }) {
   </>;
 }
 
-function SwingDoor({ open, m }) {
+function SwingDoor({ doorState, playerPosition, m, audio }) {
   const hinge = useRef(null);
-  useFrame((_,dt)=> {
-    if (hinge.current) {
-      const desired = open ? -1.42 : 0;
-      hinge.current.rotation.y = THREE.MathUtils.damp(hinge.current.rotation.y, desired, 7, dt);
+  useFrame((_, rawDelta) => {
+    const dt = Math.min(rawDelta, .04);
+    const d = doorState.current;
+    if (d.phase === 'holding') {
+      d.holdFor -= dt;
+      if (d.holdFor <= 0) d.phase = 'closing';
     }
+    if (d.phase === 'opening' || d.phase === 'closing') {
+      const target = d.phase === 'opening' ? DOOR_OPEN_ANGLE : 0;
+      const acceleration = (target - d.angle) * 27 - d.velocity * 8.5;
+      const nextVelocity = THREE.MathUtils.clamp(d.velocity + acceleration * dt, -3.3, 3.3);
+      const nextAngle = THREE.MathUtils.clamp(d.angle + nextVelocity * dt, DOOR_OPEN_ANGLE, 0);
+      if (d.phase === 'closing' && doorCloseObstructed(playerPosition.current, nextAngle)) {
+        // The closer must reopen, not cut through a person occupying its sweep.
+        d.phase = 'opening';
+        d.velocity = 0;
+      } else {
+        d.angle = nextAngle;
+        d.velocity = nextVelocity;
+        if (Math.abs(d.angle - target) < .012 && Math.abs(d.velocity) < .21) {
+          d.angle = target;
+          d.velocity = 0;
+          if (d.phase === 'opening') {
+            d.phase = 'holding';
+            d.holdFor = 3.0;
+          } else {
+            d.phase = 'closed';
+            audio?.current?.soundAt(3.16, .94, 360, .18);
+          }
+        }
+      }
+    }
+    if (hinge.current) hinge.current.rotation.y = d.angle;
   });
-  return <group ref={hinge} position={[3.18,0,.32]}>
+  return <group ref={hinge} position={[3.18, 0, .32]}>
     <Block p={[0,1.05,.72]} s={[.105,2.1,1.41]} mat={m.steel}/>
     <Block p={[-.068,1.44,.70]} s={[.05,.47,.73]} mat={m.trim}/>
     <mesh position={[-.108,1.44,.70]} rotation={[0,-Math.PI/2,0]}>
       <planeGeometry args={[.67,.4]}/>
       <meshPhysicalMaterial color="#7e9d9b" transparent opacity={.53} metalness={.22} roughness={.21}/>
     </mesh>
-    <Block p={[-.13,.93,1.15]} s={[.11,.08,.24]} mat={m.amber}/>
+    <group position={[-.18,.93,1.15]}>
+      <Block p={[0,0,0]} s={[.10,.09,.19]} mat={m.amber}/>
+      <Block p={[-.06,-.035,0]} s={[.05,.06,.25]} mat={m.steel}/>
+    </group>
+    {/* hinge pins, closer arm, and latch plate add physical cues */}
+    {[.22,1.82].map(y => <mesh key={y} position={[0,y,0]}>
+      <cylinderGeometry args={[.042,.042,.15,10]}/><primitive attach="material" object={m.trim}/>
+    </mesh>)}
+    <Block p={[0,2.02,.33]} s={[.10,.10,.52]} mat={m.trim}/>
+    <Block p={[0,2.04,1.35]} s={[.11,.12,.17]} mat={m.amber}/>
   </group>;
 }
 
 function CCTVFeeds({ m }) {
   const { gl, scene } = useThree();
+  const feeds = useRef(null);
   const feed1 = useFBO(320,180,{depthBuffer:true});
   const feed2 = useFBO(320,180,{depthBuffer:true});
   const camera1 = useMemo(()=> {
@@ -176,34 +215,39 @@ function CCTVFeeds({ m }) {
     const c = new THREE.PerspectiveCamera(54,16/9,.05,17);
     c.position.set(10.4,2.31,2.46); c.lookAt(14.27,1.26,1.53); return c;
   },[]);
-  const t = useRef(0), frozen = useRef(false);
+  const elapsed = useRef(0), frozen = useRef(false);
   useFrame((_,dt)=>{
-    t.current+=dt;
-    if(t.current < .12) return;
-    t.current=0;
-    const before=gl.getRenderTarget();
-    gl.setRenderTarget(feed1); gl.clear(); gl.render(scene,camera1);
-    if(!frozen.current) {
-      gl.setRenderTarget(feed2); gl.clear(); gl.render(scene,camera2);
-      frozen.current=true;
+    elapsed.current += dt;
+    if(elapsed.current < .125) return;
+    elapsed.current=0;
+    const previous=gl.getRenderTarget();
+    if (feeds.current) feeds.current.visible = false;
+    try {
+      gl.setRenderTarget(feed1);gl.clear();gl.render(scene,camera1);
+      if(!frozen.current) {
+        gl.setRenderTarget(feed2);gl.clear();gl.render(scene,camera2);
+        frozen.current=true;
+      }
+    } finally {
+      gl.setRenderTarget(previous);
+      if (feeds.current) feeds.current.visible = true;
     }
-    gl.setRenderTarget(before);
   });
-  return <>
+  return <group ref={feeds}>
     {[-.96,.32].map((x,i)=><group key={i}>
       <Block p={[x,1.31,-1.99]} s={[1.12,.72,.18]} mat={m.rubber}/>
       <mesh position={[x,1.31,-1.887]}>
         <planeGeometry args={[.98,.55]}/>
         <meshBasicMaterial map={i===0?feed1.texture:feed2.texture} toneMapped={false}/>
       </mesh>
-      <Block p={[x, .97,-1.94]} s={[.13,.08,.15]} mat={m.steel}/>
+      <Block p={[x,.97,-1.94]} s={[.13,.08,.15]} mat={m.steel}/>
       <Block p={[x,.925,-1.89]} s={[.48,.03,.31]} mat={m.steel}/>
       <mesh position={[x-.43,1.62,-1.879]}><circleGeometry args={[.016,12]}/><meshBasicMaterial color={i?'#ecb46a':'#91e4af'}/></mesh>
     </group>)}
-  </>;
+  </group>;
 }
 
-function Scene({ lampOn, doorOpen }) {
+function Scene({ lampOn, doorState, playerPosition, audio }) {
   const m = useMaterials();
   return <>
     <color attach="background" args={['#0b1010']}/>
@@ -216,21 +260,54 @@ function Scene({ lampOn, doorOpen }) {
     <LampFixture p={[12.91,2.5,1.55]} on m={m}/>
     <Envelope m={m}/>
     <Decor m={m}/>
-    <SwingDoor open={doorOpen} m={m}/>
+    <SwingDoor doorState={doorState} playerPosition={playerPosition} audio={audio} m={m}/>
     <CCTVFeeds m={m}/>
+    <Block p={[3.26,2.2,1.0]} s={[.19,.15,1.75]} mat={m.trim}/>
+    <Block p={[3.34,2.38,1.06]} s={[.18,.12,.26]} mat={m.trim}/>
+    {Array.from({length:8},(_,i)=><Block key={'tray'+i} p={[3.8+i*1.25,2.38,-.06]} s={[.3,.06,.21]} mat={m.steel} cast={false}/>)}
+    <Block p={[10,1.2,3.0]} s={[1.25,1.4,.14]} mat={m.steel}/>
+    <Block p={[10,1.48,2.90]} s={[.89,.55,.05]} mat={m.trim}/>
+    <Block p={[5.3,1.26,-.14]} s={[.46,.58,.12]} mat={m.trim}/>
   </>;
 }
 
-function Player({ active, panel, doorOpen, onFocus, onInteract, onStats, audio }) {
+function Player({ active, panel, doorState, playerPosition, onFocus, onInteract, onStats, audio }) {
   const { camera } = useThree();
   const keys = useRef({});
   const looking = useRef(new THREE.Vector3()), right = useRef(new THREE.Vector3());
   const lastFocus = useRef(null);
+  const savedPose = useRef(null), previousPanel = useRef(null);
   const fpsTime = useRef(0), fpsFrames = useRef(0);
+  const zoomPosition = useMemo(() => new THREE.Vector3(-.30,1.52,.43),[]);
+  const zoomQuaternion = useMemo(() => {
+    const target = new THREE.Object3D();
+    target.position.copy(zoomPosition);
+    target.lookAt(-.36,1.32,-1.89);
+    return target.quaternion.clone();
+  },[zoomPosition]);
   useEffect(()=>{
     camera.position.set(-.2,1.68,1.55);
     camera.rotation.set(0,0,0);
-  },[camera]);
+    playerPosition.current.copy(camera.position);
+  },[camera,playerPosition]);
+  useLayoutEffect(()=>{
+    if(panel && !previousPanel.current) {
+      savedPose.current = {
+        position:camera.position.clone(),
+        quaternion:camera.quaternion.clone(),
+        fov:camera.fov
+      };
+    }
+    if(!panel && previousPanel.current && savedPose.current) {
+      camera.position.copy(savedPose.current.position);
+      camera.quaternion.copy(savedPose.current.quaternion);
+      camera.fov = savedPose.current.fov;
+      camera.updateProjectionMatrix();
+      savedPose.current = null;
+    }
+    previousPanel.current=panel;
+    keys.current={};
+  },[camera,panel]);
   useEffect(()=>{
     const down = e => {
       if (['KeyW','KeyA','KeyS','KeyD','ShiftLeft','KeyE'].includes(e.code)) e.preventDefault();
@@ -254,7 +331,19 @@ function Player({ active, panel, doorOpen, onFocus, onInteract, onStats, audio }
     const dt=Math.min(.04,rawDt);
     fpsTime.current+=dt; fpsFrames.current++;
     if(fpsTime.current>=1){onStats(Math.round(fpsFrames.current/fpsTime.current));fpsTime.current=0;fpsFrames.current=0;}
-    if (!active || panel || !document.pointerLockElement) { if(lastFocus.current){lastFocus.current=null;onFocus(null);} return; }
+    if (panel === 'camera') {
+      const blend=1-Math.exp(-7*dt);
+      camera.position.lerp(zoomPosition,blend);
+      camera.quaternion.slerp(zoomQuaternion,blend);
+      camera.fov=THREE.MathUtils.damp(camera.fov,54,7,dt);
+      camera.updateProjectionMatrix();
+      if(lastFocus.current){lastFocus.current=null;onFocus(null);}
+      return;
+    }
+    if (!active || panel || !document.pointerLockElement) {
+      if(lastFocus.current){lastFocus.current=null;onFocus(null);}
+      return;
+    }
     camera.getWorldDirection(looking.current);
     looking.current.y=0; looking.current.normalize();
     right.current.crossVectors(looking.current,camera.up).normalize();
@@ -266,17 +355,18 @@ function Player({ active, panel, doorOpen, onFocus, onInteract, onStats, audio }
       const dx=(looking.current.x*forward+right.current.x*sideways)/sum*speed*dt;
       const dz=(looking.current.z*forward+right.current.z*sideways)/sum*speed*dt;
       const x=camera.position.x,z=camera.position.z;
-      if(passageAllowed({x:x+dx,z},doorOpen))camera.position.x+=dx;
-      if(passageAllowed({x:camera.position.x,z:z+dz},doorOpen))camera.position.z+=dz;
+      if(passageAllowed({x:x+dx,z},doorState.current.angle))camera.position.x+=dx;
+      if(passageAllowed({x:camera.position.x,z:z+dz},doorState.current.angle))camera.position.z+=dz;
     }
+    playerPosition.current.copy(camera.position);
     const focus=focusTarget({
       x:camera.position.x,z:camera.position.z,fx:looking.current.x,fz:looking.current.z,
       targets:TARGETS
     });
     if(focus!==lastFocus.current) {lastFocus.current=focus;onFocus(focus);}
-    audio?.updateListener?.(camera.position,looking.current);
+    audio?.current?.updateListener?.(camera.position,looking.current);
   });
-  return <PointerLockControls/>;
+  return !panel ? <PointerLockControls/> : null;
 }
 
 function createRoomAudio() {
@@ -322,44 +412,32 @@ function createRoomAudio() {
   };
 }
 
-function CameraGraphic({ id, lampOn }) {
-  const live=id==='cam1';
-  const light=live?lampOn:true;
-  return <div className={'camera-graphic '+(light?'lit':'unlit')}>
-    <svg viewBox="0 0 320 178" aria-hidden="true">
-      <path d="M0 178 L102 18 L226 18 L320 178 Z" fill="#273b36" stroke="#708a79" strokeWidth="3"/>
-      <path d="M102 18 L102 178 M226 18 L226 178" stroke="#53675a" strokeWidth="6"/>
-      <path d="M104 18 L216 18 L225 35 L93 35Z" fill="#172921"/>
-      <rect x="145" y="19" width="37" height="8" fill={light?'#d0efd1':'#3d5049'}/>
-      <path d="M0 136H320 M0 157H320" stroke="#7d8f84" opacity=".38"/>
-      {!live && <><rect x="143" y="54" width="63" height="113" fill="#3d4943" stroke="#a7b7a9" strokeWidth="4"/><circle cx="194" cy="111" r="3" fill="#d1d8c3"/></>}
-    </svg>
-    <span className="camera-tag">{live?'CAM 01 · B1 복도':'CAM 02 · B1 방화문'}</span>
-    <span className="camera-clock">{live?'03:17:42 · LIVE':'03:17:42 · LIVE'}</span>
-    <div className="scanlines"/>
-  </div>;
-}
-
 function Surveillance({ lampOn, onLamp, tested, evidence, onEvidence, onClose }) {
-  return <div className="screen-backdrop" role="dialog" aria-modal="true" aria-label="CCTV 감시 단말기">
-    <div className="surveillance-shell">
-      <div className="screen-header"><strong>SEORIM · NIGHT CONTROL</strong><span>보안 단말기 01 / 사건 001</span></div>
-      <div className="feed-grid">
-        <CameraGraphic id="cam1" lampOn={lampOn}/>
-        <CameraGraphic id="cam2" lampOn={lampOn}/>
-      </div>
-      <div className="sensor-row"><span>방화문 센서: <b className="danger">OPEN</b></span><span>CAM 02 화면: CLOSED</span></div>
-      <div className="screen-info">
-        <div>동일한 점검등 L-07이 두 카메라에 잡힌다. 제어반으로 점검등을 조작해 영상이 실시간인지 확인할 수 있다.</div>
-        {tested && <div className="clue">관찰 기록: CAM 01의 조명이 변했지만 CAM 02의 조명은 그대로다.</div>}
-        {evidence && <div className="clue">증거 확보: CAM 02는 실시간 영상으로 볼 수 없다.</div>}
-      </div>
-      <div className="screen-actions">
-        <button onClick={onLamp}>L-07 점검등 {lampOn?'끄기':'켜기'}</button>
-        <button disabled={!canRecordVideoMismatch(tested)||evidence} onClick={onEvidence}>영상 이상 기록</button>
-        <button className="outline" onClick={onClose}>모니터에서 물러나기</button>
-      </div>
+  const [selected,setSelected]=useState(null);
+  const [hint,setHint]=useState(0);
+  const [feedback,setFeedback]=useState('');
+  function record() {
+    if(!tested) {setFeedback('아직 비교 실험이 실시되지 않았다.');return;}
+    if(!selected){setFeedback('확인할 카메라를 먼저 선택하세요.');return;}
+    const okay=onEvidence(selected);
+    setFeedback(okay?'영상 이상에 대한 근거를 근무일지에 기록했다.':'선택한 카메라의 이상을 입증할 근거가 충분하지 않다.');
+  }
+  return <div className="console-ui" role="dialog" aria-label="실제 CCTV 화면과 연동된 조작 단말기">
+    <header className="console-title"><strong>SEORIM / CCTV</strong><span>INCIDENT 001 · B1 방화문</span></header>
+    <div className="console-status">
+      <span>출입 센서 <b>OPEN</b></span><span>CAM 02 보고 <b>CLOSED</b></span>
     </div>
+    <div className="console-actions">
+      <button className={selected==='cam1'?'selected':''} onClick={()=>{setSelected('cam1');setFeedback('');}}>CAM 01 선택</button>
+      <button className={selected==='cam2'?'selected':''} onClick={()=>{setSelected('cam2');setFeedback('');}}>CAM 02 선택</button>
+      <button onClick={()=>{onLamp();setFeedback('');}}>L-07 점검등 {lampOn?'OFF':'ON'}</button>
+      <button onClick={record} disabled={evidence}>영상 이상 기록</button>
+      <button className="quiet" onClick={()=>setHint(v=>Math.min(2,v+1))}>힌트</button>
+      <button className="quit" onClick={onClose}>나가기 · FPS 복귀</button>
+    </div>
+    {hint>0 && <p className="console-hint">{hint===1?'서로 다른 두 카메라가 동일한 점검등 L-07을 보여준다.':'점검등을 조작한 뒤 두 화면의 빛이 모두 변하는지 비교해 보세요.'}</p>}
+    {(feedback||evidence) && <p className="console-feedback">{feedback||'근무일지에 영상 이상이 기록되었다.'}</p>}
+    <p className="console-foot">모니터에 표시된 실제 3D CCTV를 관찰하세요. 마우스는 자유롭게 움직이며, ESC가 필요하지 않습니다.</p>
   </div>;
 }
 
@@ -367,46 +445,73 @@ export default function FirstRoom() {
   const [started,setStarted] = useState(false);
   const [panel,setPanel] = useState(null);
   const [focus,setFocus] = useState(null);
-  const [doorOpen,setDoorOpen] = useState(false);
   const [lampOn,setLampOn] = useState(true);
   const [tested,setTested] = useState(false);
   const [evidence,setEvidence] = useState(false);
   const [debug,setDebug] = useState(false);
   const [fps,setFps] = useState(null);
+  const [resumeHint,setResumeHint] = useState(false);
   const sound=useRef(null), firstCue=useRef(false);
+  const doorState=useRef({angle:0,velocity:0,phase:'closed',holdFor:0});
+  const playerPosition=useRef(new THREE.Vector3(-.2,1.68,1.55));
   useEffect(()=>{
     const onKey=e=>{if(e.code==='F3'){e.preventDefault();setDebug(v=>!v);}if(e.code==='Escape' && panel)setPanel(null);};
     window.addEventListener('keydown',onKey);
     return ()=>window.removeEventListener('keydown',onKey);
   },[panel]);
   useEffect(()=>()=>{sound.current?.close?.();},[]);
+  const lockGamePointer=()=>{
+    const canvas=document.querySelector('.room-app canvas');
+    try {
+      const result=canvas?.requestPointerLock?.();
+      if(result?.catch)result.catch(()=>setResumeHint(true));
+      setResumeHint(false);
+    }catch{setResumeHint(true);}
+  };
   const start=()=>{
     if(!sound.current)sound.current=createRoomAudio();
     sound.current?.resume();
     setStarted(true);
-    document.querySelector('canvas')?.requestPointerLock?.();
+    lockGamePointer();
   };
   const interact=useCallback((id)=>{
     if(id==='monitor'||id==='log'||id==='relay'){
-      document.exitPointerLock?.();setPanel(id==='log'?'log':'camera');
+      document.exitPointerLock?.();
+      setPanel(id==='log'?'log':'camera');
     }
-    if(id==='door'){setDoorOpen(v=>!v);sound.current?.soundAt(3.1,1.1,210,.22);}
+    if(id==='door'){
+      const d=doorState.current;
+      if(d.phase==='closed'||d.phase==='closing'){
+        d.phase='opening';
+        d.velocity=0;
+        sound.current?.soundAt(3.1,1.1,480,.16);
+      }else{
+        d.phase='closing';
+        d.holdFor=0;
+      }
+    }
   },[]);
   const turnLamp=()=>{setLampOn(v=>!v);setTested(true);sound.current?.soundAt(8.5,1.5,760,.15);};
+  const noteEvidence=(feed)=>{
+    const valid=canRecordVideoMismatch(tested,feed);
+    if(valid)setEvidence(true);
+    return valid;
+  };
   const closePanel=()=>{
-    setPanel(null);
+    // Mount the FPS control before requesting lock in this same click gesture.
+    flushSync(()=>setPanel(null));
     if(evidence&&!firstCue.current){
       firstCue.current=true;
       sound.current?.soundAt(10,1.55,220,.56);
     }
-    document.querySelector('canvas')?.requestPointerLock?.();
+    lockGamePointer();
   };
   const label=TARGETS.find(t=>t.id===focus)?.label;
   return <main className="room-app">
     <Canvas shadows dpr={[1,1.5]} camera={{fov:72,near:.045,far:35,position:[-.2,1.68,1.55]}} gl={{antialias:true,powerPreference:'high-performance'}}>
-      <Scene lampOn={lampOn} doorOpen={doorOpen}/>
-      <Player active={started} panel={panel} doorOpen={doorOpen} onFocus={setFocus}
-        onInteract={interact} onStats={setFps} audio={sound.current}/>
+      <Scene lampOn={lampOn} doorState={doorState} playerPosition={playerPosition} audio={sound}/>
+      <Player active={started} panel={panel} doorState={doorState} playerPosition={playerPosition}
+        onFocus={setFocus} onInteract={interact} onStats={setFps} audio={sound}/>
     </Canvas>
     <div className="vignette" aria-hidden="true"/>
     <div className="top-title">서림주택 / 야간 관리동 <span>03:17 · INCIDENT 001</span></div>
@@ -415,14 +520,14 @@ export default function FirstRoom() {
     </>}
     {debug && <div className="perf-debug">RE:ZERO FIRST ROOM<br/>FPS {fps??'측정 중'}<br/>CCTV 320×180 / ~8fps<br/>괴물 AI 없음</div>}
     {!started && <div className="start-overlay">
-      <div className="eyebrow">B∞ RE:ZERO · FIRST ROOM V0.4.0</div>
+      <div className="eyebrow">B∞ RE:ZERO · FIRST ROOM V0.4.1</div>
       <h1>마지막 야간근무</h1>
       <p>03:17. 지하 방화문 센서에서 열림 신호가 들어왔습니다.<br/>CCTV 화면은 여전히 문이 닫혀 있다고 주장합니다.</p>
       <button onClick={start}>근무 시작</button>
       <small>PC 키보드 + 마우스 전용 · 헤드폰 권장 · ESC 커서 해제</small>
     </div>}
     {panel==='camera'&&<Surveillance lampOn={lampOn} tested={tested} evidence={evidence}
-      onLamp={turnLamp} onEvidence={()=>setEvidence(true)} onClose={closePanel}/>}
+      onLamp={turnLamp} onEvidence={noteEvidence} onClose={closePanel}/>}
     {panel==='log'&&<div className="screen-backdrop" role="dialog" aria-modal="true">
       <div className="logbook"><div className="eyebrow">야간근무 일지 · INCIDENT 001</div>
         <h2>열리지 않은 문</h2><p>03:17 — B1 방화문 센서: OPEN</p>
@@ -430,8 +535,9 @@ export default function FirstRoom() {
         <p>점검등 테스트: {tested?'실시':'미실시'}</p>
         <p>영상 이상 증거: {evidence?'확보':'미확보'}</p>
         <p className="muted">현장 조사와 사건 종결 기능은 V0.5 개발 대상입니다.</p>
-        <button onClick={closePanel}>일지 덮기</button></div>
+        <button onClick={closePanel}>일지 덮기 / FPS 복귀</button></div>
     </div>}
-    <footer>FIRST ROOM · 그래픽/사운드/조작 검수용 개발 빌드 · 사건 전체 미구현</footer>
+    {started && !panel && resumeHint && <button className="resume-pointer" onClick={lockGamePointer}>화면 클릭하여 시점 조작 계속</button>}
+    <footer>FIRST ROOM V0.4.1 · 기능 검수 빌드 · 전체 사건 미구현</footer>
   </main>;
 }
