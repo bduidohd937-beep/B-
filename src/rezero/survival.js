@@ -31,12 +31,12 @@ export function inHall(player) {
   return Boolean(player && player.x>=3.56 && player.x<=14.08 &&
     player.z>=.62 && player.z<=2.69);
 }
-export function concealed(player,crouching) {
-  return Boolean(crouching && player && player.x>=COVER.minX &&
+export function concealed(player,crouching,creature) {
+  return Boolean(crouching && player && creature?.x>9.45 && player.x>=COVER.minX &&
     player.x<=COVER.maxX && player.z>=COVER.minZ && player.z<=COVER.maxZ);
 }
 export function canSeePlayer(p,player,opts={}) {
-  if(!inHall(player) || concealed(player,opts.crouching)) return false;
+  if(!inHall(player) || concealed(player,opts.crouching,p)) return false;
   const d=Math.hypot(p.x-player.x,p.z-player.z);
   // Presence must face the target. A player who is directly beside it can
   // still be spotted, but it never sees through the closed office wall.
