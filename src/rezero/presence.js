@@ -7,13 +7,13 @@ export const PHASES = Object.freeze(['dormant','watch','approach','doorstep','wi
 
 export function createPresence() {
   return {phase:'dormant', x:PRESENCE_START_X, z:PRESENCE_Z, t:0,
-    distanceSinceStep:0, handleTurn:0, revealed:false, glimpsed:false};
+    distanceSinceStep:0, handleTurn:0, revealed:false, glimpsed:false, observedSeconds:0};
 }
 
 export function beginPresence(p) {
   if (p.phase!=='dormant') return false;
   p.phase='watch';p.x=PRESENCE_START_X;p.t=0;p.distanceSinceStep=0;
-  p.handleTurn=0;p.revealed=true;
+  p.handleTurn=0;p.revealed=true;p.observedSeconds=0;
   return true;
 }
 
@@ -26,7 +26,12 @@ export function advancePresence(p, seconds, opts = {}) {
   const oldX=p.x, previous=p.phase;
   p.t+=dt;
   if(p.phase==='watch') {
-    if(p.t>=4.5){p.phase='approach';p.t=0;}
+    // Give seated players an actual opportunity to spot it in CAM 01,
+    // but do not soft-lock players who leave the console immediately.
+    if(opts.cameraVisible)p.observedSeconds+=dt;
+    if((p.t>=4.5&&p.observedSeconds>=2.0)||p.t>=30){
+      p.phase='approach';p.t=0;
+    }
   } else if(p.phase==='approach') {
     p.x=Math.max(PRESENCE_DOOR_X,p.x-dt*.93);
     if(p.x<=PRESENCE_DOOR_X){p.phase='doorstep';p.t=0;}
