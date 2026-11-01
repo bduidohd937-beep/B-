@@ -56,3 +56,22 @@ footer{position:absolute;bottom:18px;left:26px;color:#d4dfd478;font-size:9px;let
   .bottom-instruction{font-size:10px;padding:8px;white-space:normal;text-align:center;width:90%}
   footer{font-size:8px;left:10px}
 }
+
+
+/* V0.4.1: small, translucent controls, never a second full-screen fake CCTV feed. */
+.console-ui{position:absolute;z-index:12;bottom:55px;left:50%;transform:translateX(-50%);width:min(1050px,calc(100% - 38px));color:#c9dfce;background:rgba(8,19,18,.88);border:1px solid rgba(138,175,156,.34);box-shadow:0 12px 50px #0008;backdrop-filter:blur(8px);padding:14px 18px 12px;cursor:default}
+.console-title{display:flex;align-items:center;justify-content:space-between;gap:15px;color:#d4e4d2;font-size:11px;letter-spacing:.13em;padding-bottom:10px;border-bottom:1px solid rgba(166,196,169,.19)}
+.console-title span{font-size:10px;color:#8fa89d}
+.console-status{display:flex;gap:22px;padding:11px 0;font-size:11px;letter-spacing:.05em;color:#aec5b2}
+.console-status b{color:#e5a9a0}
+.console-actions{display:flex;flex-wrap:wrap;gap:7px}
+.console-actions button{background:#172923;border:1px solid #5c837060;color:#d9e6d5;border-radius:2px;padding:10px 12px;font-size:11px;white-space:nowrap}
+.console-actions button:hover:not(:disabled){background:#39574b;border-color:#86b89b}
+.console-actions button.selected{background:#3e5e4f;border-color:#a9d8bd;color:#f1ffe9}
+.console-actions button.quiet{background:transparent}
+.console-actions button.quit{margin-left:auto;background:#222828;border-color:#8c9b8b75}
+.console-hint,.console-feedback{font-size:11px;color:#c0d8c3;line-height:1.5;margin:9px 0 0}
+.console-feedback{color:#e1d9a6}
+.console-foot{color:#7f948a;font-size:10px;letter-spacing:.02em;margin:11px 0 0}
+.resume-pointer{z-index:15;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#203c32;border:1px solid #a7b9a9;color:#eff5e8;padding:15px 30px;font-size:14px}
+@media (max-width:720px){.console-ui{bottom:40px;padding:11px;width:calc(100% - 16px)}.console-title{flex-direction:column;align-items:flex-start}.console-actions button.quit{margin-left:0}.console-foot{display:none}.console-status{flex-wrap:wrap;gap:7px}.top-title{pointer-events:none}}
