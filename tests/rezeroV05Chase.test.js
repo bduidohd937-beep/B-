@@ -31,7 +31,7 @@ test('WASD is truly camera-relative, including backwards-facing spawn direction'
   close(cameraMovement(tilt,0,1).z,1);
   close(cameraMovement(tilt,1,1).length(),1);
 });
-test('monster can traverse map via real colliders from sealed G gate to electrical panel',()=>{
+test('monster can traverse map via real colliders from rear maintenance passage to electrical panel',()=>{
   const route=findRoute(MONSTER_SPAWN,BREAKER_POS);
   assert.ok(route.length>15,'Enemy needs a physical path: '+route.length);
   for(const p of route)assert.ok(walkable(p.x,p.z,.27),'solid geometry crossed at '+JSON.stringify(p));
@@ -58,7 +58,7 @@ test('breaker only triggers when actually near physical equipment',()=>{
   assert.equal(canUseHiding({x:-1.2,z:27.5}),true);
   assert.equal(canUseHiding({x:9,z:27}),false);
 });
-test('first chase must be activated by E, then leave G before investigating',()=>{
+test('first chase must be activated by E, then emerge from rear passage before investigating',()=>{
   const m=createChase(),player={x:9.4,z:16.6};
   assert.equal(m.phase,'dormant');
   for(let i=0;i<50;i++)advanceChase(m,.04,player);
@@ -72,10 +72,10 @@ test('first chase must be activated by E, then leave G before investigating',()=
     if(events.some(e=>e.type==='step'))steps++;
     assert.ok(Math.hypot(m.pos.x-old.x,m.pos.z-old.z)<=MONSTER_CHASE*.04+.002);
     assert.ok(walkable(m.pos.x,m.pos.z,.27));
-    if(m.pos.x>-2.4)cameOut=true;
+    if(m.pos.z<19.7)cameOut=true;
     if(m.phase==='caught')break;
   }
-  assert.ok(cameOut,'monster never emerged into actual central hallway');
+  assert.ok(cameOut,'monster never left rear maintenance passage and entered the electrical area');
   assert.ok(steps>4,'monster footsteps should track physical movement');
 });
 test('creature can detect reachable player but never see through walls or concealment',()=>{
